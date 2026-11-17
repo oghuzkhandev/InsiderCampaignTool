@@ -18,6 +18,26 @@
   değişikliği veya ürün davranışı öneriyorsan uygulamadan önce bana açıkla.
   Onaylı görevdeki rutin uygulama ayrıntılarını çözebilirsin.
 
+## Branch ve CI
+
+- `main`'de doğrudan değişiklik yapma. `development` veya `staging` gibi
+  ara branch yoktur.
+- `docs/PROGRESS.md` içindeki her aşama için `main`'den yeni bir feature
+  branch açılır. Ad `<tür>/<kısa-konu>` biçimindedir (`feat/`, `fix/`,
+  `chore/`, `docs/`) ve aşamanın başlığında yazılır.
+- Bir aşamaya başlamadan önce `git branch --show-current` ile branch'i
+  kontrol et. `main`'deysen veya başka aşamanın branch'indeysen dur ve bana
+  söyle. Aşama dışı işi o branch'e ekleme.
+- Branch'i `main`'e PR ile squash merge ederim. Commit atma ve push yapma
+  yasağı geçerli. PR açıklaması ve commit mesajı önerisi hazırlayabilirsin.
+- GitHub Actions CI, PR'larda ve `main`'e push'ta çalışır. Şimdiki kapsam:
+  Compose doğrulaması, backend ile frontend lint, test ve build. CI
+  kırmızıyken aşama bitmiş sayılmaz.
+- PostgreSQL entegrasyon, e2e ve worker testleri gibi yeni test türü
+  ekleyen aşama, CI'ı da bu testleri çalıştıracak şekilde genişletir.
+- CI iş akışına yeni araç veya bağımlılık eklemek önce bana sorulur.
+- Aşama bitince `docs/PROGRESS.md` aynı branch'te güncellenir.
+
 ## Dosyalar, Git ve veritabanı
 
 - İncelediğin ilgili dosyaların adlarını ve bulgularını kısaca belirt.
@@ -53,6 +73,9 @@
 - İlgili Go testlerini çalıştır. Uygun olduğunda `backend/` içinde
   `go test ./...` ile kontrol et.
 - Teslimde repo kökünden `make test` ve `docker compose up` çalışmalı.
+- Aşamayı bitirmeden CI'ın çalıştıracağı kontrolleri (backend ve frontend
+  lint, test, build) yerelde çalıştır. CI'ı kendin çalıştıramıyorsan bunu
+  doğrulanamayanlar arasında belirt.
 - Sonunda çalıştırdığın komutları, sonuçlarını ve doğrulayamadığın noktaları
   belirt.
   

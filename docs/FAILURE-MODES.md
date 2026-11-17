@@ -8,10 +8,11 @@ Her satırda iddia ile kanıt yan yana: **ölçülebilir beklenen davranış** v
 | --- | --- | --- |
 | Segment çıktısı bozuk/JSON değil | Backend bir düzeltme denemesi yapar; çıktı hâlâ geçersizse `SEGMENT_INVALID` döner. | Unit · SEG-001 |
 | MockLLM desteklenmeyen alan, operatör veya SQL benzeri değer üretir | Backend, desteklenmeyen alan veya operatör içeren geçersiz yapıyı kitle sorgusu çalıştırmadan reddeder. Kabul edilen değer SQL metnine girmez, yalnızca argüman olarak bağlanır; sorgu metni zararsız değerle aynıdır. | Unit + fuzz · SEG-001 |
-| Brief içinde talimat/injection | Davranış prompt'a değil backend doğrulamasına dayanır; aynı reddetme testleri geçerli | Unit (MockLLM) |
+| Boş brief veya yalnızca boşluk | Reddedilir, LLM çağrılmaz | Unit · SEG-001 |
+| Brief içinde talimat/injection | Davranış prompt'a değil backend doğrulamasına dayanır; aynı reddetme testleri geçerli | Unit (MockLLM) · SEG-001 · CNT-001 |
 | Filtresi olmayan kural (tüm kullanıcılar) | Filtresiz segment kuralı içeren kampanya onaya açılmaz. | Unit · SEG-001 |
 | Geçerli kural ama sıfır uygun alıcı | Onay 422, mesaj oluşmaz | Integration |
-| LLM zaman aşımı / 429 | Zaman aşımı hatası, arayüzde "yeniden dene", kısmi içerik onaya açılmaz | Unit (MockLLM gecikme) |
+| LLM zaman aşımı / 429 | Zaman aşımı hatası, arayüzde "yeniden dene". Segment için kitle sorgusu çalışmaz, içerik için sürüm kaydedilmez; kısmi içerik onaya açılmaz. Otomatik düzeltme yapılmaz. | Unit (MockLLM gecikme ve 429) · SEG-001 · CNT-001 |
 
 ## İçerik ve onay
 
@@ -19,7 +20,7 @@ Her satırda iddia ile kanıt yan yana: **ölçülebilir beklenen davranış** v
 | --- | --- | --- |
 | İçerik JSON akışı birkaç parçadan sonra kesilir | Arayüz hata gösterir; sürüm kaydedilmez, onay kapalıdır. Otomatik düzeltme yapılmaz, yeniden üretme sunulur. | Unit + E2E (MockLLM kesilen akış) |
 | Doğrulama başarısız (limit aşımı, bozuk JSON) | Bir otomatik düzeltme JSON'u arka planda biriktirilir. Geçerliyse kaydedilen içerik önizlemenin tamamını değiştirir; eski metne eklenmez. Hâlâ geçersizse sürüm kaydedilmez, çözümlenmiş alanlar hata mesajıyla düzenlemeye açılır ve onay kapalıdır. Hiç metin çözümlenememişse yeniden üretme veya alanları doldurma sunulur. | Unit · CNT-001 |
-| Doğrulanmış sürüm yokken onay | 409/422, mesaj satırı yok | Integration |
+| Doğrulanmış sürüm yokken onay | 409, mesaj satırı yok | Integration · CNT-001 |
 | Kullanıcı V3'ü görürken V4 kaydedildi, V3'ü onaylar | 409, `messages` satır sayısı 0 | Integration |
 | Çift tıklama, aynı sürümle onay | 200 ve aynı sonuç; `messages` sayısı değişmez | Integration |
 | Kampanya başka sürümle onaylıyken farklı sürümle onay | 409 | Integration |
@@ -57,8 +58,10 @@ Her satırda iddia ile kanıt yan yana: **ölçülebilir beklenen davranış** v
 | Senaryo | Beklenen davranış | Test |
 | --- | --- | --- |
 | Test bağlantısı `campaigns_test` dışında bir database'e gider | Database kimliği kontrolünde test durur; migration, veri hazırlama veya temizleme çalışmaz. | Integration |
-| DB erişilemez | `/readyz` 503, worker claim yapmaz ve backoff'ta bekler, DB dönünce devam eder | Integration |
-| SIGTERM | Yeni claim durur, devam eden çağrılara 15 sn; süre dolarsa kalan satırlar lease ile geri alınır | Integration |
+| DB erişilemez | `/readyz` 503, worker claim yapmaz ve backoff'ta bekler, DB dönünce devam eder | Integration · SND-001 · TRK-001 |
+| SIGTERM | Yeni claim durur, devam eden çağrılara 15 sn; süre dolarsa kalan satırlar lease ile geri alınır | Integration · SND-001 |
 | Dashboard SSE bağlantısı kopar | Yeniden bağlanınca ilk olay güncel snapshot | Frontend + Integration |
 | Sayfa yenilenir | Kampanya ve son doğrulanmış içerik `GET /api/campaigns/{id}` ile yüklenir; kaydedilmemiş parçalar geri gelmez. Canlı takip SSE ile sürer. | Frontend/E2E |
 | SSE istemcisi kopar | Sunucu tarafı goroutine temizlenir (sızıntı yok) | Unit |
+| Worker durur, kuyruk birikir | `queue_depth{channel}` veritabanından hesaplandığı için artan değeri gösterir | Integration · TRK-001 |
+| `/metrics` erişimi | Docker iç ağından erişilir, host'a yayımlanan portlardan sunulmaz | Integration · TRK-001 |

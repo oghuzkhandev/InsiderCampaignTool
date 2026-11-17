@@ -16,6 +16,8 @@ Son güncelleme: 2026-11-17
 
 ## Tamamlandı — Docker Compose ve Go API başlangıcı
 
+**Branch:** `chore/project-setup` (PR #1 ile `main`'e merge edildi)
+
 **Hedef:** İlk Go endpoint'ini Docker Compose ile çalıştırmak ve test etmek.
 
 - [x] WSL terminalinde `docker info` ve `docker compose version` ile
@@ -31,16 +33,51 @@ Son güncelleme: 2026-11-17
 **Çıkış koşulu:** API Compose ile ayağa kalkıyor, `/healthz` `200` dönüyor
 ve `make test` ilk Go testini çalıştırıyor. Sağlandı.
 
-## Sonraki adımlar
+## Tamamlandı — Çalışma düzeni ve CI
 
-### 1. PostgreSQL, seed ve segment önizleme
+**Branch:** `chore/project-setup` (Compose ve Go API başlangıcıyla aynı
+PR #1)
 
+**Hedef:** İlk kurulumu CI ile doğrulayıp aynı PR'da `main`'e almak.
+
+- [x] `.github/workflows/ci.yml` eklendi. Tetikleyici: PR'lar ve `main`'e
+  push. Üç iş paralel çalışır.
+- [x] Backend işi: `go mod verify`, `go mod tidy -diff`, `gofmt` kontrolü,
+  `go vet` ve kökten `make test`.
+- [x] Frontend işi: `npm ci`, `oxlint`, `eslint`, `vitest run` ve
+  `npm run build` (type-check dahil). Lint için `--fix` kullanan `lint`
+  script'i yerine araçlar doğrudan çağrılıyor.
+- [x] Compose işi: `docker compose config --quiet`. Çıkış kodu 0 ise
+  geçer.
+- [x] İlk Actions sonucu: PR (`pull_request`) ve `main`'e push çalışmalarında
+  Backend, Frontend ve Compose yeşil. Oğuzhan doğruladı. Claude `gh` ile
+  PR #1 Checks ve çalışma listesini kontrol etti.
+- [x] PR #1 `main`'e squash merge edildi (7 commit tek commit, `c14f461`).
+- [x] GitHub'da `main` için CI geçmeden merge edilmemesi kuralı ayarlandı
+  (Oğuzhan).
+
+**Çıkış koşulu:** Sağlandı.
+
+**CI'a bilerek eklenmeyenler:** `npm audit`, ek Go lint aracı, Go bağımlılık
+cache'i (henüz `go.sum` yok), `docker compose up` ile `/healthz` doğrulaması.
+PostgreSQL entegrasyon, e2e ve worker testlerini ekleyen aşama CI'ı da
+genişletir.
+
+## Şu an — PostgreSQL, seed ve segment önizleme
+
+**Branch:** `feat/segment-preview` (Oğuzhan güncel `main`'den açar)
+
+- [ ] `CLAUDE.md` (branch ve CI kuralları), `DECISIONS.md` (ADR-017, ADR-018),
+  `docs/specs/` altındaki dört spec, backend klasörleri ve Session-01 export
+  güncellemesi PR #1'e girmedi. Oğuzhan bunları `chore/project-setup`
+  üzerinden ikinci bir PR ile `main`'e alır. `feat/segment-preview` bu merge'den
+  sonra güncel `main`'den açılır.
 - [ ] PostgreSQL'i Compose'a ekle. Veritabanı hazır olduğunda migration ve
   seed otomatik çalışsın. Seed tekrar çalıştırılınca kayıtlar çoğalmasın.
 - [ ] Birkaç bin sahte kullanıcı üret. Örnek brief için tarih sınırı,
   satın alma ve kanal izni senaryolarını içeren sabit örnekler ekle.
-- [ ] `SEG-001` içinde desteklenen filtreleri ve 30 günlük kuralın anlamını
-  kısa, test edilebilir maddelerle yaz.
+- [ ] `SEG-001` taslağı eklendi. Desteklenen filtreleri ve 30 günlük kuralın
+  anlamını kısa, test edilebilir maddelerle netleştir.
 - [ ] MockLLM segment çıktısını backend'de doğrula. SQL alanlarını sabit
   eşlemeden seç, filtre değerlerini parametre olarak bağla.
 - [ ] Vue uygulamasını Compose'a ekle. Örnek brief için toplam, SMS'e uygun
@@ -50,11 +87,20 @@ ve `make test` ilk Go testini çalıştırıyor. Sağlandı.
   yerel `.env` üzerinden alsın. Demo ve testler MockLLM ile çalışsın.
   (`.env.example` ve Compose'ta `LLM_PROVIDER` ile `ANTHROPIC_API_KEY`
   geçişi hazır; Claude adaptörü ve MockLLM henüz yok.)
+- [ ] PostgreSQL gerektiren test eklenince CI'a Postgres adımını da ekle
+  (ADR-015, ADR-017).
 
 **Çıkış koşulu:** Compose ile açılan arayüz, gerçek API anahtarı olmadan
-seed verisi üzerinden beklenen kitle sayılarını gösteriyor.
+seed verisi üzerinden beklenen kitle sayılarını gösteriyor. CI yeşil.
 
-### 2. İçerik üretimi, düzenleme ve onay
+## Sonraki adımlar
+
+Her aşama güncel `main`'den açılan ayrı bir branch'te ilerler. Branch
+adları öneridir.
+
+### 1. İçerik üretimi, düzenleme ve onay
+
+**Branch:** `feat/content-approval`
 
 - [ ] Claude adaptörünü ekle. Segment çıktısını ve tamamlanan içerik
   çıktısını backend'de doğrula.
@@ -70,7 +116,9 @@ seed verisi üzerinden beklenen kitle sayılarını gösteriyor.
 **Çıkış koşulu:** Kullanıcı taslağı canlı görüyor, düzenleyebiliyor ve
 gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
 
-### 3. Worker, mock provider ve dashboard
+### 2. Worker, mock provider ve dashboard
+
+**Branch:** `feat/worker-dashboard`
 
 - [ ] Worker ve mock provider'ı Compose'a ekle. Önce tek bir mesajı kuyruktan
   alıp provider'a gönder. Worker gönderimden hemen önce kanal iznini kontrol etsin.
@@ -93,7 +141,8 @@ yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
 - [ ] Örnek brief'ten canlı gönderim takibine kadar demo tamamlanıyor.
 - [ ] **`make test`** gerçek API anahtarı olmadan geçiyor.
 - [ ] Anahtar varsa gerçek Claude adaptörüyle örnek brief doğrulandı.
-- [ ] `README.md` kurulum, kısa mimari özeti ve bilinen sınırlamaları içeriyor.
+- [ ] `README.md` kurulum, kısa mimari özeti, CI notu veya rozeti ve bilinen
+  sınırlamaları içeriyor.
 - [ ] `DECISIONS.md` kabul edilen kararları ve gerekçelerini içeriyor.
 - [ ] Case için yapılan Claude oturumları `ai-sessions/` altında. Paylaşım
   öncesi gerçek API anahtarları ve kişisel bilgiler temizlendi.
@@ -103,30 +152,51 @@ yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
 - ADR-013'teki Compose başlatma sırası onay bekliyor.
 - Web şu an Vite dev server ile çalışıyor ve `/api` proxy'si yok. Teslimden
   önce nginx'e geçilecek (ADR-014).
-- Test klasör yapısı henüz belirlenmedi. Testler şimdilik kodun yanında,
-  handler'lar `backend/cmd/api` altında `package main` içinde.
+- Test klasör yapısı ADR-018 ile onaylandı: unit testler kodun yanında,
+  integration ve e2e `backend/tests/` altında. `backend/cmd/api` ve healthz
+  kodu yerinde kalır. `backend/internal/` boş, paketler (worker, seed, queue,
+  mock-provider gibi) aşamalar ilerledikçe açılacak.
 - `make test` şu an yalnızca `go test ./...` çalıştırıyor. Postgres'i ayağa
   kaldırma ve `campaigns_test` hazırlığı (ADR-015) entegrasyon testi
   eklenince yapılacak.
-- `CNT-001` ve `SND-001` spec'leri yazılmadı. [FAILURE-MODES.md](FAILURE-MODES.md)
-  bu kimliklere referans veriyor, `SEG-001` dosyası da henüz yok.
-- Karara bağlanmadı: kampanyalar arası tekrar gönderim kapsamı (ADR-006),
-  30 günlük kuralın yorumu (ADR-010) ve önizleme ile onay arasında kitlenin
-  kayması.
+- `SEG-001`, `CNT-001`, `SND-001` ve `TRK-001` spec dosyaları taslak olarak
+  yazıldı ve [specs/README.md](specs/README.md) dizinine eklendi. Henüz
+  commit'lenmedi.
+- Karara bağlanmadı: 30 günlük kuralın yorumu (ADR-010) ve önizleme ile
+  onay arasında kitlenin kayması.
+- Azami brief uzunluğu, segment alan/operatör listesi ve sınırları ile eksik
+  `first_name` için fallback metni ilgili geliştirme aşamasında
+  netleştirilecek (SEG-001, CNT-001).
 - `queue_depth` yalnızca `queued` mesajları sayacak. `ratelimit_wait_seconds`
   türü belirlenmedi.
 - API'de graceful shutdown yok.
+- CI'da ek Go lint aracı (`golangci-lint` gibi) yok. CI `gofmt` ve
+  `go vet` ile başlıyor. Yeni araç bağımlılık kararıdır ve önce Oğuzhan'a
+  sorulur.
+- `npm audit` CI'a eklenmedi. Yerelde 5 moderate uyarı görüldü (minimatch,
+  glob, editorconfig, js-beautify zinciri). Eklenirse yeni advisory'ler
+  PR'ları kırabilir.
+- Frontend lint komutları CI'da workflow içinde doğrudan çağrılıyor,
+  `package.json` ve `Makefile` ile paylaşılmıyor. Yerelde `npm run lint`
+  `--fix` ile dosya değiştirir.
+- CI Compose için yalnızca `docker compose config --quiet` çalıştırıyor.
+  İmajların build edilmesi ve `/healthz` kontrolü CI'da yok.
 
 ## Son doğrulama
 
-- **Son çalışan adım:** Compose ile `api` (`127.0.0.1:8081`) ve `web`
-  (`127.0.0.1:8080`) ayağa kalktı, `GET /healthz` `200` döndü. Compose
-  doğrulamasını Oğuzhan yaptı.
-- **Çalıştırılan komut ve sonuç:** `backend/` içinde `go test -v -count=1
-  ./...` iki test geçti. `go vet` ve `gofmt -l` temiz. Kökten `make test`
-  geçti. `docker compose build` ve `docker compose config -q` başarılı.
+- **Son çalışan adım:** PR #1 (`chore/project-setup`) CI'dan geçip `main`'e
+  merge edildi. PR ve `main` push çalışmalarında Backend, Frontend ve
+  Compose işleri yeşil. `gh run list` ve `gh pr view 1` çıktısı bunu
+  doğruluyor.
+- **Çalıştırılan komut ve sonuç (yerel):** `go mod verify`,
+  `go mod tidy -diff`, `gofmt -l`, `go vet ./...` temiz. Kökten `make test`
+  geçti. Frontend'de Node 24 ile `npm ci`, `oxlint .`, `eslint .`,
+  `npm run test:unit -- --run` (1 test) ve `npm run build` geçti.
+  `docker compose config --quiet` çıkış kodu 0.
 - **Doğrulanamayan:** Claude `docker compose up` çalıştıramadı (izin
   reddedildi), bu yüzden Compose üzerinden çalıştırma yalnızca Oğuzhan'ın
-  doğrulamasına dayanıyor.
-- **Sıradaki iş:** PostgreSQL'i Compose'a ekle (Sonraki adımlar, bölüm 1).
+  doğrulamasına dayanıyor. CI'ın Compose işi yalnızca yapılandırmayı
+  doğrular.
+- **Sıradaki iş:** Güncel `main`'den `feat/segment-preview` branch'ini aç
+  (Oğuzhan), PostgreSQL, seed ve segment önizleme aşamasına başla.
   Migration dosyaları yalnızca Oğuzhan isteyince yazılır.

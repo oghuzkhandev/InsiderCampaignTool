@@ -61,7 +61,7 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 ## ADR-006 — İş sahipliği, retry ve idempotency
 
-- **Durum:** Taslak.
+- **Durum:** Taslak. Tekilleştirme kapsamı onaylandı.
 - **Karar:** `attempts` işleme denemelerini sayar. `claim_token` her
   sahiplenmede yenilenir. Provider'a iletilen `Idempotency-Key` ise mesaj
   boyunca sabit kalır. Sonuç yalnızca güncel claim token ile yazılabilir.
@@ -83,6 +83,12 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   kaybetmiş iş için yeni provider çağrısı başlatılmaz.
 - **Doğrulama:** İlk kabulden sonra HTTP yanıtı düşürülür. Retry aynı
   anahtarı kullanır. İki HTTP isteği, bir kabul ve sonunda `sent` beklenir.
+- **Tekilleştirme kapsamı (onaylandı):** Tekrar gönderim koruması kampanya,
+  kullanıcı ve kanal bazındadır. Ayrı kampanyalar birbirinden bağımsızdır;
+  brief veya metnin aynı olması kampanyalar arası gönderimi engellemez.
+  Bu kapsam `UNIQUE (campaign_id, user_id, channel)` ve kampanya kapsamlı
+  `Idempotency-Key` (`campaign:user:channel`) ile uygulanır. Kampanyalar
+  arası tekrar gönderim koruması kapsam dışıdır.
 
 ## ADR-007 — İçerik ve dashboard için ayrı SSE akışları
 
@@ -142,8 +148,9 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 - **Durum:** Taslak.
 - **Karar:** Onay isteği `content_version` taşır. Onaylanan aynı sürüm
-  yeniden gönderilirse mevcut sonuç `200` ile döner. Sürüm çatışması `409`,
-  boş kitle veya render ihlali `422` döner.
+  yeniden gönderilirse mevcut sonuç `200` ile döner. Sürüm çatışması veya
+  doğrulanmış sürümün bulunmaması `409`, boş kitle veya render ihlali `422`
+  döner.
 - **Gerekçe ve sonuç:** Worker onay sırasında doğrulanan metni gönderir.
   Tüm mesajlar terminal duruma ulaştığında kampanya `completed` olur.
   Başarısız gönderimler ayrı sayılır. Onay transaction'ı geri alınırsa
@@ -231,3 +238,41 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   için worker durduğunda da kuyruk birikimi görünür. API'nin host'a açılan
   portundan sunulmaması, `/metrics` için host'a yayımlanmayan ayrı bir iç
   dinleyici gerektirir.
+
+## ADR-017 — Feature branch ve PR ile main akışı, CI GitHub Actions
+
+- **Durum:** Onaylandı.
+- **Seçenekler:** `development` branch'li çok katmanlı akış veya
+  `main` + kısa ömürlü feature branch'ler. Merge için PR + squash, PR +
+  merge commit veya doğrudan merge. CI için PR ve `main` push'u, yalnızca
+  `main` push'u veya her branch push'u.
+- **Karar:** `development` branch'i yoktur. `docs/PROGRESS.md`'deki her aşama
+  `main`'den açılan ayrı bir feature branch'te geliştirilir ve PR ile
+  `main`'e squash merge edilir. CI GitHub Actions ile çalışır ve PR'larda
+  ile `main`'e push'ta tetiklenir. İlk kapsam: Compose doğrulaması, backend
+  ile frontend lint, test ve build. PostgreSQL entegrasyon, e2e ve worker
+  testleri ilgili aşamalarda eklenir.
+- **Gerekçe ve sonuç:** Proje sahibinin gerekçesi: projede tek kişi
+  çalışıyor, ekstra bir katman ve merge üstüne merge zaman kaybıdır.
+  Aşama başına branch geçmişi düzenli tutar. Squash merge `main`'de aşama
+  başına tek commit bırakır. CI'ın PR'larda da çalışması, hatayı merge
+  öncesi gösterir; ayrı bir workflow gerekmez. `main` için "CI geçmeden
+  merge edilmez" kuralı GitHub ayarıdır ve proje sahibi tarafından
+  yapılır. Feature branch'e her push'ta CI çalışmaz, o durumda doğrulama
+  yerelde yapılır.
+
+## ADR-018 — Test klasör yapısı ve dosya adlandırması
+
+- **Durum:** Onaylandı.
+- **Karar:** Unit testler test ettikleri kodun yanında, ilgili klasörde durur.
+  Integration testler `backend/tests/integration/`, e2e testler
+  `backend/tests/e2e/` altındadır. Bu iki klasördeki dosya adı testin
+  çözdüğü asıl konudur: bir veya en fazla iki küçük harfli kelime
+  (`idempotency_test.go`, `rate-limit_test.go`). Backend altında
+  `migrations/`, `tests/` ve `internal/` klasörleri açıldı.
+- **Gerekçe ve sonuç:** Proje sahibinin gerekçesi: hızlı testlerin ayrı
+  çalışması ve kritik davranışların gerçek PostgreSQL ile doğrulanması.
+  Unit testler kodun yanında durduğu için PostgreSQL gerektirmeden hızlı
+  çalışır. PostgreSQL gerektiren integration ve e2e testler `backend/tests/`
+  altında ayrışır; bu yüzden ayrı çalıştırılabilirler. Dosya adı testin
+  çözdüğü konuyu gösterir.
