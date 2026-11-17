@@ -1,0 +1,27 @@
+# Bağımlılıklar imajın içinde `npm ci` ile kurulur; host'tan kopyalanmaz
+node_modules
+**/node_modules
+
+# Derleme ve test çıktıları
+dist
+dist-ssr
+coverage
+test-results
+playwright-report
+*.tsbuildinfo
+.eslintcache
+
+# Log dosyaları
+npm-debug.log*
+
+# Yerel ortam ayarları ve gizli değerler
+.env
+.env.*
+
+# Git, editör ve Docker dosyaları
+.git
+.gitignore
+.vscode
+.idea
+Dockerfile
+.dockerignore
