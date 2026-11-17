@@ -126,7 +126,7 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 
 | Uç nokta | Not |
 | --- | --- |
-| `POST /api/campaigns` | Brief → segment + sayılar |
+| `POST /api/campaigns` | Brief → segment + sayılar. Boş brief reddedilir. |
 | `GET /api/campaigns/{id}` | Brief, segment, kayıtlı kitle sayıları, durum ve varsa son doğrulanmış içerik sürümü; bulunamazsa `404`. |
 | `POST /api/campaigns/{id}/content` | İçerik üretimi, SSE (`delta`, `validated`, `error`) |
 | `PUT /api/campaigns/{id}/content` | İnsan düzenlemesi doğrulanır ve yeni sürüm oluşturur. Onaydan sonra `409` döner. |
@@ -138,7 +138,8 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 Onay yanıtları:
 
 - **`200`** — İlk onay ya da onaylanan aynı sürümle tekrar.
-- **`409`** — Sürüm güncel değil veya kampanya başka bir sürümle onaylı.
+- **`409`** — Sürüm güncel değil, doğrulanmış sürüm yok veya kampanya başka
+  bir sürümle onaylı.
 - **`422`** — Alıcı bazlı render limiti aştı, sıfır uygun alıcı var veya
   segment kuralı filtresiz.
 
@@ -160,6 +161,7 @@ Kampanya draft değilse:
 
 Yalnızca draft kampanya için:
   İstenen sürüm son doğrulanmış sürüm değilse ROLLBACK ve 409.
+  Doğrulanmış sürüm hiç yoksa da ROLLBACK ve 409.
   Segment filtresizse ROLLBACK ve 422.
   Kanal bazında uygun alıcı listesini bir kez seç.
   Liste boşsa ROLLBACK ve 422.
@@ -345,12 +347,17 @@ bağlıdır.
 
 ## 13. Test katmanları
 
-- **Unit:** DSL, içerik, backoff, repair ve onay kuralları.
+- **Unit:** DSL, içerik, backoff, repair ve onay kuralları. Test ettiği
+  paketin yanında durur (`backend/internal/...`).
 - **Integration:** Gerçek PostgreSQL ile eşzamanlı claim, onay
   transaction'ı, claim token, reaper ve kampanya tamamlanması.
+  `backend/tests/integration/` altındadır.
 - **E2E:** API, worker ve mock provider ile hata enjeksiyonu, kayan pencere
   hız testi, `accept_then_drop` sonrası provider restart ve aynı anahtarla
-  retry, worker kill.
+  retry, worker kill. `backend/tests/e2e/` altındadır.
+
+Integration ve e2e dosyalarının adı testin çözdüğü konudur: bir veya en fazla
+iki küçük harfli kelime (`idempotency_test.go`, `rate-limit_test.go`).
 
 Entegrasyon ve E2E testleri ayrı test bağlantısı kullanır. Test hazırlığı,
 `campaigns_test` database'inin oluşturulmasını ve aynı uygulama

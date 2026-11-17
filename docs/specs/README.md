@@ -7,7 +7,10 @@ açıklar. Gereksinimlerin kaynağı [Insider One brief'i](../CASE.md).
 
 | Kimlik | Özellik | Durum |
 | --- | --- | --- |
-| `SEG-001` | Brief'ten segment üretme ve kitle önizleme | Planlandı |
+| `SEG-001` | [Segment üretimi ve kitle önizleme](SEG-001-segment-preview.md) | Taslak |
+| `CNT-001` | [İçerik üretimi, düzenleme ve onay](CNT-001-content-generation-and-approval.md) | Taslak |
+| `SND-001` | [Mesaj gönderimi](SND-001-message-delivery.md) | Taslak |
+| `TRK-001` | [Canlı gönderim takibi](TRK-001-live-delivery-tracking.md) | Taslak |
 
 ## Yeni spec ekleme
 
