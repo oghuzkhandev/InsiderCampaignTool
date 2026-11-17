@@ -9,6 +9,15 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
   PostgreSQL erişimi, kuyruk worker'ı ve mock SMS/e-posta sağlayıcısı.
   Migration,
   demo kullanıcı verisini oluşturan seed ve Go testleri de burada yer alır.
+  - backend/cmd/ — Çalıştırılabilir komutlar. Şu an yalnızca `api`.
+  - backend/internal/ — Uygulama paketleri. Unit testler (`*_test.go`)
+    test ettikleri paketin yanında durur.
+  - backend/migrations/ — Veritabanı migration dosyaları. Yalnızca
+    Oğuzhan isteyince eklenir.
+  - backend/tests/integration/ — Gerçek PostgreSQL ile çalışan testler.
+  - backend/tests/e2e/ — API, worker ve mock provider ile uçtan uca testler.
+  - Integration ve e2e dosya adı, testin çözdüğü konunun bir veya en fazla iki
+    küçük harfli kelimesidir (`idempotency_test.go`, `rate-limit_test.go`).
 - frontend/ — Vue ve TypeScript arayüzü. Brief girişi, kitle önizlemesi,
   canlı içerik, taslak düzenleme, insan onayı ve gönderim takibi burada gelişir.
 
