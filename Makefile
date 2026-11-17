@@ -1,4 +1,4 @@
-.PHONY: up down test
+.PHONY: up down test test-db
 
 up:
 	docker compose up --build
@@ -6,5 +6,9 @@ up:
 down:
 	docker compose down
 
-test:
+# Entegrasyon testleri için yalnızca postgres servisini başlatır (ADR-015).
+test-db:
+	docker compose up -d --wait postgres
+
+test: test-db
 	cd backend && go test ./...

@@ -26,8 +26,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
-          # Henüz bağımlılık ve go.sum yok. Eklenince cache açılabilir.
-          cache: false
+          cache-dependency-path: backend/go.sum
 
       - name: Bağımlılıkları doğrula
         run: |

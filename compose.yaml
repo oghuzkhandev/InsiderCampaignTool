@@ -1,19 +1,74 @@
+# Migration, seed ve api aynı backend imajını farklı komutlarla çalıştırır.
+x-backend: &backend
+  build:
+    context: ./backend
+  volumes:
+    - ./backend:/app
+
+x-database-env: &database-env
+  DATABASE_URL: "postgres://${POSTGRES_USER:-campaigns}:${POSTGRES_PASSWORD:-campaigns}@postgres:5432/${POSTGRES_DB:-campaigns}?sslmode=disable"
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-campaigns}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-campaigns}"
+      POSTGRES_DB: "${POSTGRES_DB:-campaigns}"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *backend
+    command: ["go", "run", "./cmd/migrate"]
+    environment: *database-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    <<: *backend
+    command: ["go", "run", "./cmd/seed"]
+    environment: *database-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
-    build:
-      context: ./backend
+    <<: *backend
+    # `go run` PID 1 olunca SIGTERM'i uygulamaya iletmez ve düzgün kapanış hiç
+    # çalışmaz. Önce derlenir, sonra `exec` ile ikili PID 1 olur.
+    command: ["sh", "-c", "go build -o /tmp/api ./cmd/api && exec /tmp/api"]
+    # Uygulamanın kapanış süresi 15 sn (ARCHITECTURE §8); Docker'ın varsayılanı
+    # 10 sn olduğu için süre açıkça uzatılır.
+    stop_grace_period: 20s
     ports:
       - "127.0.0.1:8081:8081"
-    volumes:
-      - ./backend:/app
     environment:
+      <<: *database-env
       PORT: "8081"
       LLM_PROVIDER: "${LLM_PROVIDER:-mock}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
 
   web:
     build:
       context: ./frontend
+    environment:
+      API_PROXY_TARGET: "http://api:8081"
+    depends_on:
+      - api
     ports:
       - "127.0.0.1:8080:5173"
     volumes:
@@ -21,4 +76,5 @@ services:
       - frontend_node_modules:/app/node_modules
 
 volumes:
+  postgres_data:
   frontend_node_modules:
