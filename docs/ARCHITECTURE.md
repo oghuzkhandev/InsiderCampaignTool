@@ -22,7 +22,7 @@ flowchart LR
 | mock-provider | Sahte SMS/email servisi: gecikme, 500, 429, `accept_then_drop`, idempotency, istatistik |
 | postgres | Kullanıcılar, kampanyalar, içerik sürümleri, mesajlar (kuyruk), LLM çağrı özeti, mock provider kabul kayıtları |
 | migrate | Tek seferlik servis. Migration'ları `campaigns` database'ine uygular. |
-| seed | Tek seferlik servis. Demo kullanıcı verisini tekrar çalışınca çoğalmayacak şekilde yazar. |
+| seed | Tek seferlik servis. Demo kullanıcı verisini yazar. Var olan kullanıcıya dokunmaz; tarihler yalnızca kullanıcı ilk oluşturulurken referans zamana göre yazılır. |
 
 Tek Go modülü, `cmd/` altında birden fazla binary, tek Docker image. İlk
 sürümde **tek worker süreci** çalışır (deployment varsayımı, bkz. ADR-005).
@@ -99,6 +99,17 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 - `user_consents`: (user_id, channel) PK, granted
 - `campaigns`: id, brief, segment (jsonb), status, approved_content_version,
   approved_at, completed_at, audience sayıları
+  - İlk migration yalnızca id (uuid), brief, segment, status, audience sayıları
+    (toplam, SMS, e-posta) ve created_at alanlarını oluşturur. Onay ve içerik
+    alanları ilgili aşamada eklenir.
+  - `segment` modelin ham metni değil, doğrulanmış yapıdır:
+    `{"all":[{"field","op","value"}]}`. Veritabanı bu yapıyı `CHECK`
+    constraint'i (`segment_is_valid`) ile zorlar: koşulsuz, 10'dan fazla
+    koşullu, bilinmeyen alan veya operatörlü, yanlış tipli ve fazladan
+    anahtar içeren segment kaydedilemez. Go ve veritabanı doğrulayıcıları ayrı
+    kodlardır. Aynı kararı verdikleri yalnızca entegrasyon testindeki
+    senaryolar için doğrulanmıştır; yeni alan veya operatör eklenince iki taraf
+    ve test tablosu birlikte güncellenmelidir.
 - `campaign_contents`: (campaign_id, version) PK, source (llm | human),
   sms_text, email_subject, email_body, created_at
   - Yalnızca **doğrulanmış** sürümler saklanır. Satırlar değişmez (immutable).
@@ -126,7 +137,7 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 
 | Uç nokta | Not |
 | --- | --- |
-| `POST /api/campaigns` | Brief → segment + sayılar. Boş brief reddedilir. |
+| `POST /api/campaigns` | Brief → segment + sayılar. Boş brief reddedilir. Geçersiz segmentte `422` `SEGMENT_INVALID` sebep kodlarıyla döner, kampanya oluşmaz. |
 | `GET /api/campaigns/{id}` | Brief, segment, kayıtlı kitle sayıları, durum ve varsa son doğrulanmış içerik sürümü; bulunamazsa `404`. |
 | `POST /api/campaigns/{id}/content` | İçerik üretimi, SSE (`delta`, `validated`, `error`) |
 | `PUT /api/campaigns/{id}/content` | İnsan düzenlemesi doğrulanır ve yeni sürüm oluşturur. Onaydan sonra `409` döner. |
@@ -134,6 +145,26 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 | `GET /api/campaigns/{id}/events` | Dashboard SSE, her bağlantıda önce güncel snapshot |
 | `GET /healthz`, `/readyz` | Liveness, DB ping |
 | `GET /metrics` | Prometheus. Yalnızca Docker iç ağından erişilir, host'a açılan portta sunulmaz (ADR-016). |
+
+Kampanya önizleme (`POST /api/campaigns`, `GET /api/campaigns/{id}`):
+
+- `POST` gövdesi `{"brief": "..."}` olmalıdır (`Content-Type: application/json`,
+  bilinmeyen alan ve fazladan JSON reddedilir). Başarıda `201` ve `Location`
+  döner. Gövde: `id`, `brief` (kırpılmış), `status`, `segment` (doğrulanmış
+  yapı), `audience` (`total`, `sms`, `email`) ve `created_at`. `GET` aynı
+  gövdeyi `200` ile döner; içerik sürümü sonraki aşamada eklenir.
+- Hata gövdesi: `{"error": {"code", "message", "reasons": [{"code", "field",
+  "text"}]}}`. `reasons` yalnızca `SEGMENT_INVALID` için dolar. Model çıktısı
+  ham olarak iletilmez; Türkçe açıklama arayüzde sebep koduna göre üretilir.
+- Kodlar: `400 INVALID_REQUEST`, `413 REQUEST_TOO_LARGE`,
+  `415 UNSUPPORTED_MEDIA_TYPE`, `422 BRIEF_EMPTY`, `422 BRIEF_TOO_LONG`,
+  `422 SEGMENT_INVALID`, `503 LLM_RATE_LIMITED` (`Retry-After` ile),
+  `504 LLM_TIMEOUT`, `404 CAMPAIGN_NOT_FOUND` (geçersiz uuid dahil),
+  `404 NOT_FOUND`, `405 METHOD_NOT_ALLOWED` (`Allow` ile) ve `500 INTERNAL`.
+- İstek gövdesi sınırı 64 KiB'dir (brief sınırı ayrıca 1000 karakter). Gövde
+  okunurken sınır aşılırsa `413` döner; geçerli JSON'dan sonra gelen
+  boşluklar sırasında aşılırsa da.
+  İç hata ayrıntısı yalnızca loga yazılır, istemciye sızmaz.
 
 Onay yanıtları:
 
@@ -250,6 +281,12 @@ WHERE c.id = $1
 `SIGTERM` geldiğinde yeni claim durur. Devam eden çağrılara 15 sn tanınır.
 Süre dolarsa kalan satırları lease mekanizması geri alır.
 
+Compose'ta `api` servisi için `stop_grace_period: 20s` tanımlıdır; Docker'ın
+varsayılanı 10 sn olduğu için tanımlanmazsa süreç 15 sn dolmadan `SIGKILL` alır.
+`go run` PID 1 olunca `SIGTERM`'i uygulamaya iletmediği için servis önce
+derler, sonra ikiliyi `exec` ile çalıştırır. `worker` eklenince aynı iki ayar
+onun için de uygulanır.
+
 ## 9. İçerik akışı ve yeniden bağlanma
 
 - **JSON ve içerik akışı:** Model yalnızca `sms_text`, `email_subject` ve
@@ -285,7 +322,7 @@ Süre dolarsa kalan satırları lease mekanizması geri alır.
 
 | Nokta | Kontrol |
 | --- | --- |
-| Segment çıktısı | JSON şema → mantıksal alan → sabit eşleme tablosu → tip/aralık/derinlik → parametreli SQL |
+| Segment çıktısı | JSON şema → mantıksal alan → sabit eşleme tablosu → tip/aralık/derinlik → boş `unsupported` → parametreli SQL. Düzeltme yalnızca söz dizimi hatasında. |
 | Filtresiz veya sıfır uygun alıcı | Onaya açılmaz. |
 | İzin | Yalnızca açıkça izin verilmiş alıcılar sayılır ve fan-out'a eklenir. Kayıt yoksa izin yoktur. Gönderimde limiter beklemesinden sonra tekrar kontrol edilir. |
 | İçerik çıktısı | JSON şema → değişken whitelist → rune uzunluğu (en uzun gerçek ad ile) |

@@ -65,30 +65,101 @@ genişletir.
 
 ## Şu an — PostgreSQL, seed ve segment önizleme
 
-**Branch:** `feat/segment-preview` (Oğuzhan güncel `main`'den açar)
+**Branch:** `feat/segment-preview`
 
-- [ ] `CLAUDE.md` (branch ve CI kuralları), `DECISIONS.md` (ADR-017, ADR-018),
-  `docs/specs/` altındaki dört spec, backend klasörleri ve Session-01 export
-  güncellemesi PR #1'e girmedi. Oğuzhan bunları `chore/project-setup`
-  üzerinden ikinci bir PR ile `main`'e alır. `feat/segment-preview` bu merge'den
-  sonra güncel `main`'den açılır.
-- [ ] PostgreSQL'i Compose'a ekle. Veritabanı hazır olduğunda migration ve
-  seed otomatik çalışsın. Seed tekrar çalıştırılınca kayıtlar çoğalmasın.
-- [ ] Birkaç bin sahte kullanıcı üret. Örnek brief için tarih sınırı,
-  satın alma ve kanal izni senaryolarını içeren sabit örnekler ekle.
-- [ ] `SEG-001` taslağı eklendi. Desteklenen filtreleri ve 30 günlük kuralın
-  anlamını kısa, test edilebilir maddelerle netleştir.
-- [ ] MockLLM segment çıktısını backend'de doğrula. SQL alanlarını sabit
-  eşlemeden seç, filtre değerlerini parametre olarak bağla.
-- [ ] Vue uygulamasını Compose'a ekle. Örnek brief için toplam, SMS'e uygun
-  ve e-postaya uygun kitle sayılarını arayüzde göster. (Vue, Compose'a
-  Vite dev server olarak eklendi; kitle sayıları henüz yok.)
-- [ ] `.env.example` ekle. Gerçek entegrasyon `ANTHROPIC_API_KEY` değerini
-  yerel `.env` üzerinden alsın. Demo ve testler MockLLM ile çalışsın.
-  (`.env.example` ve Compose'ta `LLM_PROVIDER` ile `ANTHROPIC_API_KEY`
-  geçişi hazır; Claude adaptörü ve MockLLM henüz yok.)
-- [ ] PostgreSQL gerektiren test eklenince CI'a Postgres adımını da ekle
-  (ADR-015, ADR-017).
+- [x] Kurallar, ADR'ler, spec'ler ve backend klasörleri PR #2 ile `main`'e
+  alındı. Bu aşamanın seçimleri ADR-019'a ve ADR-003 güncellemesine yazıldı.
+- [x] PostgreSQL Compose'a eklendi (`postgres` servisi).
+- [ ] Veritabanı hazır olduğunda migration ve seed otomatik çalışsın
+  (aşağıdaki `cmd/migrate` ve `cmd/seed` maddesi).
+- [x] Üç bine yakın sahte kullanıcı ve örnek brief için sabit senaryo
+  kullanıcıları (`internal/seed`). Seed tekrar çalışınca kayıtlar çoğalmaz.
+- [x] `SEG-001` içinde desteklenen filtreler, sınırlar, 30 günlük pencere ve
+  sebep kodları netleştirildi.
+- [x] Segment çekirdeği (`backend/internal/segment`): doğrulayıcı, parametreli
+  SQL üretimi, düzeltme akışı (yalnızca söz dizimi hatasında bir deneme),
+  zaman aşımı ve `429` ayrımı. Unit ve fuzz testleri geçiyor.
+- [x] `LLM` arayüzü, kural tabanlı MockLLM ve testler için `Scripted`
+  istemci (`backend/internal/llm`).
+- [x] İlk migration (`backend/migrations/00001_init_segment_preview.sql`,
+  goose): `users`, `user_consents`, `campaigns`. `campaigns.segment` için
+  veritabanı `CHECK` constraint'i. Yalnızca `campaigns_test`'te
+  doğrulandı.
+- [x] Test altyapısı (`internal/testdb`): `campaigns_test` oluşturma,
+  migration, veritabanı adı doğrulaması. `make test` önce yalnızca
+  `postgres` servisini başlatır.
+- [x] Entegrasyon testleri (`backend/tests/integration`): tablo
+  constraint'leri, segment constraint'i (yanlış tipler, boş diziler, sınırlar),
+  Go doğrulayıcısı ile veritabanının tutarlılığı (yalnızca test edilen
+  senaryolarda), saklama round-trip'i ve gerçek PostgreSQL'de kitle sayıları
+  (izin, 30 gün sınırı, sıfır eşleşme).
+- [x] `internal/database` (bağlantı ve migration), `internal/seed`,
+  `internal/campaign` (draft kaydet ve kimlikle oku) ve `internal/audience`
+  (üç kitle sayısı) paketleri. Seed deterministiktir: tarihler yalnızca
+  kullanıcı ilk oluşturulurken referans zamana göre yazılır, tekrar
+  çalışmada var olan tarihlere ve izinlere dokunulmaz (ADR-019
+  güncellendi). Kitle sayıları Go'da bağımsız hesaplanan oracle ile
+  karşılaştırıldı. Hepsi yalnızca `campaigns_test`'te doğrulandı.
+- [x] `cmd/migrate` ve `cmd/seed` komutları ve Compose servisleri. Sıra
+  ADR-013 taslağındaki gibi: `postgres` (healthy) → `migrate` → `seed` →
+  `api`. Backend imajı bağımlılıkları artık imaj yapımında indirir.
+  Konteyner içinden yalnızca `campaigns_test`'te doğrulandı: migrate
+  tamamlandı, seed ilk çalıştırmada 3009 kullanıcı ekledi, ikinci
+  çalıştırmada 0 ekledi ve 3009 atladı. Geliştirme veritabanında
+  `docker compose up` ile migration ve seed'i Oğuzhan çalıştırır.
+- [x] `internal/httpapi` paketi (ADR-020) ve kampanya önizleme endpoint'leri:
+  `POST /api/campaigns` ve `GET /api/campaigns/{id}`. Handler'lar yalnızca
+  HTTP işini yapar. Sözleşme ARCHITECTURE §5'te. `UPDATE` endpoint'i kapsam
+  dışı bırakıldı. Handler unit testleri (`httptest`, sahte bağımlılıklar) ve
+  gerçek PostgreSQL ile entegrasyon testleri (`tests/integration/api_test.go`)
+  geçiyor. Gerçek `cmd/api` ikilisi `campaigns_test`'e yönelterek `curl` ile
+  denendi.
+- [x] Desteklenmeyen segment API tarafında: `422` `SEGMENT_INVALID` sebep
+  kodlarıyla döner, kampanya oluşmaz (gerçek PostgreSQL ile doğrulandı), LLM
+  zaman aşımı `504`, `429` `503`. Arayüzde sebep gösterimi ve brief
+  düzenleme Vue adımında yapılacak.
+- [x] `cmd/api` artık `SIGTERM`/Ctrl+C ile düzgün kapanıyor (devam eden
+  isteklere en fazla 15 sn). Düzeltilen hata: sinyal yakalanıyor ama sunucu
+  bağlamı izlemediği için süreç kapanmıyordu; regresyon testleri eklendi.
+- [x] Düzeltilen hata: geçerli JSON'dan sonra 64 KiB'lik boşluk gelen gövde
+  `413` yerine `400` dönüyordu. Gövde sonu kontrolü (`dec.Token()`)
+  `MaxBytesError`'ı "fazladan veri"ye çeviriyordu. Önce başarısız olan
+  regresyon testi (geçerli JSON + 64 KiB boşluk, 1 bayt fazla, parçalı gövde)
+  ve tam sınırdaki gövdenin kabul edildiği test eklendi. Kapsam bilerek
+  yalnızca bu kök nedenle sınırlı: `Content-Length` ön kontrolü, BOM toleransı
+  ve gövde hatalarının sebebini ayırt edilebilir yapma (`reasons`) yapılmadı.
+- [x] Konteynerde düzgün kapanış: `api` için `stop_grace_period: 20s`
+  (Docker varsayılanı 10 sn, uygulamanın 15 sn'lik süresini kesiyordu) ve
+  `go run` yerine derle + `exec` (PID 1 olan `go run` SIGTERM'i iletmiyor,
+  `api durdu` logu hiç yazılmıyordu, çıkış kodu 143'tü). `campaigns_test`'e
+  bağlı geçici konteynerde ölçüldü: önce 143 ve log yok, sonra çıkış kodu 0,
+  `api durdu` logu, 0,4 sn. Otomatik test yok (Docker gerektirir). `worker`
+  eklenince aynı iki ayar uygulanacak.
+- [x] Vue kitle önizleme ekranı (`frontend/src`): brief girişi, toplam, SMS'e
+  uygun ve e-postaya uygun sayılar, doğrulanmış yapıdan üretilen koşul özeti,
+  `SEGMENT_INVALID` sebeplerinin Türkçe gösterimi (brief düzenlenebilir
+  kalır, kitle sayısı gösterilmez), boş ve uzun brief için satır içi kontrol,
+  yeniden denenebilir hatalarda "Yeniden dene", geç gelen yanıtın sonucu
+  ezmemesi. Vite dev server `/api` isteklerini API'ye yönlendirir
+  (`API_PROXY_TARGET`, Compose'ta `http://api:8081`). 73 birim testi, lint,
+  tip kontrolü ve build geçiyor. Gerçek tarayıcıda (Chromium) gerçek API ile
+  `campaigns_test` üzerinde denendi; `web` konteynerinin proxy'si `api`
+  servisine ulaştığı doğrulandı.
+- [x] shadcn-vue (Vega) kuruldu, tüm bileşenler `src/components/ui/`
+  altında (ADR-021). Mevcut ekran bozulmadı (önce/sonra 3000 stil değerinde
+  fark yok). Tip kontrolü, lint, 73 test ve build yeşil. Bileşenler henüz
+  ekranda kullanılmıyor. Not: `web` konteynerinin `node_modules` named
+  volume'u eski bağımlılıkları tutar; yeni bağımlılıklar için yalnızca o
+  volume silinmeli (`docker compose down` + `docker volume rm
+  campaign-tool_frontend_node_modules`). `down -v` postgres verisini de siler.
+- [x] `.env.example` ve MockLLM hazır: demo ve testler gerçek API anahtarı
+  olmadan MockLLM ile çalışıyor (`LLM_PROVIDER=mock` varsayılan, `cmd/api`
+  bağlı). Gerçek Claude entegrasyonu ayrı bir iş olarak aşağıda
+  ("3. Gerçek Claude entegrasyonu") duruyor ve bu aşamanın çıkış koşuluna
+  dahil değil.
+- [x] CI: Backend işi `make test` çalıştırdığı için `postgres` servisini
+  Compose ile başlatır. Go bağımlılık cache'i açıldı. İlk Actions sonucu
+  bekleniyor.
 
 **Çıkış koşulu:** Compose ile açılan arayüz, gerçek API anahtarı olmadan
 seed verisi üzerinden beklenen kitle sayılarını gösteriyor. CI yeşil.
@@ -102,8 +173,9 @@ adları öneridir.
 
 **Branch:** `feat/content-approval`
 
-- [ ] Claude adaptörünü ekle. Segment çıktısını ve tamamlanan içerik
-  çıktısını backend'de doğrula.
+- [ ] Tamamlanan içerik çıktısını (JSON) backend'de doğrula. MockLLM ile
+  çalışır. Segment çıktısı doğrulaması bitti. Gerçek Claude adaptörü ayrı iş
+  (3. Gerçek Claude entegrasyonu).
 - [ ] SMS ve e-posta taslaklarını SSE ile canlı göster. Tamamlanan geçerli
   taslağı kaydet. Kesilen stream'deki eksik taslağı onaya açma.
 - [ ] İnsan düzenlemelerini doğrula ve yeni bir içerik sürümü olarak kaydet.
@@ -134,6 +206,24 @@ gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
 **Çıkış koşulu:** İlk HTTP yanıtı kaybolduğunda retry yapılır, provider
 yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
 
+### 3. Gerçek Claude entegrasyonu (isteğe bağlı, ayrı iş)
+
+**Branch:** `feat/claude-adapter`
+
+API anahtarı şu an eklenmeyecek. Demo ve testler MockLLM ile devam ediyor.
+Anahtar eklenirse yapılacaklar:
+
+- [ ] `llm.Client` arayüzünü Anthropic API ile uygulayan adaptör. `ANTHROPIC_API_KEY`
+  yalnızca yerel `.env` üzerinden okunur, repoya veya çıktıya girmez.
+- [ ] `LLM_PROVIDER=anthropic` seçilebilir olsun. Zaman aşımı ve `429`,
+  mevcut `llm.ErrTimeout` ve `llm.ErrRateLimited` hatalarına eşlensin.
+- [ ] Otomatik testler anahtar gerektirmeden sahte bir HTTP sunucusuyla
+  çalışsın. Gerçek anahtarla örnek brief elle doğrulansın.
+
+**Çıkış koşulu:** Anahtar varken örnek brief gerçek Claude ile aynı
+doğrulayıcıdan geçerek kitle sayısı üretiyor. `make test` anahtarsız geçmeye
+devam ediyor.
+
 ## Teslim doğrulaması
 
 - [ ] Temiz bir klonda **`docker compose up`** ile Vue, Go API, PostgreSQL,
@@ -150,8 +240,11 @@ yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
 ## Açık konular
 
 - ADR-013'teki Compose başlatma sırası onay bekliyor.
-- Web şu an Vite dev server ile çalışıyor ve `/api` proxy'si yok. Teslimden
-  önce nginx'e geçilecek (ADR-014).
+- Web Vite dev server ile çalışıyor; `/api` proxy'si yalnızca geliştirme
+  içindir. Teslimden önce nginx'e geçilecek (ADR-014).
+- `frontend/e2e/vue.spec.ts` yalnızca başlığı doğrulayacak şekilde
+  güncellendi ama çalıştırılmadı: Playwright'ın beklediği tarayıcı sürümü
+  (1255) kurulu değil, makinede 1200 var. CI Playwright çalıştırmıyor.
 - Test klasör yapısı ADR-018 ile onaylandı: unit testler kodun yanında,
   integration ve e2e `backend/tests/` altında. `backend/cmd/api` ve healthz
   kodu yerinde kalır. `backend/internal/` boş, paketler (worker, seed, queue,
@@ -169,7 +262,6 @@ yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
   netleştirilecek (SEG-001, CNT-001).
 - `queue_depth` yalnızca `queued` mesajları sayacak. `ratelimit_wait_seconds`
   türü belirlenmedi.
-- API'de graceful shutdown yok.
 - CI'da ek Go lint aracı (`golangci-lint` gibi) yok. CI `gofmt` ve
   `go vet` ile başlıyor. Yeni araç bağımlılık kararıdır ve önce Oğuzhan'a
   sorulur.
@@ -191,12 +283,15 @@ yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
 - **Çalıştırılan komut ve sonuç (yerel):** `go mod verify`,
   `go mod tidy -diff`, `gofmt -l`, `go vet ./...` temiz. Kökten `make test`
   geçti. Frontend'de Node 24 ile `npm ci`, `oxlint .`, `eslint .`,
-  `npm run test:unit -- --run` (1 test) ve `npm run build` geçti.
+  `npm run test:unit -- --run` (73 test) ve `npm run build` geçti.
   `docker compose config --quiet` çıkış kodu 0.
 - **Doğrulanamayan:** Claude `docker compose up` çalıştıramadı (izin
   reddedildi), bu yüzden Compose üzerinden çalıştırma yalnızca Oğuzhan'ın
   doğrulamasına dayanıyor. CI'ın Compose işi yalnızca yapılandırmayı
   doğrular.
-- **Sıradaki iş:** Güncel `main`'den `feat/segment-preview` branch'ini aç
-  (Oğuzhan), PostgreSQL, seed ve segment önizleme aşamasına başla.
+- **Sıradaki iş:** Oğuzhan `docker compose up` ile (dev veritabanında
+  migration ve seed çalışır) arayüzü `http://127.0.0.1:8080` üzerinde dener,
+  commit ve push yapar, PR'daki Checks sonucuna bakar. Yeşilse PR squash
+  merge edilir ve aşamanın çıkış koşulu sağlanmış olur. Ardından güncel
+  `main`'den yeni branch açılıp içerik üretimi aşamasına geçilir.
   Migration dosyaları yalnızca Oğuzhan isteyince yazılır.

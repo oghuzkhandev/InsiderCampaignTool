@@ -34,6 +34,17 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   Bilinmeyen alan, geçersiz operatör, uyumsuz tip, geçersiz aralık, boş
   filtre ve aşırı iç içe yapı reddedilir. Beklenen davranışlar `SEG-001`
   spec'inde tanımlanır.
+- **Güncelleme (onaylandı):** DSL bu aşamada düz bir AND listesidir. Çıktı
+  zorunlu bir `unsupported` listesi taşır ve doluysa reddedilir. Otomatik
+  düzeltme yalnızca söz dizimi hatasında (bozuk JSON, şema, değer tipi)
+  yapılır. Desteklenmeyen alan, operatör ve yapıda düzeltme yapılmaz.
+  Geçersiz segment `422` `SEGMENT_INVALID` ve sebep kodlarıyla döner; kitle
+  sorgusu çalışmaz, kampanya oluşmaz, arayüz sebebi gösterir ve brief
+  düzenlenebilir kalır. Proje sahibinin gerekçesi: kullanıcı neyin
+  desteklenmediğini görmeli ve brief'i düzenleyebilmeli. Düzeltme, koşulu
+  sessizce silip kitleyi genişletmemeli. `unsupported` beyanı güvenilir
+  değildir; geçerli ama farklı yorumlanan çıktıyı backend tespit edemez ve
+  kural özeti ile insan onayı bu riski azaltır.
 
 ## ADR-004 — Kanal izni onayda ve gönderimde kontrol edilir
 
@@ -121,7 +132,8 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   taşıyan SSE olaylarıyla aktarır. Bunlar geçici önizlemedir. Tamamlanan
   çıktı JSON şeması ve içerik kurallarından geçmeden sürüm kaydedilmez.
 - **Düzeltme:** Tamamlanmış segment veya içerik JSON'u doğrulanamazsa hata
-  bilgileriyle bir otomatik düzeltme denemesi yapılır. İçerik düzeltmesi
+  bilgileriyle bir otomatik düzeltme denemesi yapılır. Segment için düzeltme
+  yalnızca söz dizimi hatasında yapılır (ADR-003). İçerik düzeltmesi
   arka planda biriktirilir; doğrulanıp kaydedilirse önizlemenin tamamını
   değiştirir, önceki metne eklenmez. `validated` olayı kaydedilen içeriğin
   tamamını ve sürümünü taşır. Düzeltme de başarısızsa yeni sürüm kaydedilmez;
@@ -276,3 +288,85 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   çalışır. PostgreSQL gerektiren integration ve e2e testler `backend/tests/`
   altında ayrışır; bu yüzden ayrı çalıştırılabilirler. Dosya adı testin
   çözdüğü konuyu gösterir.
+
+## ADR-019 — Segment önizleme aşamasının temel seçimleri
+
+- **Durum:** Onaylandı.
+- **Karar:**
+  - PostgreSQL erişimi için `pgx v5`, migration için `goose` kullanılır.
+    Migration SQL dosyaları `embed` ile binary'ye gömülür ve `migrate`
+    servisinde çalışır.
+  - Seed deterministiktir (sabit tohum, e-posta ile tanınan kullanıcılar).
+    Alışveriş tarihleri (`last_cart_add_at`, `last_purchase_at`) yalnızca
+    kullanıcı ilk oluşturulurken referans zamana göre yazılır. Tekrar
+    çalıştırmada (`ON CONFLICT DO NOTHING`) var olan kullanıcının tarihleri,
+    bilgileri ve izinleri değiştirilmez, silinmiş izin kayıtları geri
+    eklenmez. (Güncelleme: ilk karar tarihleri her çalışmada yenilemekti;
+    proje sahibi bunu yalnızca ilk oluşturmada yazılacak şekilde değiştirdi.)
+  - Bu aşamada `draft` kampanya kaydedilir (brief, segment `jsonb`, durum,
+    kitle sayıları). İlk migration `users`, `user_consents` ve `campaigns`
+    tablolarını içerir. `campaigns.segment` yalnızca doğrulanmış yapıyı
+    saklar ve veritabanı bu yapıyı `CHECK` constraint'iyle zorlar.
+  - Segment DSL şekli ADR-003 güncellemesindedir (düz AND listesi).
+- **Gerekçe ve sonuç:** Proje sahibi önerilen seçenekleri onayladı.
+  `pgx`, `FOR UPDATE SKIP LOCKED` ve transaction'lar için uygun native
+  sürücüdür; `goose` SQL migration'larını `embed` ile sade biçimde çalıştırır.
+  Brief "son 30 gün" dediği için tarihler referans zamana göre üretilir;
+  seed var olan veriye dokunmadığı için tekrar çalıştırmak kayıtları
+  çoğaltmaz ve elle yapılan değişiklikleri ezmez. Bilinen sınırlama:
+  kalıcı bir volume'da demo birkaç hafta sonra "son 30 gün" sayılarını
+  azaltır; temiz sayılar için volume sıfırlanır (`docker compose down -v`).
+  `campaigns` kaydı sonraki
+  aşamalarda içerik ve onay alanlarıyla aynı satıra genişler. Bu bağımlılıklar
+  ilk `go.sum` dosyasını oluşturur; CI'daki Go cache'i o zaman açılır.
+
+## ADR-020 — HTTP katmanı `internal/httpapi` içinde, `cmd/api` yalnızca bağlama
+
+- **Durum:** Onaylandı.
+- **Seçenekler:** Handler'ları `cmd/api` içinde tutmak, ayrı bir HTTP paketine
+  almak (`internal/httpapi`) veya buna ek olarak üretim akışı için ayrı bir
+  servis paketi açmak.
+- **Karar:** Handler'lar `backend/internal/httpapi` paketinde yaşar ve
+  yalnızca HTTP işini yönetir: yönlendirme, istek ve yanıt dönüşümü, durum
+  kodları, hata eşlemesi. Doğrulama `segment` gibi mevcut paketlerde, SQL ise
+  `campaign`, `audience`, `seed` ve `database` paketlerinde kalır.
+  `cmd/api` yalnızca bağlama yapar (yapılandırma, veritabanı, LLM istemcisi,
+  sunucu); mevcut healthz kodu yerinde kalır. Handler'lar bağımlılıklara küçük
+  arayüzlerle bağlanır. Bağımlılık yönü: `cmd/api` → `httpapi` → `segment`,
+  `audience`, `campaign`, `llm`. Üretim akışı için ayrı servis paketi
+  şimdilik açılmaz; akış büyürse ayrı pakete çıkarılır.
+- **Gerekçe ve sonuç:** Proje sahibinin gerekçesi: her yeni endpoint
+  `cmd/api`'yi şişirir ve temiz mimariye önem verilmeli. Ek sonuç: `package
+  main` başka bir pakete import edilemediği için `cmd/api` içindeki
+  handler'lara `backend/tests/` altındaki integration ve e2e testler
+  (ADR-018) erişemezdi; ayrı pakette gerçek veritabanıyla `httptest` ile
+  sınanabilirler. Hangi endpoint'lerin yazılacağı (kapsam) ayrı bir karardır
+  ve bu ADR'nin dışındadır.
+
+## ADR-021 — Arayüz bileşenleri için shadcn-vue (Vega stili)
+
+- **Durum:** Onaylandı.
+- **Karar:** Arayüz bileşenleri `shadcn-vue` ile kurulur: Tailwind CSS v4,
+  Reka UI tabanı, Vega stili, Lucide ikonları. Tüm bileşenler tek komutla
+  (`npx shadcn-vue@latest add --all`) `frontend/src/components/ui/` altına
+  eklenir ve proje içinde kalır (bağımlılık değil, kaynak kod). Mevcut ekran
+  şimdilik kendi bileşenleriyle çalışır; shadcn bileşenleri ileride
+  kullanılacak.
+- **Gerekçe ve sonuç:** Proje sahibinin gerekçesi: sade ve şık görünüm, süslü
+  efektlere gerek yok, hazır bileşenler tek komutla gelsin. Kurulum sonuçları:
+  - Tailwind'in `preflight` sıfırlaması mevcut ekranı bozuyordu; bileşenlere
+    açık stiller eklendi (madde işareti, başlık kalınlığı, boşluklar, genişlik).
+    Önce/sonra 3000 hesaplanmış stil değerinde fark yok.
+  - Kendi CSS değişkenlerimiz `--app-*` olarak yeniden adlandırıldı (shadcn'ın
+    `--border`, `--muted`, `--accent` değişkenleriyle çakışıyordu).
+  - Üretilmiş `src/components/ui/**` eslint'ten hariç tutuldu (54 hata, hepsi
+    üretilmiş kodda).
+  - `chart` bileşeni için `@unovis/vue` ve `@unovis/ts` elle eklendi (CLI
+    kurmuyor). `shadcn-vue` yalnızca derleme zamanı olduğu için
+    `devDependency`.
+  - CSS'e eklenen harici Google Fonts isteği kaldırıldı, sistem fontu kullanılır.
+  - Bedeli: 13 yeni çalışma zamanı bağımlılığı, ~200 KB CSS (JS aynı), `npm
+    audit` çıktısında ~6 yüksek seviyeli geçişli paket (derleme zamanı).
+  - Koyu tema: shadcn `.dark` sınıfı bekler, mevcut ekran
+    `prefers-color-scheme` kullanır. Bileşenler kullanılmaya başlanınca
+    karara bağlanacak.

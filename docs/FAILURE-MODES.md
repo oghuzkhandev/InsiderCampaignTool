@@ -6,13 +6,18 @@ Her satırda iddia ile kanıt yan yana: **ölçülebilir beklenen davranış** v
 
 | Senaryo | Beklenen davranış | Test |
 | --- | --- | --- |
-| Segment çıktısı bozuk/JSON değil | Backend bir düzeltme denemesi yapar; çıktı hâlâ geçersizse `SEGMENT_INVALID` döner. | Unit · SEG-001 |
-| MockLLM desteklenmeyen alan, operatör veya SQL benzeri değer üretir | Backend, desteklenmeyen alan veya operatör içeren geçersiz yapıyı kitle sorgusu çalıştırmadan reddeder. Kabul edilen değer SQL metnine girmez, yalnızca argüman olarak bağlanır; sorgu metni zararsız değerle aynıdır. | Unit + fuzz · SEG-001 |
-| Boş brief veya yalnızca boşluk | Reddedilir, LLM çağrılmaz | Unit · SEG-001 |
+| Segment çıktısı bozuk/JSON değil | Backend bir düzeltme denemesi yapar; çıktı hâlâ geçersizse `SEGMENT_INVALID` (422) döner, kampanya oluşmaz. | Unit · SEG-001 |
+| MockLLM desteklenmeyen alan, operatör veya SQL benzeri değer üretir | Backend, desteklenmeyen alan veya operatör içeren geçersiz yapıyı kitle sorgusu çalıştırmadan reddeder. Kabul edilen değer SQL metnine girmez, yalnızca argüman olarak bağlanır; sorgu metni zararsız değerle aynıdır. Düzeltme denemesi yapılmaz; `SEGMENT_INVALID` (422) sebep kodlarıyla döner. | Unit + fuzz · SEG-001 |
+| Model brief'in ifade edemediği kısmı bildirir (`unsupported` dolu) veya farklı alanlar arası OR gibi desteklenmeyen yapı üretir | Çıktı düzeltmeden reddedilir. `SEGMENT_INVALID` (422) sebep kodlarıyla döner, kitle sorgusu çalışmaz, kampanya oluşmaz. Arayüz sebebi Türkçe gösterir, brief dolu ve düzenlenebilir kalır, kitle sayısı gösterilmez. | Unit + Integration + Frontend · SEG-001 |
+| Model brief'i geçerli ama farklı yorumlar (ör. OR'u AND'e çevirir) | Backend tespit edemez (bilinen sınırlama). Arayüz anlaşılan kuralları özet gösterir, insan onayı son kontroldür. | Frontend · SEG-001 (özetin gösterilmesi) |
+| Boş brief veya yalnızca boşluk | `422 BRIEF_EMPTY`, LLM çağrılmaz | Unit + Integration · SEG-001 |
+| Geçersiz istek gövdesi (bozuk JSON, bilinmeyen alan, yanlış içerik türü) | `400` veya `415`; segment üretimi, kitle sorgusu ve kayıt çağrılmaz | Unit · SEG-001 |
+| İstek gövdesi 64 KiB sınırını aşar (tek büyük değer veya geçerli JSON sonrası fazla boşluk) | `413 REQUEST_TOO_LARGE`; tam sınırdaki gövde kabul edilir; bağımlılıklar çağrılmaz | Unit · SEG-001 |
+| API içinde beklenmeyen hata (DB, bağlantı) | `500 INTERNAL`, ayrıntı yalnızca loga yazılır, istemciye sızmaz | Unit · SEG-001 |
 | Brief içinde talimat/injection | Davranış prompt'a değil backend doğrulamasına dayanır; aynı reddetme testleri geçerli | Unit (MockLLM) · SEG-001 · CNT-001 |
 | Filtresi olmayan kural (tüm kullanıcılar) | Filtresiz segment kuralı içeren kampanya onaya açılmaz. | Unit · SEG-001 |
 | Geçerli kural ama sıfır uygun alıcı | Onay 422, mesaj oluşmaz | Integration |
-| LLM zaman aşımı / 429 | Zaman aşımı hatası, arayüzde "yeniden dene". Segment için kitle sorgusu çalışmaz, içerik için sürüm kaydedilmez; kısmi içerik onaya açılmaz. Otomatik düzeltme yapılmaz. | Unit (MockLLM gecikme ve 429) · SEG-001 · CNT-001 |
+| LLM zaman aşımı / 429 | Zaman aşımı `504 LLM_TIMEOUT`, 429 `503 LLM_RATE_LIMITED`; arayüzde "yeniden dene". Segment için kitle sorgusu çalışmaz, içerik için sürüm kaydedilmez; kısmi içerik onaya açılmaz. Otomatik düzeltme yapılmaz. | Unit (MockLLM gecikme ve 429) · SEG-001 · CNT-001 |
 
 ## İçerik ve onay
 
