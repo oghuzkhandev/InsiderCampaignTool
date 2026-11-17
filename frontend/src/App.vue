@@ -1,11 +1,18 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { RouterView } from 'vue-router'
+</script>
 
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <div class="page">
+    <RouterView />
+  </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.page {
+  /* preflight border-box: 48rem içerik + 2rem yatay padding */
+  max-width: calc(48rem + 2rem);
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+</style>
