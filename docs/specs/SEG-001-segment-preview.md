@@ -10,7 +10,8 @@ ulaşabileceğini kanal bazında görür.
 ## Beklenen davranış
 
 - Boş brief reddedilir ve LLM çağrılmaz. Yalnızca boşluk karakterlerinden
-  oluşan brief de boş sayılır.
+  oluşan brief de boş sayılır. API `422` `BRIEF_EMPTY` döner; sınırı aşan brief
+  için `422` `BRIEF_TOO_LONG`.
 - Kullanıcı brief'i gönderdiğinde Claude veya MockLLM yalnızca
   yapılandırılmış JSON biçiminde segment kuralı üretir.
 - Backend tamamlanan JSON'u şema, desteklenen alan, operatör, değer tipi,
@@ -22,9 +23,34 @@ ulaşabileceğini kanal bazında görür.
   sabit alan ve operatör eşlemeleriyle oluşturur.
 - Filtre değerleri SQL metnine eklenmez; yalnızca sorgu parametresi olarak
   bağlanır. SQL benzeri metin içeren bir değer sorgunun yapısını değiştirmez.
-- Tamamlanmış segment JSON'u geçersizse doğrulama hatalarıyla birlikte bir
-  otomatik düzeltme denemesi yapılır.
-- Düzeltme de geçersizse `SEGMENT_INVALID` döner ve kitle sorgusu çalıştırılmaz.
+- Segment JSON'u söz dizimi hatası içeriyorsa (bozuk JSON, şemaya uymayan
+  yapı, yanlış değer tipi) doğrulama hatalarıyla birlikte bir otomatik
+  düzeltme denemesi yapılır.
+- Desteklenmeyen alan, desteklenmeyen operatör, desteklenmeyen yapı (ör.
+  farklı alanlar arası OR, iç içe grup), geçersiz aralık, boş filtre ve dolu
+  `unsupported` listesi için düzeltme denemesi yapılmaz. Model koşulu sessizce
+  silip kitleyi genişletemez.
+- Segment çıktısı zorunlu bir `unsupported` listesi taşır. Model, brief'in
+  DSL ile ifade edemediği kısımları bu listeye yazar. Liste doluysa çıktı
+  reddedilir.
+- Düzeltme de geçersizse veya hata düzeltilemeyen türdeyse `SEGMENT_INVALID`
+  döner. Kitle sorgusu çalıştırılmaz ve kampanya kaydı oluşturulmaz.
+- `SEGMENT_INVALID` yanıtı HTTP `422` döner ve sebep kodlarının listesini
+  taşır (ör. `UNSUPPORTED_FIELD`, `UNSUPPORTED_OPERATOR`,
+  `UNSUPPORTED_STRUCTURE`, `UNSUPPORTED_PART`). Model çıktısı kullanıcıya ham
+  olarak gösterilmez. `unsupported` öğeleri düz metin olarak, backend'in
+  uyguladığı sayı ve uzunluk sınırıyla gösterilir.
+- Arayüz sebepleri Türkçe açıklama olarak gösterir. Brief kutusu dolu ve
+  düzenlenebilir kalır, kullanıcı brief'i düzenleyip yeniden gönderebilir.
+  Hata durumunda kitle sayıları gösterilmez.
+- Kampanya kaydı yalnızca segment doğrulandıktan ve kitle sayıları
+  hesaplandıktan sonra `draft` olarak oluşturulur.
+- Kampanyada modelin ham metni değil, doğrulanmış segment yapısı
+  (`{"all":[{"field","op","value"}]}`) saklanır. Veritabanı aynı yapıyı
+  constraint ile zorlar; boş `all`, 10'dan fazla koşul, bilinmeyen alan veya
+  operatör, yanlış tip ve fazladan anahtar kaydedilemez.
+- Geçerli segmentte arayüz, anlaşılan kuralları doğrulanmış segment
+  yapısından üretilen okunur bir özetle kitle sayılarıyla birlikte gösterir.
 - Brief güvenilmeyen girdidir. Brief içindeki talimatlar backend doğrulamasını
   atlatamaz. Model brief'teki talimata uyup geçersiz veya filtresiz bir kural
   üretse de aynı doğrulama onu reddeder.
@@ -32,6 +58,8 @@ ulaşabileceğini kanal bazında görür.
   hata döner. Kitle sorgusu çalıştırılmaz, kampanya onaya açılmaz. Arayüz
   yeniden deneme seçeneği sunar ve kullanıcı brief'i yeniden gönderebilir.
   Tamamlanmış bir çıktı olmadığı için otomatik düzeltme denemesi yapılmaz.
+  API zaman aşımında `504` `LLM_TIMEOUT`, modelin `429` yanıtında `503`
+  `LLM_RATE_LIMITED` (`Retry-After` ile) döner.
 - Geçerli bir kural için toplam eşleşen kişi, SMS'e uygun kişi ve e-postaya
   uygun kişi sayıları ayrı gösterilir.
 - Toplam kişi sayısı kanal izninden bağımsızdır. Kanal bazındaki uygun sayıya
@@ -42,8 +70,25 @@ ulaşabileceğini kanal bazında görür.
 - Geçerli bir kural sıfır kişiyle eşleşebilir. Önizleme `0` gösterir.
 - Toplam eşleşen kişi olsa bile hiçbir kanalda uygun alıcı bulunmayan
   kampanya gönderime onaylanamaz.
-- Örnek brief için taslak yorum, son 30 günde sepete eklemiş ve aynı
-  30 günlük dönemde satın almamış İstanbul kullanıcılarını seçmektir.
+- Desteklenen koşullar `all` listesinde AND ile birleşir: `city` (`eq`, `in`),
+  `last_cart_add_at` ve `last_purchase_at` (`within_last_days`,
+  `not_within_last_days`), `order_count` (`eq`, `gte`, `lte`).
+- Sınırlar: en fazla 10 koşul. `in` en fazla 10 değer, her değer en fazla 64
+  karakter. Gün sayısı 1-365, `order_count` değeri 0-100000 aralığında tam
+  sayı. Brief en fazla 1000 karakter. `unsupported` için en fazla 5 öğe
+  gösterilir, her öğe en fazla 200 karaktere kırpılır.
+- `city` eşleşmesi tam ve büyük/küçük harfe duyarlıdır. Model şehri kayıtlı
+  yazımıyla verir (ör. `İstanbul`).
+- `within_last_days` n: alan değeri, referans zamandan n×24 saat önceki an
+  (dahil) ile referans zaman arasında olmalıdır. `not_within_last_days` n:
+  alan boş (hiç olmamış) veya bu sınırdan önce olmalıdır. Zamanlar UTC'dir,
+  bir gün 24 saattir, referans zaman istek anıdır.
+- Örnek brief şu koşullara dönüşür: `city eq İstanbul`, `last_cart_add_at
+  within_last_days 30`, `last_purchase_at not_within_last_days 30`. Yani son
+  30 günde sepete eklemiş ve aynı dönemde satın almamış İstanbul kullanıcıları.
+- Sebep kodları: `MALFORMED_OUTPUT` ve `INVALID_VALUE_TYPE` (düzeltilebilir),
+  `INVALID_RANGE`, `EMPTY_FILTER`, `UNSUPPORTED_FIELD`,
+  `UNSUPPORTED_OPERATOR`, `UNSUPPORTED_STRUCTURE`, `UNSUPPORTED_PART`.
 
 ## Doğrulama
 
@@ -63,6 +108,19 @@ ulaşabileceğini kanal bazında görür.
   bağlı parametreleri değiştirdiğini test et.
 - Bozuk JSON'un tek düzeltmeyle geçerli hâle gelmesini ve düzeltmenin de
   başarısız olması durumunda `SEGMENT_INVALID` dönmesini test et.
+- Desteklenmeyen alan, operatör, yapı ve dolu `unsupported` için düzeltme
+  çağrısı yapılmadığını (MockLLM tek çağrı), `422` ve ilgili sebep kodlarını,
+  kitle sorgusunun çalışmadığını ve `campaigns` tablosunda satır
+  oluşmadığını gerçek PostgreSQL ile doğrula.
+- Arayüzde hata durumunda sebebin Türkçe gösterildiğini, brief'in dolu ve
+  düzenlenebilir kaldığını ve kitle sayılarının gösterilmediğini doğrula.
+  Brief düzenlenip MockLLM geçerli yanıt verdiğinde önizlemenin başarılı
+  olduğunu doğrula.
+- Geçerli segmentte kural özetinin doğrulanmış yapıdan üretildiğini ve
+  kitle sayılarıyla birlikte gösterildiğini doğrula.
+- Veritabanı constraint'ini yanlış tip, boş dizi, `null`, eksik veya fazla
+  anahtar ve sınır değerleriyle test et. Aynı segmentler için Go
+  doğrulayıcısı ile veritabanının aynı kararı verdiğini doğrula.
 - PostgreSQL'de sonucu belli bir veri setiyle toplam ve iki kanal sayısını
   doğrula. İki kanala izinli, yalnızca tek kanala izinli, izni reddedilmiş
   ve izin kaydı olmayan kullanıcıları kapsa.
@@ -75,11 +133,16 @@ ulaşabileceğini kanal bazında görür.
 
 ## Açık noktalar
 
-- Desteklenen alan ve operatör listesi ile değer, filtre sayısı ve derinlik
-  sınırları segment geliştirmesine başlanırken kesinleştirilmelidir.
-- 30 günlük pencerenin sınır eşitlikleri ve saat dilimi davranışı aynı
-  aşamada açıkça tanımlanmalıdır.
-- Azami brief uzunluğu segment geliştirmesinde belirlenmelidir.
+- Şehir adı eşleşmesi büyük/küçük harfe duyarlıdır. `Istanbul` ile `İstanbul`
+  farklı değerlerdir. Normalizasyon sonraya bırakıldı.
+- Bilinen sınırlama: Go ve veritabanı doğrulayıcıları ayrı kodlardır. Aynı
+  kararı verdikleri yalnızca testlerdeki senaryolar için doğrulanmıştır;
+  başka girdilerde farklılaşabilirler (ör. NBSP gibi Unicode boşluklar yalnızca
+  Go tarafında yakalanır).
+- Bilinen sınırlama: Model brief'i geçerli ama farklı yorumlayabilir (ör. OR'u
+  AND'e çevirebilir). Backend niyeti bilemediği için bunu tespit edemez.
+  `unsupported` beyanı güvenilir değildir ve doğrulamanın yerini tutmaz. Kural
+  özeti ve insan onayı bu riski azaltır.
 
 ## İlgili belgeler
 

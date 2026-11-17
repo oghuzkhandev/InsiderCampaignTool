@@ -9,9 +9,19 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
   PostgreSQL erişimi, kuyruk worker'ı ve mock SMS/e-posta sağlayıcısı.
   Migration,
   demo kullanıcı verisini oluşturan seed ve Go testleri de burada yer alır.
-  - backend/cmd/ — Çalıştırılabilir komutlar. Şu an yalnızca `api`.
+  - backend/cmd/ — Çalıştırılabilir komutlar: `api`, `migrate` (bekleyen
+    migration'ları uygular) ve `seed` (demo kullanıcılarını yazar).
   - backend/internal/ — Uygulama paketleri. Unit testler (`*_test.go`)
     test ettikleri paketin yanında durur.
+    - `httpapi` — API'nin HTTP katmanı (yönlendirme, handler'lar, durum
+      kodları). İş kuralı ve SQL içermez.
+    - `database` — PostgreSQL bağlantısı ve migration çalıştırma.
+    - `seed` — Demo kullanıcıları ve kanal izinleri.
+    - `campaign` — Draft kampanyayı kaydetme ve kimliğiyle okuma.
+    - `audience` — Segment sorgusunu çalıştırıp üç kitle sayısını okuma.
+    - `segment` — Segment doğrulama ve parametreli SQL üretimi.
+    - `llm` — Model arayüzü, MockLLM ve test istemcisi.
+    - `testdb` — Entegrasyon testleri için `campaigns_test` hazırlığı.
   - backend/migrations/ — Veritabanı migration dosyaları. Yalnızca
     Oğuzhan isteyince eklenir.
   - backend/tests/integration/ — Gerçek PostgreSQL ile çalışan testler.
@@ -20,6 +30,14 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
     küçük harfli kelimesidir (`idempotency_test.go`, `rate-limit_test.go`).
 - frontend/ — Vue ve TypeScript arayüzü. Brief girişi, kitle önizlemesi,
   canlı içerik, taslak düzenleme, insan onayı ve gönderim takibi burada gelişir.
+  - frontend/src/api/ — API istemcisi ve hata mesajları.
+  - frontend/src/segment/ — Segmentin okunur özeti ve sebep kodlarının Türkçe
+    açıklamaları.
+  - frontend/src/components/ ve views/ — Bileşenler ve ekranlar. Testler
+    yanındaki `__tests__` klasöründedir.
+  - frontend/src/components/ui/ — `shadcn-vue` ile üretilmiş bileşenler
+    (ADR-021). Elle düzenlenmez, eslint dışındadır. `components.json` ve
+    `src/lib/utils.ts` shadcn yapılandırmasıdır.
 
 ## Kök dosyalar
 
