@@ -1,0 +1,17 @@
+# Derleme ve test çıktıları
+bin
+tmp
+*.test
+coverage.out
+
+# Yerel ortam ayarları ve gizli değerler
+.env
+.env.*
+
+# Git, editör ve Docker dosyaları
+.git
+.gitignore
+.vscode
+.idea
+Dockerfile
+.dockerignore
