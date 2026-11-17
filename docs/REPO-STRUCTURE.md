@@ -1,0 +1,69 @@
+## Repository Rehberi
+
+Projeye başlamak için önce [case brief'ini](CASE.md) oku. Güncel işi ve açık
+konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
+
+## Uygulama klasörleri
+
+- backend/ — Go API, Claude ve MockLLM entegrasyonu, segment doğrulama,
+  PostgreSQL erişimi, kuyruk worker'ı ve mock SMS/e-posta sağlayıcısı.
+  Migration,
+  demo kullanıcı verisini oluşturan seed ve Go testleri de burada yer alır.
+- frontend/ — Vue ve TypeScript arayüzü. Brief girişi, kitle önizlemesi,
+  canlı içerik, taslak düzenleme, insan onayı ve gönderim takibi burada gelişir.
+
+## Kök dosyalar
+
+- [README.md](../README.md) — Reviewer için proje özeti, doğrulanmış kurulum
+  ve test komutları, demo adımları ve bilinen sınırlamalar.
+
+- [CLAUDE.md](../CLAUDE.md) — Claude Code'un proje talimatları. Brief,
+  güncel görev, test komutları ve kritik çalışma kurallarına yönlendirir.
+
+- [DECISIONS.md](../DECISIONS.md) — Oğuzhan'ın verdiği önemli teknik
+  kararlar
+  ve gerekçeleri. Claude seçenekleri ve trade-off'ları açıklar. Oğuzhan seçimi
+  yaptıktan sonra Claude onaylanan kararı ve gerekçesini kaydedebilir.
+
+## Proje dokümantasyonu
+
+docs/, brief'i, teknik tasarımı ve geliştirme notlarını bir arada tutar.
+
+- [CASE.md](CASE.md) — Insider One'ın orijinal brief'i ve teslim şartları.
+  Gereksinimlerin ana kaynağı.
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Vue, Go API, Claude, PostgreSQL,
+  worker ve mock provider arasındaki veri akışı ve sorumluluklar.
+
+- [FAILURE-MODES.md](FAILURE-MODES.md) — Geçersiz model çıktısı, kesilen
+  stream, HTTP 429 ve kaybolan sağlayıcı yanıtı gibi durumlarda beklenen
+  davranış. Varsa ilgili teste veya spec'e bağlantı verir.
+
+- [PROGRESS.md](PROGRESS.md) — Biten işler, sıradaki görev ve açık konular.
+  GET /healthz gibi başlangıç görevleri burada takip edilir.
+
+## Özellik şartnameleri
+
+docs/specs/ gereksinimleri “Beklenen davranış” altında numarasız, kısa ve
+test edilebilir maddelerle tarif eder. Özellik kimlikleri korunur. Örneğin
+“İnsan onayı verilmeden gönderim işi oluşturulamaz.”
+
+- [README.md](specs/README.md) — Özellik şartnamelerinin dizini.
+
+- [TEMPLATE.md](specs/TEMPLATE.md) — Yeni spec için özellik kimliği, amaç,
+  beklenen davranış ve doğrulama başlıklarını içeren şablon.
+İnceleme notları
+docs/reviews/ önemli değişikliklerin inceleme bulgularını ve doğrulama
+sonuçlarını tutar. Örneğin provider yanıtı kaybolduğunda retry'ın çift gönderim
+üretmediğini gösteren test burada referans verilebilir.
+
+- [TEMPLATE.md](reviews/TEMPLATE.md) — İnceleme kapsamı, bulgular,
+  çalıştırılan kontroller ve açık noktalar için şablon.
+AI çalışma oturumları
+ai-sessions/, case boyunca gerçekleştirilen Claude Code oturumlarının
+export'larını veya Claude.ai paylaşım bağlantılarını içerir. Paylaşmadan önce
+gerçek anahtarlar ve kişisel bilgiler temizlenir.
+
+- [ai-sessions/README.md](../ai-sessions/README.md) — Oturumların tarihi,
+  aracı, konusu ve ilgili export dosyası veya paylaşım bağlantısı.
+  

@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          # Henüz bağımlılık ve go.sum yok. Eklenince cache açılabilir.
+          cache: false
+
+      - name: Bağımlılıkları doğrula
+        run: |
+          go mod verify
+          go mod tidy -diff
+
+      - name: Format (gofmt)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt gerektiren dosyalar:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (make test)
+        working-directory: .
+        run: make test
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # package-lock.json ile package.json uyuşmazsa hata verir.
+      - name: Bağımlılıkları kur (npm ci)
+        run: npm ci
+
+      # package.json'daki `lint` script'i --fix kullandığı için CI'da
+      # doğrudan araçlar çalıştırılır.
+      - name: Lint (oxlint)
+        run: npx --no-install oxlint .
+
+      - name: Lint (eslint)
+        run: npx --no-install eslint .
+
+      - name: Birim testleri
+        run: npm run test:unit -- --run
+
+      # `build` önce type-check, sonra vite build çalıştırır.
+      - name: Build
+        run: npm run build
+
+  compose:
+    name: Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Çıkış kodu 0 ise yapılandırma geçerlidir. Aksi halde adım başarısız olur.
+      - name: Compose yapılandırmasını doğrula
+        run: docker compose config --quiet
