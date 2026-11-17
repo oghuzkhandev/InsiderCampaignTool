@@ -1,0 +1,17 @@
+# Yerel ortam ayarları
+.env
+
+# Go derleme ve test çıktıları
+/backend/bin/
+*.test
+coverage.out
+
+# Vue ve Node.js
+node_modules/
+/frontend/dist/
+/frontend/coverage/
+npm-debug.log*
+
+# İşletim sistemi dosyaları
+.DS_Store
+Thumbs.db
