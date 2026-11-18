@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ApiError, createCampaign, isAbortError, type Campaign } from '@/api/campaigns'
 import { errorTitle } from '@/api/messages'
 import { reasonMessage } from '@/segment/reasons'
@@ -70,6 +71,9 @@ const reasons = computed(() =>
         <AudienceCounts :audience="campaign.audience" />
         <SegmentSummary :segment="campaign.segment" />
         <p class="draft">Taslak kampanya kaydedildi (kimlik: {{ campaign.id }}).</p>
+        <RouterLink class="next" :to="{ name: 'campaign', params: { id: campaign.id } }">
+          İçeriği hazırla
+        </RouterLink>
       </template>
     </div>
   </main>
@@ -97,5 +101,14 @@ h1 {
   margin: 0;
   color: var(--app-muted);
   font-size: 0.85rem;
+}
+.next {
+  justify-self: start;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  color: var(--app-on-accent);
+  background: var(--app-accent);
+  border-radius: 8px;
+  text-decoration: none;
 }
 </style>

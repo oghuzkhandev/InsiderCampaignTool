@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { RouterLinkStub, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import CampaignPreviewView from '../CampaignPreviewView.vue'
 import { campaignBody, deferred, errorResponse, jsonResponse } from '@/__tests__/helpers'
 
@@ -14,7 +14,7 @@ afterEach(() => {
 })
 
 function mountView() {
-  return mount(CampaignPreviewView)
+  return mount(CampaignPreviewView, { global: { stubs: { RouterLink: RouterLinkStub } } })
 }
 
 async function submit(w: VueWrapper, brief: string) {
@@ -47,6 +47,21 @@ describe('CampaignPreviewView', () => {
       ])
       expect(w.text()).toContain('498882b6-2221-4589-a99f-67ceb68c59c2')
       expect(w.find('[role="alert"]').exists()).toBe(false)
+    })
+
+    it('kaydedilen kampanyanın içerik ekranına bağlantı verir', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(201, campaignBody()))
+      const w = mountView()
+      expect(w.findComponent(RouterLinkStub).exists()).toBe(false) // önizleme yokken yok
+
+      await submit(w, 'İstanbul sepet')
+
+      const link = w.getComponent(RouterLinkStub)
+      expect(link.props('to')).toEqual({
+        name: 'campaign',
+        params: { id: '498882b6-2221-4589-a99f-67ceb68c59c2' },
+      })
+      expect(link.text()).toBe('İçeriği hazırla')
     })
 
     it('sıfır eşleşmeyi hata değil önizleme olarak gösterir', async () => {

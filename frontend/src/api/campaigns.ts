@@ -33,6 +33,15 @@ export interface ApiReason {
   code: string
   field?: string
   text?: string
+  /** Sebebin kaç alıcıyı etkilediği (ör. onayda render sınırı aşımı). */
+  count?: number
+}
+
+/** İçerik alanları (SMS, e-posta konusu ve gövdesi). */
+export interface ContentFields {
+  sms_text: string
+  email_subject: string
+  email_body: string
 }
 
 /** Sunucudan gelen veya ağ kaynaklı bir hata. */
@@ -40,13 +49,22 @@ export class ApiError extends Error {
   status: number
   code: string
   reasons: ApiReason[]
+  /** Doğrulanamayan üretimde çözümlenebilen, doğrulanmamış metinler. */
+  partial?: ContentFields
 
-  constructor(status: number, code: string, message: string, reasons: ApiReason[] = []) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    reasons: ApiReason[] = [],
+    partial?: ContentFields,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.reasons = reasons
+    this.partial = partial
   }
 
   /** Aynı brief'in yeniden denenmesi anlamlı mı? */
@@ -57,6 +75,7 @@ export class ApiError extends Error {
 
 const RETRYABLE_CODES = new Set([
   'LLM_TIMEOUT',
+  'STREAM_INTERRUPTED',
   'LLM_RATE_LIMITED',
   'INTERNAL',
   'NETWORK',
@@ -92,7 +111,7 @@ export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
 }
 
-async function readJson(response: Response): Promise<unknown> {
+export async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json()
   } catch {
@@ -100,11 +119,11 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
-function toApiError(status: number, body: unknown): ApiError {
+export function toApiError(status: number, body: unknown): ApiError {
   const error = isRecord(body) ? body.error : undefined
   if (!isRecord(error) || typeof error.code !== 'string') {
     // Ör. API kapalıyken proxy'nin döndürdüğü 502 veya HTML sayfası.
@@ -118,6 +137,7 @@ function toApiError(status: number, body: unknown): ApiError {
           code: r.code,
           field: typeof r.field === 'string' ? r.field : undefined,
           text: typeof r.text === 'string' ? r.text : undefined,
+          count: Number.isInteger(r.count) ? (r.count as number) : undefined,
         })
       }
     }
@@ -126,11 +146,11 @@ function toApiError(status: number, body: unknown): ApiError {
   return new ApiError(status, error.code, message, reasons)
 }
 
-function invalidResponse(status: number): ApiError {
+export function invalidResponse(status: number): ApiError {
   return new ApiError(status, 'UNEXPECTED_RESPONSE', 'Sunucudan beklenmeyen bir yanıt alındı.')
 }
 
-function parseCampaign(status: number, body: unknown): Campaign {
+export function parseCampaign(status: number, body: unknown): Campaign {
   if (!isRecord(body)) throw invalidResponse(status)
   const { id, brief, status: campaignStatus, segment, audience, created_at } = body
   if (
@@ -172,6 +192,6 @@ function parseCampaign(status: number, body: unknown): Campaign {
   }
 }
 
-function isCount(v: unknown): v is number {
+export function isCount(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0
 }

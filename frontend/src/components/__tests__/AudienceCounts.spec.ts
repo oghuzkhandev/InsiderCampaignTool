@@ -14,6 +14,7 @@ describe('AudienceCounts', () => {
     expect(w.text()).toContain('Toplam eşleşen kişi')
     expect(w.text()).toContain("SMS'e uygun kişi")
     expect(w.text()).toContain('E-postaya uygun kişi')
+    expect(w.get('.note').text()).toContain('adresi (telefon veya e-posta)') // ADR-023
   })
 
   it('kanal sayılarının toplamının toplam kişi olmadığını açıklar', () => {
