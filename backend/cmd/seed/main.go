@@ -1,10 +1,15 @@
 // Komut seed, demo kullanıcılarını ve kanal izinlerini yazar. Tek seferlik bir
 // servistir; DATABASE_URL ile belirtilen veritabanında çalışır. Tekrar
 // çalıştırmak var olan kullanıcılara dokunmaz.
+//
+// SEED_DATASET: "demo" (varsayılan, birkaç bin rastgele kullanıcı) veya "e2e"
+// (uçtan uca testler için küçük, kontrollü veri; yalnızca izole e2e ortamında
+// kullanılır, bkz. compose.e2e.yaml).
 package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -36,10 +41,21 @@ func run() error {
 	}
 	defer db.Close()
 
-	res, err := seed.Run(ctx, db, time.Now().UTC())
+	dataset := os.Getenv("SEED_DATASET")
+	now := time.Now().UTC()
+	var res seed.Result
+	switch dataset {
+	case "", seed.DatasetDemo:
+		dataset = seed.DatasetDemo
+		res, err = seed.Run(ctx, db, now)
+	case seed.DatasetE2E:
+		res, err = seed.RunUsers(ctx, db, seed.GenerateE2E(now))
+	default:
+		return fmt.Errorf("bilinmeyen SEED_DATASET %q (demo veya e2e)", dataset)
+	}
 	if err != nil {
 		return err
 	}
-	slog.Info("seed tamamlandı", "inserted", res.Inserted, "skipped", res.Skipped)
+	slog.Info("seed tamamlandı", "dataset", dataset, "inserted", res.Inserted, "skipped", res.Skipped)
 	return nil
 }

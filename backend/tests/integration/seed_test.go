@@ -142,3 +142,36 @@ func TestSeedRecreatesMissingUserRelativeToNewReferenceTime(t *testing.T) {
 		t.Fatalf("yeni kullanıcının izinleri yazılmalı: n=%d err=%v", consents, err)
 	}
 }
+
+// E2E veri kümesi (cmd/seed SEED_DATASET=e2e) gerçek PostgreSQL'de, kitle sayısı
+// SQL'iyle de belgelenmiş kesin sayıları verir. Frontend e2e testleri bu sayılara
+// güvenir (seed.E2EExpected).
+func TestE2EDatasetGivesTheDocumentedCountsThroughSQL(t *testing.T) {
+	db := testdb.Open(t)
+
+	res, err := seed.RunUsers(t.Context(), db, seed.GenerateE2E(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Inserted != 10 || res.Skipped != 0 {
+		t.Fatalf("10 kullanıcı yazılmalı: %+v", res)
+	}
+
+	total, sms, email := count(t, db, `{"all":[
+		{"field":"city","op":"eq","value":"İstanbul"},
+		{"field":"last_cart_add_at","op":"within_last_days","value":30},
+		{"field":"last_purchase_at","op":"not_within_last_days","value":30}]}`)
+	want := seed.E2EExpected
+	if total != want.Total || sms != want.SMS || email != want.Email {
+		t.Fatalf("toplam/sms/e-posta = %d/%d/%d, beklenen %d/%d/%d", total, sms, email, want.Total, want.SMS, want.Email)
+	}
+
+	// Tekrar çalıştırmak hiçbir şeyi değiştirmez.
+	again, err := seed.RunUsers(t.Context(), db, seed.GenerateE2E(now.Add(time.Hour)))
+	if err != nil || again.Inserted != 0 || again.Skipped != 10 {
+		t.Fatalf("tekrar çalıştırma: %+v %v", again, err)
+	}
+	if t2, s2, e2 := count(t, db, `{"all":[{"field":"city","op":"eq","value":"İstanbul"}]}`); t2 != 9 || s2 == 0 || e2 == 0 {
+		t.Fatalf("beklenmeyen kullanıcı sayısı: %d/%d/%d", t2, s2, e2)
+	}
+}
