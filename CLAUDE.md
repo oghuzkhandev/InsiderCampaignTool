@@ -80,4 +80,14 @@
   doğrulanamayanlar arasında belirt.
 - Sonunda çalıştırdığın komutları, sonuçlarını ve doğrulayamadığın noktaları
   belirt.
+
+## Claude Code çalışma kuralı
+
+- Dosya değişikliklerini yalnızca Edit ve Write araçlarıyla yap (Edit'ten
+  önce dosyayı Read ile oku). IDE'de diff görünsün. Bash ile dosya
+  değiştirme: `sed -i`, `cat > dosya`, `echo >> dosya`, `tee`, python veya
+  node heredoc yasak. Bash'i yalnızca test, build, lint, grep ve git okuma
+  komutları için kullan.
+- Büyük bir değişikliği tek komutla değil, her değişiklik için ayrı Edit
+  çağrısıyla yap. Böylece her diff ayrı görünür.
   

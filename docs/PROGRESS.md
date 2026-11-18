@@ -180,10 +180,13 @@ view 3` ile doğrulandı).
 seed verisi üzerinden beklenen kitle sayılarını gösteriyor. CI yeşil.
 Sağlandı.
 
-## Şu an — İçerik üretimi, düzenleme ve onay
+## Tamamlandı — İçerik üretimi, düzenleme ve onay
 
-**Branch:** `feat/content-approval` (devam ediyor, değişiklikler henüz commit
-edilmedi)
+**Branch:** `feat/content-approval`: PR #5 ile `main`'e squash merge edildi
+(`b5cb799`, 90 dosya, +15.564 / −295). PR #5'te **Backend, Frontend, Compose ve
+E2E** işlerinin hepsi yeşil. Her işteki `CANCELLED` kaydı sorun değildir: PR
+kapatılıp yeniden açıldığında (Oğuzhan bildirdi) ilk çalışma iptal olmuştur.
+Merge sonrası `main` push CI'ı da başarıyla tamamlandı (`success`, doğrulandı).
 
 **Spec:** [CNT-001](specs/CNT-001-content-generation-and-approval.md). Kararlar:
 ADR-011 (onay sürüme bağlı, onaylandı), ADR-022 (fallback metni, ayrı LLM
@@ -400,20 +403,19 @@ onaylandı → B).
 - [x] Dokümanlar: ARCHITECTURE §4-§6, FAILURE-MODES, REPO-STRUCTURE, CNT-001
   açık noktaları, DECISIONS (ADR-011, ADR-022, ADR-023).
 
-### Bekleyenler
+### Açık kalanlar (sonraki aşamalara taşınanlar)
 
-Aşağıdaki maddelerin hiçbiri Vue ekranına başlamak için çözülmesi gereken bir
-engel değildir; kayıtta tutulur ve ilgili aşamada ele alınır.
+Aşağıdaki `[ ]` maddelerin hiçbiri bu aşamanın çıkış koşulunu engellemedi; ilgili
+aşamada veya ayrı küçük işler olarak ele alınır, sıra Oğuzhan'la belirlenir.
 
 - [x] **Karar (Oğuzhan): ADR-023 → B uygulandı** (yukarıda, "Onay" bölümü).
 - [x] Vue ekranı ve frontend lint, test, build kontrolleri (yukarıda).
 - [x] Onay uç noktasının Compose üzerinde elle doğrulanması (Oğuzhan, `8081`
   üzerinden; yukarıda ayrıntılı).
-- [ ] CI: değişiklikler commit/push edilmediği için CI bu aşama için çalışmadı;
-  CI yeşil olmadan aşama bitmiş sayılmaz. Yerelde CI'ın backend (`make test`),
-  frontend (lint, test, build) ve Compose (`config`) komutları temiz. Entegrasyon
-  testleri `make test` üzerinden Backend işine girer; yeni araç gerekmediği için
-  CI iş akışı değiştirilmedi.
+- [x] CI: PR #5'te Backend, Frontend, Compose ve E2E işleri yeşil (gerçek runner'da
+  Chromium ve izole Compose ortamıyla dahil); merge sonrası `main` push CI'ı da
+  `success`. İptal görünen ilk çalışma PR'ın kapatılıp yeniden açılmasından
+  kaynaklanır.
 - [ ] `llm_calls` tablosu (kampanya, tür: segment veya içerik, deneme,
   doğrulama sonucu, kısa hata kodu, gecikme, token sayıları; ham yanıt
   saklanmaz) ve `llm_validation_failures_total` metriği (ARCHITECTURE §4, §12).
@@ -443,17 +445,20 @@ engel değildir; kayıtta tutulur ve ilgili aşamada ele alınır.
   sınırlamak istenirse ayrıca karar verilir. `MaxFirstNameRunes` her istekte
   `users` tablosunu tarar (3 bin kullanıcıda sorun değil).
 - [x] Playwright e2e akışı (içerik ve onay) ve CI'a eklenmesi: yapıldı (yukarıda,
-  "6. Frontend e2e testleri"). CI'daki `E2E` işinin ilk sonucu bekleniyor.
+  "6. Frontend e2e testleri"); CI'daki `E2E` işi PR #5'te yeşil geçti.
 
 **Çıkış koşulu:** Kullanıcı taslağı canlı görüyor, düzenleyebiliyor ve
 gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
-Backend ve arayüz hazır, yerelde ve Compose'ta (`web` dahil) doğrulandı; yalnızca
-CI (commit/push sonrası) bekliyor.
+**Sağlandı:** backend ve arayüz hazır; yerelde, Compose'ta (`web` dahil) ve CI'da
+(Backend, Frontend, Compose, E2E) doğrulandı.
 
 ## Sonraki adımlar
 
 Her aşama güncel `main`'den açılan ayrı bir branch'te ilerler. Branch
-adları öneridir.
+adları öneridir. Sıradaki aşama 1. Worker, mock provider ve dashboard'dur
+(`feat/worker-dashboard`). Yukarıdaki "Açık kalanlar" (SSE keepalive, `llm_calls`,
+`httpapi.New` doğrulaması, maliyet sınırları vb.) bu aşamadan önce veya içinde
+ele alınabilir.
 
 ### 1. Worker, mock provider ve dashboard
 
@@ -555,19 +560,27 @@ devam ediyor.
 - Frontend lint komutları CI'da workflow içinde doğrudan çağrılıyor,
   `package.json` ve `Makefile` ile paylaşılmıyor. Yerelde `npm run lint`
   `--fix` ile dosya değiştirir.
-- CI Compose için yalnızca `docker compose config --quiet` çalıştırıyor.
-  İmajların build edilmesi ve `/healthz` kontrolü CI'da yok.
+- CI'ın Compose işi yalnızca `docker compose config --quiet` (geliştirme ve e2e
+  yapılandırması) çalıştırır. İmajlar ve servis sağlığı (`/healthz`) dolaylı olarak
+  `E2E` işinde sınanır (`make e2e-up` imajları derler ve api/web sağlık
+  kontrollerini bekler); geliştirme ortamının kendisi (`docker compose up`) CI'da
+  doğrudan koşmaz.
+
+- ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
+  kuyruk aynı kuralı kullanır.
 
 - ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
   kuyruk aynı kuralı kullanır.
 
 ## Son doğrulama
 
-- **Son çalışan adım (`feat/content-approval`, henüz commit edilmedi):** İçerik
-  doğrulama ve üretim, migration `00002` (Down koruması dahil), içerik store'u,
+- **Son çalışan adım (`feat/content-approval`, PR #5 ile `main`'e merge edildi,
+  `b5cb799`):** İçerik doğrulama ve üretim, migration `00002` (Down koruması dahil), içerik store'u,
   `POST`/`PUT /content` (SSE güvenilirliği dahil), `POST /approve`, `GET`'te onay
-  bilgisi, ADR-023 (B: kanala uygunluk izin ve adres) ve Vue içerik/onay ekranı.
-  Önceki aşama PR #3 (`feat/segment-preview`): CI'dan geçip `main`'e squash merge edildi (`170ecb5`).
+  bilgisi, ADR-023 (B: kanala uygunluk izin ve adres) ve Vue içerik/onay ekranı
+  ve Playwright e2e testleri (izole Compose ortamı, ADR-024). **CI:** PR #5'te
+  Backend, Frontend, Compose ve E2E işleri yeşil. Önceki aşama PR #3
+  (`feat/segment-preview`, `170ecb5`).
 - **Çalıştırılan komut ve sonuç (yerel):** `gofmt -l`, `go vet ./...` ve
   `go mod tidy -diff` temiz. Kökten `make test` geçti (entegrasyon testleri
   `campaigns_test` üzerinde). Eşzamanlılık, içerik ve HTTP testleri `-race` ile
@@ -584,11 +597,9 @@ devam ediyor.
   içerik `PUT` ve **onay** (ilk onay, tekrar onay, farklı sürümle `409`)
   akışları; entegrasyon testlerinin kendi makinesinde çalıştırılması (backend).
   Dev veritabanında migration `00002` Oğuzhan tarafından uygulandı.
-- **Doğrulanamayan:** CI bu değişiklikler için çalıştırılmadı (commit ve push
-  yok); frontend ve backend kontrolleri yalnızca yerelde çalıştırıldı. Claude
-  geliştirme veritabanına hiç bağlanmadı; Compose
-  üzerindeki çalıştırma yalnızca Oğuzhan'ın bildirimine dayanıyor. Frontend e2e testleri yalnızca yerelde, izole ortamda koşturuldu (Claude); CI'daki
-  `E2E` işi henüz çalışmadı. Aktif akış sırasında SIGTERM ve `PUT` kaydetmenin
+- **Doğrulanamayan:** Claude geliştirme veritabanına hiç bağlanmadı; Compose üzerindeki çalıştırma yalnızca Oğuzhan'ın bildirimine
+  dayanıyor. Aktif akış sırasında SIGTERM ve `PUT` kaydetmenin
   commit öncesi iptali test edilmedi. nginx'e geçildiğinde SSE yeniden doğrulanmalı.
-- **Sıradaki iş:** Oğuzhan commit/push edip PR'daki CI sonucuna bakar (yukarıdaki "Bekleyenler"). CI yeşilse aşama bitmiş sayılır.
+- **Sıradaki iş:** Bu aşama kapandı. Sıradaki aşama için güncel `main`'den yeni
+  branch açılır (`feat/worker-dashboard`); açık kalanlar için yukarıya bakın.
   Migration dosyaları yalnızca Oğuzhan isteyince yazılır.
