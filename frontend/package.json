@@ -14,7 +14,8 @@
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
-    "format": "prettier --write --experimental-cli src/"
+    "format": "prettier --write --experimental-cli src/",
+    "type-check:e2e": "tsc -p e2e/tsconfig.json"
   },
   "dependencies": {
     "@lucide/vue": "^1.74.0",
