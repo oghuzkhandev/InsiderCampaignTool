@@ -110,3 +110,53 @@ func clipRunes(s string, n int) string {
 	}
 	return string(r[:n])
 }
+
+var _ Client = (*Mock)(nil)
+var _ ContentClient = (*Mock)(nil)
+
+var discountPattern = regexp.MustCompile(`%\s*(\d{1,3})`)
+
+// mockChunkRunes, Mock'un akış parçalarının boyutudur (kod noktası).
+const mockChunkRunes = 12
+
+type mockContent struct {
+	SMSText      string `json:"sms_text"`
+	EmailSubject string `json:"email_subject"`
+	EmailBody    string `json:"email_body"`
+}
+
+// GenerateContent, brief'ten deterministik bir SMS ve e-posta içeriği üretir ve
+// JSON'u küçük parçalar halinde onChunk ile iletir. Brief'te "%30" gibi bir
+// indirim varsa metne yazılır. Aynı brief her zaman aynı çıktıyı üretir.
+// Düzeltme isteğinde (PreviousOutput dolu) de aynı geçerli içeriği döndürür.
+func (m *Mock) GenerateContent(ctx context.Context, req ContentRequest, onChunk func(string)) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", ctxError(ctx)
+	}
+
+	offer := "Sana özel fırsatı kaçırma."
+	if mt := discountPattern.FindStringSubmatch(req.Brief); mt != nil {
+		offer = "%" + mt[1] + " indirim fırsatını kaçırma."
+	}
+	b, err := json.Marshal(mockContent{
+		SMSText:      "Merhaba {{first_name}}, sepetinde bıraktığın ürünler seni bekliyor! " + offer,
+		EmailSubject: "Sepetindeki ürünler seni bekliyor",
+		EmailBody: "Merhaba {{first_name}},\n\nSepetine eklediğin ürünler hâlâ seni bekliyor. " +
+			offer + "\n\nAlışverişini tamamlamak için bizi ziyaret etmen yeterli.",
+	})
+	if err != nil {
+		return "", err
+	}
+
+	runes := []rune(string(b))
+	for start := 0; start < len(runes); start += mockChunkRunes {
+		if err := ctx.Err(); err != nil {
+			return "", ctxError(ctx)
+		}
+		end := min(start+mockChunkRunes, len(runes))
+		if onChunk != nil {
+			onChunk(string(runes[start:end]))
+		}
+	}
+	return string(b), nil
+}

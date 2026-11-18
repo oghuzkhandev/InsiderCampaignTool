@@ -2,6 +2,8 @@ package integration
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +23,9 @@ type fixtureUser struct {
 	buyAgo   *time.Duration // nil: hiç satın almamış
 	orders   int
 	consents map[string]bool // yoksa kayıt yok (izin yok)
+	noPhone  bool            // true: telefon yok (SMS adresi yok)
+	phone    *string         // nil ve noPhone false ise otomatik telefon verilir
+	email2   *string         // nil değilse e-posta adresi yerine bu değer yazılır
 }
 
 func ago(d time.Duration) *time.Duration { return &d }
@@ -32,7 +37,7 @@ func seedFixture(t *testing.T, db *sql.DB, users []fixtureUser) {
 	if err := testdb.RequireTestDatabase(db); err != nil {
 		t.Fatal(err)
 	}
-	for _, u := range users {
+	for i, u := range users {
 		var cart, buy any
 		if u.cartAgo != nil {
 			cart = now.Add(-*u.cartAgo)
@@ -40,11 +45,25 @@ func seedFixture(t *testing.T, db *sql.DB, users []fixtureUser) {
 		if u.buyAgo != nil {
 			buy = now.Add(-*u.buyAgo)
 		}
+		// Kanal uygunluğu izin ve adres ister (ADR-023): aksi belirtilmedikçe her
+		// kullanıcıya telefon verilir.
+		var phone any
+		switch {
+		case u.noPhone:
+		case u.phone != nil:
+			phone = *u.phone
+		default:
+			phone = fmt.Sprintf("+90555%07d", i)
+		}
+		email := u.email
+		if u.email2 != nil {
+			email = *u.email2
+		}
 		var id int64
 		err := db.QueryRow(
-			`INSERT INTO users (email, city, last_cart_add_at, last_purchase_at, order_count)
-			 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			u.email, u.city, cart, buy, u.orders,
+			`INSERT INTO users (email, city, last_cart_add_at, last_purchase_at, order_count, phone)
+			 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+			email, u.city, cart, buy, u.orders, phone,
 		).Scan(&id)
 		if err != nil {
 			t.Fatalf("%s: %v", u.email, err)
@@ -180,11 +199,24 @@ func matches(u seed.User, seg segment.Segment) bool {
 	return true
 }
 
-func granted(u seed.User, channel string) bool {
+// eligible, kullanıcının kanala uygun olup olmadığını SQL'den bağımsız olarak
+// hesaplar (ADR-023): o kanal için açık izin VE adres (telefon/e-posta).
+func eligible(u seed.User, channel string) bool {
+	consented := false
 	for _, c := range u.Consents {
 		if c.Channel == channel && c.Granted {
-			return true
+			consented = true
 		}
+	}
+	if !consented {
+		return false
+	}
+	nonBlank := func(s string) bool { return strings.Trim(s, " \t\n\r\f\v") != "" }
+	switch channel {
+	case "sms":
+		return u.Phone != nil && nonBlank(*u.Phone)
+	case "email":
+		return nonBlank(u.Email)
 	}
 	return false
 }
@@ -219,10 +251,10 @@ func TestAudienceMatchesIndependentOracle(t *testing.T) {
 					continue
 				}
 				want.Total++
-				if granted(u, "sms") {
+				if eligible(u, "sms") {
 					want.SMS++
 				}
-				if granted(u, "email") {
+				if eligible(u, "email") {
 					want.Email++
 				}
 			}
@@ -237,5 +269,32 @@ func TestAudienceMatchesIndependentOracle(t *testing.T) {
 				t.Fatal("seed verisi bu segment için en az bir kullanıcı üretmeli")
 			}
 		})
+	}
+}
+
+// ADR-023 (B): kanala uygunluk açık izin VE adres ister. İzinli ama telefonu
+// (veya e-postası) olmayan kullanıcı toplamda sayılır, ilgili kanalda sayılmaz.
+func TestAudienceCountsRequireAddressForChannel(t *testing.T) {
+	db := testdb.Open(t)
+
+	both := map[string]bool{"sms": true, "email": true}
+	blank := "   "
+	seedFixture(t, db, []fixtureUser{
+		{email: "tam", city: "İstanbul", consents: both},
+		{email: "telefonsuz", city: "İstanbul", consents: both, noPhone: true},
+		{email: "telefon-bos", city: "İstanbul", consents: both, phone: &blank},
+		{email: "eposta-bos", city: "İstanbul", consents: both, email2: &blank},
+		{email: "telefonsuz-sadece-eposta", city: "İstanbul", consents: map[string]bool{"email": true}, noPhone: true},
+		{email: "telefonlu-izinsiz", city: "İstanbul", consents: map[string]bool{"sms": false, "email": false}},
+		{email: "telefonsuz-izinsiz", city: "İstanbul", noPhone: true},
+	})
+
+	total, sms, email := count(t, db, `{"all":[{"field":"city","op":"eq","value":"İstanbul"}]}`)
+
+	// Toplam: hepsi. SMS: yalnızca "tam" ve "eposta-bos" (telefonu var ve izinli).
+	// E-posta: "tam", "telefonsuz", "telefon-bos", "telefonsuz-sadece-eposta"
+	// ("eposta-bos" adressiz, izinsizler dışarıda).
+	if total != 7 || sms != 2 || email != 4 {
+		t.Fatalf("toplam/sms/e-posta = %d/%d/%d, beklenen 7/2/4", total, sms, email)
 	}
 }

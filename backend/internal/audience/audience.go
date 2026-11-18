@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/segment"
@@ -14,8 +15,9 @@ import (
 type Counts struct {
 	// Total, kanal iznine bakılmadan eşleşen benzersiz kişi sayısıdır.
 	Total int
-	// SMS ve Email, ilgili kanal için açıkça izin vermiş kişi sayılarıdır.
-	// İki kanala da izni olan kişi ikisinde de sayılır; toplamları Total değildir.
+	// SMS ve Email, ilgili kanala uygun kişi sayılarıdır: o kanal için açıkça izin
+	// vermiş VE adresi (telefon veya e-posta) olan kişiler (ADR-023). İki kanala
+	// uygun kişi ikisinde de sayılır; toplamları Total değildir.
 	SMS   int
 	Email int
 }
@@ -55,4 +57,73 @@ func NewCounter(db Querier) *Counter { return &Counter{db: db} }
 // Count, Counter'ın veritabanında Count çalıştırır.
 func (c *Counter) Count(ctx context.Context, seg segment.Segment, now time.Time) (Counts, error) {
 	return Count(ctx, c.db, seg, now)
+}
+
+// Recipient, segmente uyan ve en az bir kanala uygun (açık izin ve adres) bir
+// kullanıcıdır.
+type Recipient struct {
+	UserID    int64
+	FirstName string // kayıtlı değer; boş olabilir
+	Phone     string // SMS uygunsa dolu
+	Email     string // e-posta uygunsa dolu
+
+	// SMSEligible ve EmailEligible, ilgili kanal için açık izin ve adres
+	// bulunduğunu gösterir (kitle sayılarıyla aynı kural).
+	SMSEligible   bool
+	EmailEligible bool
+}
+
+// asciiSpace, veritabanındaki adres kontrolüyle aynı boşluk sınıfıdır.
+const asciiSpace = " \t\n\r\f\v"
+
+// SMSAddress, SMS gönderilebilecek telefonu döndürür. Kanala uygun değilse
+// ikinci değer false olur.
+func (r Recipient) SMSAddress() (string, bool) {
+	phone := strings.Trim(r.Phone, asciiSpace)
+	return phone, r.SMSEligible && phone != ""
+}
+
+// EmailAddress, e-posta gönderilebilecek adresi döndürür. Kanala uygun değilse
+// ikinci değer false olur.
+func (r Recipient) EmailAddress() (string, bool) {
+	email := strings.Trim(r.Email, asciiSpace)
+	return email, r.EmailEligible && email != ""
+}
+
+// Rows, birden çok satır döndüren sorgu çalıştırabilen bir veritabanıdır
+// (*sql.DB veya *sql.Tx).
+type Rows interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// Recipients, segmente uyan ve en az bir kanala uygun (izin ve adres) kullanıcıları
+// kimliğe göre sıralı okur. Tek sorgudur; kanal izinleri aynı anlık görüntüden
+// gelir. Koşulsuz segment için hata döner ve sorgu çalışmaz.
+func Recipients(ctx context.Context, db Rows, seg segment.Segment, now time.Time) ([]Recipient, error) {
+	q, err := segment.BuildRecipients(seg, now)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, q.SQL, q.Args...)
+	if err != nil {
+		return nil, fmt.Errorf("audience: alıcılar okunamadı: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Recipient
+	for rows.Next() {
+		var (
+			r           Recipient
+			name, phone sql.NullString
+		)
+		if err := rows.Scan(&r.UserID, &name, &phone, &r.Email, &r.SMSEligible, &r.EmailEligible); err != nil {
+			return nil, fmt.Errorf("audience: alıcı okunamadı: %w", err)
+		}
+		r.FirstName, r.Phone = name.String, phone.String
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("audience: alıcılar okunamadı: %w", err)
+	}
+	return out, nil
 }

@@ -30,6 +30,9 @@ type Campaign struct {
 	Status    string
 	Audience  audience.Counts
 	CreatedAt time.Time
+	// ApprovedContentVersion ve ApprovedAt, kampanya onaylandıysa dolu olur.
+	ApprovedContentVersion *int
+	ApprovedAt             *time.Time
 }
 
 // DB, Store'un ihtiyaç duyduğu veritabanı işlemleridir.
@@ -72,15 +75,30 @@ func (s *Store) Get(ctx context.Context, id string) (Campaign, error) {
 		c   Campaign
 		raw []byte
 	)
+	var (
+		approvedVersion sql.NullInt32
+		approvedAt      sql.NullTime
+	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, brief, segment, status, audience_total, audience_sms, audience_email, created_at
+		`SELECT id, brief, segment, status, audience_total, audience_sms, audience_email, created_at,
+		        approved_content_version, approved_at
 		 FROM campaigns WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Brief, &raw, &c.Status, &c.Audience.Total, &c.Audience.SMS, &c.Audience.Email, &c.CreatedAt)
+	).Scan(&c.ID, &c.Brief, &raw, &c.Status, &c.Audience.Total, &c.Audience.SMS, &c.Audience.Email, &c.CreatedAt,
+		&approvedVersion, &approvedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || isInvalidUUID(err) {
 			return Campaign{}, ErrNotFound
 		}
 		return Campaign{}, fmt.Errorf("campaign: okunamadı: %w", err)
+	}
+
+	if approvedVersion.Valid {
+		v := int(approvedVersion.Int32)
+		c.ApprovedContentVersion = &v
+	}
+	if approvedAt.Valid {
+		t := approvedAt.Time.UTC()
+		c.ApprovedAt = &t
 	}
 
 	c.Segment, err = segment.ParseStored(raw)
