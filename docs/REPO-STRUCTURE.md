@@ -50,6 +50,8 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
     `CampaignPreviewView` (`/`, brief ve kitle önizleme) ve `CampaignView`
     (`/campaigns/:id`, içerik üretimi, düzenleme ve onay). Testler yanındaki
     `__tests__` klasöründedir.
+  - frontend/e2e/ — Playwright uçtan uca testleri ve yardımcıları. Her test kendi
+    kampanyasını oluşturur. `make e2e` ile izole ortama karşı koşar (ADR-024).
   - frontend/src/components/ui/ — `shadcn-vue` ile üretilmiş bileşenler
     (ADR-021). Elle düzenlenmez, eslint dışındadır. `components.json` ve
     `src/lib/utils.ts` shadcn yapılandırmasıdır.
@@ -61,6 +63,11 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
 
 - [CLAUDE.md](../CLAUDE.md) — Claude Code'un proje talimatları. Brief,
   güncel görev, test komutları ve kritik çalışma kurallarına yönlendirir.
+
+- `compose.e2e.yaml` — İzole e2e ortamı (ayrı Compose projesi, ayrı port,
+  diske yazmayan veritabanı, kontrollü veri). `compose.yaml` ile birlikte
+  kullanılır; `make e2e`, `make e2e-up` ve `make e2e-down` hedefleri bunu
+  çalıştırır.
 
 - [DECISIONS.md](../DECISIONS.md) — Oğuzhan'ın verdiği önemli teknik
   kararlar

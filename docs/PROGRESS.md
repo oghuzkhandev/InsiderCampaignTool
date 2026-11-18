@@ -174,7 +174,7 @@ view 3` ile doğrulandı).
   kampanya kaydedildi. Gerçek API anahtarı kullanılmadı (MockLLM).
 - [x] Playwright kuruldu ve `frontend/e2e/vue.spec.ts` Chromium'da geçti
   (Oğuzhan yerelde çalıştırdı ve bildirdi; Claude çalıştırmadı). Test yalnızca
-  `h1` başlığını ("Kampanya önizleme") doğrular. CI Playwright çalıştırmıyor.
+  `h1` başlığını ("Kampanya önizleme") doğrular. CI Playwright çalıştırmıyor. (Sonradan: bu test kaldırıldı ve e2e CI'a eklendi, bkz. ADR-024.)
 
 **Çıkış koşulu:** Compose ile açılan arayüz, gerçek API anahtarı olmadan
 seed verisi üzerinden beklenen kitle sayılarını gösteriyor. CI yeşil.
@@ -301,7 +301,37 @@ onaylandı → B).
   bölünmüş UTF-8), akış kopması `STREAM_INTERRUPTED`.
 - [x] Kitle sayıları açıklaması ADR-023'e göre güncellendi (izin ve adres).
 
-**6. Testler ve doğrulama**
+**6. Frontend e2e testleri (Playwright, ADR-024)**
+
+- [x] İzole ortam: `compose.e2e.yaml` (proje `campaign-e2e`): ayrı container, ağ
+  ve volume'lar, postgres host'a açılmaz ve tmpfs'te çalışır, api host'a açılmaz,
+  web yalnızca `127.0.0.1:18080`. Yerelde `make e2e` (kur, koştur, sil; çıkış
+  kodu testlerin kodu, başarısızlıkta servis logları) ve CI'da aynı tanım.
+  Geliştirme veritabanına ve portlarına (8080, 8081, 5173, 5432) dokunmaz;
+  `playwright.config.ts` adres verilmezse veya bu portlar verilirse testleri
+  başlatmaz (doğrulandı).
+- [x] Kontrollü veri: `SEED_DATASET=e2e` (`seed.GenerateE2E`, `cmd/seed`): 10
+  kullanıcı, rastgelelik yok, tarihler 30 günlük sınırdan en az 15 gün uzak.
+  CASE.md örnek brief'i için sayılar kesin: toplam 7, SMS 3, e-posta 4 (birim
+  testleri, referans zamanı kaydırma, SQL entegrasyon testi).
+- [x] Dört test, her biri kendi kampanyasını oluşturur: (1) brief → kitle
+  (kesin sayılar) → içerik → düzenle → kaydet → onayla → yenileyince onaylı durum
+  korunur (sunucu durumu da doğrulanır); (2) desteklenmeyen değişken: kaydetme
+  reddedilir, sürüm artmaz, onay kapalı; (3) kaydedilmemiş düzenleme: onaylanamaz;
+  (4) iki sekme: eski sürümü onaylamak reddedilir, son sürüm yüklenir, devam
+  edilebilir. Tek tarayıcı (Chromium). Önceki tek basit test
+  (`e2e/vue.spec.ts`, başlık kontrolü) ana akış testi tarafından kapsandığı için
+  kaldırıldı.
+- [x] CI: `E2E` işi eklendi (Playwright Chromium kurulumu, `make e2e-up`, testler,
+  başarısızlıkta servis logları ve rapor/trace artifact'ı, her durumda ortamın
+  silinmesi); Compose işi e2e yapılandırmasını da doğrular. CI henüz çalışmadı.
+- [x] Doğrulama (yerelde, izole ortamda): 4 test geçti; her test 5 kez (20 koşu),
+  4 worker paralel ve her biri tek başına geçti; mutasyonlar (onay kapısı, eski
+  sürüm yenilemesi, salt okunur kilit, kitle sayıları) beklenen testlerce
+  yakalandı; `make e2e` baştan sona (çıkış kodu 0) ve kasıtlı kırılmış hâlinde
+  (çıkış kodu 2, loglar yazıldı, ortam silindi) denendi.
+
+**7. Testler ve doğrulama**
 
 - [x] Frontend (Node 24, CI'ın frontend işiyle aynı komutlar): `oxlint`,
   `eslint`, `vitest run` ve `npm run build` (tip kontrolü dahil) temiz; 186 birim
@@ -412,8 +442,8 @@ engel değildir; kayıtta tutulur ve ilgili aşamada ele alınır.
 - [ ] En uzun ad hesabı şimdilik tüm kullanıcılardan alınır (ADR-022); segmentle
   sınırlamak istenirse ayrıca karar verilir. `MaxFirstNameRunes` her istekte
   `users` tablosunu tarar (3 bin kullanıcıda sorun değil).
-- [ ] Playwright e2e akışı (içerik ve onay) ve CI'a eklenmesi: yeni araç ve test
-  türü olduğundan önce Oğuzhan'a sorulur.
+- [x] Playwright e2e akışı (içerik ve onay) ve CI'a eklenmesi: yapıldı (yukarıda,
+  "6. Frontend e2e testleri"). CI'daki `E2E` işinin ilk sonucu bekleniyor.
 
 **Çıkış koşulu:** Kullanıcı taslağı canlı görüyor, düzenleyebiliyor ve
 gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
@@ -480,11 +510,9 @@ devam ediyor.
   uygulandı ve Oğuzhan'ın Compose çalıştırmasında işledi.
 - Web Vite dev server ile çalışıyor; `/api` proxy'si yalnızca geliştirme
   içindir. Teslimden önce nginx'e geçilecek (ADR-014).
-- `frontend/e2e/vue.spec.ts` (Playwright, Chromium) Oğuzhan'ın yerel
-  çalıştırmasında geçti ama CI Playwright çalıştırmıyor. Tarayıcı e2e'sini CI'a
-  eklemek yeni araç/bağımlılık sayılır ve önce Oğuzhan'a sorulur. ADR-018'in
-  `backend/tests/e2e/` klasörü (API, worker ve mock provider'lı uçtan uca
-  testler) henüz yalnızca `.gitkeep` içeriyor.
+- Frontend e2e testleri (Playwright) `frontend/e2e/` altında ve CI'da `E2E` işi
+  olarak koşar (ADR-024). ADR-018'in `backend/tests/e2e/` klasörü (API, worker ve
+  mock provider'lı uçtan uca testler) henüz yalnızca `.gitkeep` içeriyor.
 - Test klasör yapısı ADR-018 ile onaylandı: unit testler kodun yanında,
   integration ve e2e `backend/tests/` altında. Segment-preview aşamasında
   `backend/internal/` altında `audience`, `campaign`, `database`, `httpapi`,
@@ -559,10 +587,8 @@ devam ediyor.
 - **Doğrulanamayan:** CI bu değişiklikler için çalıştırılmadı (commit ve push
   yok); frontend ve backend kontrolleri yalnızca yerelde çalıştırıldı. Claude
   geliştirme veritabanına hiç bağlanmadı; Compose
-  üzerindeki çalıştırma yalnızca Oğuzhan'ın bildirimine dayanıyor. Playwright
-  e2e sonuçları da Oğuzhan'ın bildirimine dayanıyor; CI Playwright çalıştırmıyor.
-  Playwright e2e akışı depoya eklenmedi (yeni test türü, CI'a eklemek önce
-  Oğuzhan'a sorulur). Aktif akış sırasında SIGTERM ve `PUT` kaydetmenin commit
-  öncesi iptali test edilmedi. nginx'e geçildiğinde SSE yeniden doğrulanmalı.
+  üzerindeki çalıştırma yalnızca Oğuzhan'ın bildirimine dayanıyor. Frontend e2e testleri yalnızca yerelde, izole ortamda koşturuldu (Claude); CI'daki
+  `E2E` işi henüz çalışmadı. Aktif akış sırasında SIGTERM ve `PUT` kaydetmenin
+  commit öncesi iptali test edilmedi. nginx'e geçildiğinde SSE yeniden doğrulanmalı.
 - **Sıradaki iş:** Oğuzhan commit/push edip PR'daki CI sonucuna bakar (yukarıdaki "Bekleyenler"). CI yeşilse aşama bitmiş sayılır.
   Migration dosyaları yalnızca Oğuzhan isteyince yazılır.

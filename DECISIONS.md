@@ -430,3 +430,39 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   hesaplanıp kaydedilmez (ADR-004 ile uyumlu).
 - **Tekrar onay:** Kampanya draft değilse alıcılar yeniden hesaplanmaz; aynı
   sürümle `200` ve mevcut sonuç, başka sürümle `409` (ADR-011).
+
+## ADR-024 — Frontend e2e testleri: izole Compose ortamı ve kontrollü veri
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-18).
+- **Karar:**
+  - Playwright e2e testleri, geliştirme ortamından ayrı bir Compose projesinde
+    (`compose.e2e.yaml`, proje adı `campaign-e2e`) koşar. Yerelde (`make e2e`) ve
+    CI'da aynı tanım kullanılır. Ortam ayrı container, ağ ve volume'lardan oluşur;
+    PostgreSQL host'a açılmaz ve veriyi diske yazmaz (tmpfs); API host'a açılmaz;
+    web yalnızca `127.0.0.1:18080`'de yayınlanır. Testler bir kullanıcı gibi
+    yalnızca web (aynı origin `/api` proxy'si) üzerinden konuşur. Geliştirme
+    veritabanına ve portlarına (8080, 8081, 5173, 5432) dokunulmaz;
+    `playwright.config.ts` adres verilmezse veya bu portlardan biri verilirse
+    testleri başlatmaz.
+  - Veri: rastgele demo verisi yerine küçük ve kontrollü bir veri kümesi
+    (`SEED_DATASET=e2e`, `seed.GenerateE2E`): 10 kullanıcı, hiç rastgelelik yok,
+    tüm tarihler 30 günlük sınırdan en az 15 gün uzak. CASE.md'deki örnek brief
+    için sayılar kesindir (toplam 7, SMS 3, e-posta 4) ve testler önizleme ile
+    kuyruk sayısını birbirine eşitlemek yerine bu kesin sayıları doğrular.
+  - Her test kendi kampanyasını arayüzden oluşturur; testler birbirine bağımlı
+    değildir ve paralel de koşabilir (CI'da kararlılık için tek worker).
+  - Kapsam bilinçli olarak dar: ana akış, geçersiz içerik, kaydedilmemiş
+    düzenleme ve eski sürümle onay (iki sekme). Hata enjeksiyonu, render sınırı
+    ve eşzamanlılık ayrıntıları unit ve entegrasyon testlerinde kalır.
+  - `make test` e2e'yi içermez (hızlı kalır, tarayıcı gerektirmez); CI'da ayrı
+    `E2E` işi koşar.
+- **Gerekçe ve sonuç:** Seed verisi tarihleri kuruluş anına göredir; önizleme ile
+  onay arasında 30 günlük pencereyi geçen bir kullanıcı sayıyı değiştirebilir
+  (geliştirme ortamında 141 → 140 görüldü). Kontrollü veri bu kararsızlığı
+  ortadan kaldırır ve eşitlik yerine kesin değer doğrulamayı sağlar. İzole ortam,
+  e2e'nin kampanya ve mesaj satırı yazmasının geliştirme verisini kirletmesini
+  engeller. Bedel: CI'a Playwright tarayıcısı ve Compose kurulumu eklenir
+  (Chromium yalnızca), işin süresi birkaç dakika uzar. `E2E_EXPECTED` sayıları
+  backend (`seed.E2EExpected`) ve `frontend/e2e/helpers.ts` içinde ayrı tutulur;
+  backend birim ve entegrasyon testleri backend tarafını sabitler.
+

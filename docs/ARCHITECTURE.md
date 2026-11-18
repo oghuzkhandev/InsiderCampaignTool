@@ -485,9 +485,14 @@ bağlıdır.
 - **Integration:** Gerçek PostgreSQL ile eşzamanlı claim, onay
   transaction'ı, claim token, reaper ve kampanya tamamlanması.
   `backend/tests/integration/` altındadır.
-- **E2E:** API, worker ve mock provider ile hata enjeksiyonu, kayan pencere
-  hız testi, `accept_then_drop` sonrası provider restart ve aynı anahtarla
-  retry, worker kill. `backend/tests/e2e/` altındadır.
+- **E2E (backend):** API, worker ve mock provider ile hata enjeksiyonu, kayan
+  pencere hız testi, `accept_then_drop` sonrası provider restart ve aynı
+  anahtarla retry, worker kill. `backend/tests/e2e/` altındadır.
+- **E2E (frontend, Playwright):** Gerçek tarayıcıda, izole Compose ortamında
+  (`compose.e2e.yaml`) ve kontrollü veriyle bir kullanıcı gibi: brief → kitle →
+  içerik → düzenle → kaydet → onayla → yenile, geçersiz içerik, kaydedilmemiş
+  düzenleme, eski sürümle onay. `frontend/e2e/` altındadır; `make e2e` ile koşar,
+  `make test` içinde değildir (ADR-024).
 
 Integration ve e2e dosyalarının adı testin çözdüğü konudur: bir veya en fazla
 iki küçük harfli kelime (`idempotency_test.go`, `rate-limit_test.go`).

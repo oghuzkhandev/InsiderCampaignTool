@@ -18,6 +18,11 @@ PostgreSQL'i, worker'ı ve mock provider'ı başlatacak. Migration ve
 demo kullanıcı seed'i kurulum sırasında otomatik çalışacak.
 
 `make test` gerçek bir API anahtarı gerektirmeden çalışacak.
+
+Tarayıcıdan uçtan uca (Playwright) testler için `make e2e`: geliştirme
+ortamından ayrı, izole bir Compose projesinde (`compose.e2e.yaml`) çalışır ve
+geliştirme veritabanına dokunmaz. Gereksinimler: Docker ve
+`cd frontend && npx playwright install chromium` (bir kez).
 Kurulum doğrulandıktan sonra uygulama adresi ve demo adımları
 bu bölüme eklenecek.
 

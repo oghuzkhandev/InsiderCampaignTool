@@ -39,7 +39,7 @@ Her satırda iddia ile kanıt yan yana: **ölçülebilir beklenen davranış** v
 | Onaydan önce herhangi bir yol | Önizleme, içerik üretimi/düzenleme ve reddedilen onaylar kuyruğa iş oluşturmaz. | Integration |
 | Eşzamanlı çift onay (aynı sürüm) | Hepsi `200`, tek ilk onay, iş bir kez oluşur, `approved_at` aynı. | Integration |
 | Doğrulanmış sürüm yokken onay | `409 NO_VALIDATED_CONTENT`, mesaj satırı yok | Integration · CNT-001 |
-| Kullanıcı V3'ü görürken V4 kaydedildi, V3'ü onaylar | `409 STALE_CONTENT_VERSION`, `messages` satır sayısı 0 | Integration |
+| Kullanıcı V3'ü görürken V4 kaydedildi, V3'ü onaylar | `409 STALE_CONTENT_VERSION`, `messages` satır sayısı 0; arayüz uyarıyı gösterir ve son sürümü yükler | Integration + E2E (iki sekme) |
 | Çift tıklama, aynı sürümle onay | 200 ve aynı sonuç; `messages` sayısı değişmez | Integration |
 | Kampanya başka sürümle onaylıyken farklı sürümle onay | `409 CAMPAIGN_ALREADY_APPROVED` | Integration |
 | Onaydan sonra içerik düzenleme (`PUT`) | 409; worker hep `approved_content_version` metnini gönderir | Integration |
