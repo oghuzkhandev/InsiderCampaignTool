@@ -99,9 +99,16 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 - `user_consents`: (user_id, channel) PK, granted
 - `campaigns`: id, brief, segment (jsonb), status, approved_content_version,
   approved_at, completed_at, audience sayıları
-  - İlk migration yalnızca id (uuid), brief, segment, status, audience sayıları
-    (toplam, SMS, e-posta) ve created_at alanlarını oluşturur. Onay ve içerik
-    alanları ilgili aşamada eklenir.
+  - İlk migration (`00001`) id (uuid), brief, segment, status, audience
+    sayıları (toplam, SMS, e-posta) ve created_at alanlarını oluşturur. Onay
+    alanları (`approved_content_version`, `approved_at`, `completed_at`)
+    `00002` ile eklendi. `status` için `CHECK (draft, approved, sending,
+    completed)` `00001`'den beri vardır.
+  - Onay alanları durumla tutarlı olmalıdır (`CHECK`): `draft` iken boş,
+    `approved`/`sending`/`completed` iken sürüm ve onay zamanı dolu,
+    `completed_at` yalnızca `completed` iken dolu. `approved_content_version`
+    aynı kampanyanın gerçek bir sürümüne bağlı bileşik yabancı anahtardır ve
+    set edildikten sonra değiştirilemez (tetikleyici).
   - `segment` modelin ham metni değil, doğrulanmış yapıdır:
     `{"all":[{"field","op","value"}]}`. Veritabanı bu yapıyı `CHECK`
     constraint'i (`segment_is_valid`) ile zorlar: koşulsuz, 10'dan fazla
@@ -114,11 +121,26 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
   sms_text, email_subject, email_body, created_at
   - Yalnızca **doğrulanmış** sürümler saklanır. Satırlar değişmez (immutable).
   - Doğrulaması başarısız bir üretim buraya yazılmaz (bkz. bölüm 9).
+  - Sürüm numarası, kampanya satırı `FOR UPDATE` ile kilitliyken
+    `max(version)+1` olarak yazılır (kesintisiz 1..N).
+  - Veritabanı, Go doğrulayıcısının **tam aynası değil, temel koruma** sağlar:
+    metin boşluktan ibaret değil, `{{first_name}}` dışında `{{`/`}}` yok,
+    konuda satır sonu yok (`content_text_valid`). SMS 160 ve konu 80 kod
+    noktası sınırı yalnızca Go'dadır (render sonrası uzunluk alıcı adına
+    bağlıdır). Hangi girdilerde aynı kararı verdikleri entegrasyon testindeki
+    senaryo tablosuyla sınırlıdır.
+  - Tetikleyiciler uygulama kilidini ve durum kontrollerini yerinden etmez, ek
+    koruma sağlar: satır güncellenemez, `draft` olmayan kampanyaya yeni sürüm
+    eklenemez (kampanya satırında `FOR SHARE`, eşzamanlı onayı bekler),
+    onaylanan sürüm değiştirilemez.
 - `messages`: campaign_id, user_id, channel, recipient, status, attempts,
   next_attempt_at, **claim_token**, claimed_at (lease),
   idempotency_key (sabit: `campaign:user:channel`), last_error,
   failure_reason, sent_at
-  - `UNIQUE (campaign_id, user_id, channel)`
+  - `UNIQUE (campaign_id, user_id, channel)`; `idempotency_key` biçimi
+    `CHECK` ile zorlanır. `user_id` yabancı anahtarı silmeyi engeller,
+    kampanya silinince mesajlar silinir. `failure_reason` değer listesi
+    SND-001'de belirlenecek, şimdilik kısıtlı değil.
   - Gönderilecek metin mesaja kopyalanmaz. Worker,
     `campaigns.approved_content_version` üzerinden okur.
 - `mock_provider_acceptances`: benzersiz `idempotency_key`, ilk kabul
@@ -138,10 +160,10 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 | Uç nokta | Not |
 | --- | --- |
 | `POST /api/campaigns` | Brief → segment + sayılar. Boş brief reddedilir. Geçersiz segmentte `422` `SEGMENT_INVALID` sebep kodlarıyla döner, kampanya oluşmaz. |
-| `GET /api/campaigns/{id}` | Brief, segment, kayıtlı kitle sayıları, durum ve varsa son doğrulanmış içerik sürümü; bulunamazsa `404`. |
+| `GET /api/campaigns/{id}` | Brief, segment, kayıtlı kitle sayıları, durum ve varsa son doğrulanmış içerik sürümü (`content` alanı, yoksa alan yok); bulunamazsa `404`. |
 | `POST /api/campaigns/{id}/content` | İçerik üretimi, SSE (`delta`, `validated`, `error`) |
-| `PUT /api/campaigns/{id}/content` | İnsan düzenlemesi doğrulanır ve yeni sürüm oluşturur. Onaydan sonra `409` döner. |
-| `POST /api/campaigns/{id}/approve` | Gövde `content_version` taşır (bölüm 6). |
+| `PUT /api/campaigns/{id}/content` | İnsan düzenlemesi doğrulanır ve yeni sürüm oluşturur (`200`). Onaydan sonra `409` döner. |
+| `POST /api/campaigns/{id}/approve` | Gövde `{"content_version": N}` taşır. Onay, onaylanan sürüm ve `queued` mesajlar tek transaction'da yazılır (bölüm 6). |
 | `GET /api/campaigns/{id}/events` | Dashboard SSE, her bağlantıda önce güncel snapshot |
 | `GET /healthz`, `/readyz` | Liveness, DB ping |
 | `GET /metrics` | Prometheus. Yalnızca Docker iç ağından erişilir, host'a açılan portta sunulmaz (ADR-016). |
@@ -166,13 +188,66 @@ Kampanya önizleme (`POST /api/campaigns`, `GET /api/campaigns/{id}`):
   boşluklar sırasında aşılırsa da.
   İç hata ayrıntısı yalnızca loga yazılır, istemciye sızmaz.
 
-Onay yanıtları:
+İçerik uç noktaları (`POST` ve `PUT /api/campaigns/{id}/content`):
 
-- **`200`** — İlk onay ya da onaylanan aynı sürümle tekrar.
-- **`409`** — Sürüm güncel değil, doğrulanmış sürüm yok veya kampanya başka
-  bir sürümle onaylı.
-- **`422`** — Alıcı bazlı render limiti aştı, sıfır uygun alıcı var veya
-  segment kuralı filtresiz.
+- **Ortak:** Kampanya yoksa (geçersiz uuid dahil) `404 CAMPAIGN_NOT_FOUND`;
+  `draft` değilse `409 CAMPAIGN_NOT_DRAFT`. Bunlar akış başlamadan önce düz JSON
+  hatadır. Başka yöntemler `405` (`Allow: POST, PUT`).
+- **`POST`** gövde almaz; brief kampanyadan okunur. Yanıt SSE'dir
+  (`Content-Type: text/event-stream`, `Cache-Control: no-store`,
+  `X-Accel-Buffering: no`), akış başladıktan sonra HTTP durumu hep `200`'dür.
+  Her olay `event:` ve tek satırlık JSON `data:` taşır ve hemen flush edilir:
+  - `delta`: `{"field","text","replace"?}`. Geçici önizleme; `replace: true`
+    alanın önceki önizlemesini siler (her değerin ilk parçasında gelir).
+  - `validated`: `{"content_version","source","sms_text","email_subject",
+    "email_body","created_at"}`. Yalnızca sürüm kaydedildikten (commit)
+    sonra gelir. Arayüz önizlemeyi bu içerikle tümüyle değiştirir.
+  - `error`: `{"code","message","reasons"?,"partial"?}`. Kodlar:
+    `CONTENT_INVALID` (düzeltme de başarısız; `reasons` sebep kodlarıdır,
+    `partial` çözümlenebilen **doğrulanmamış** metinlerdir ve yalnızca insan
+    düzenlemesine başlangıç olarak sunulur), `LLM_TIMEOUT`, `LLM_RATE_LIMITED`,
+    `STREAM_INTERRUPTED`, `CAMPAIGN_NOT_DRAFT` (üretim sırasında onaylandı),
+    `CAMPAIGN_NOT_FOUND`, `INTERNAL`. Hata durumunda sürüm kaydedilmez.
+  - **Akış yazılamazsa** (yazma veya flush hatası: istemci ayrıldı, bağlantı
+    koptu) üretim hemen iptal edilir, sonraki olaylar yazılmaz ve hiçbir sürüm
+    kaydedilmez; başlıklar bile yazılamıyorsa LLM hiç çağrılmaz. Bu bir
+    uygulama hatası olarak loglanmaz. `validated` yazılamazsa (sürüm zaten
+    commit edilmiştir) sürüm kalır ve istemci `GET` ile görür; yeniden
+    yazma veya ikinci kayıt denenmez.
+  - **Yavaş istemci:** Her yazmadan önce yazma süresi yenilenir (varsayılan
+    10 sn, `Deps.SSEWriteTimeout`). Okumayan bir istemci toplam süreyi değil
+    yalnızca tek bir yazmayı sınırlar; süre dolunca yazma hata verir ve yukarıdaki
+    kural uygulanır.
+  - LLM çağrısı sırasında veritabanı kilidi tutulmaz; kampanya satırı yalnızca
+    kayıt transaction'ında `FOR UPDATE` ile kilitlenir.
+- **`PUT`** gövdesi `{"sms_text","email_subject","email_body"}` (`application/json`).
+  Aynı içerik doğrulayıcısından geçer. Başarıda `200` ve `validated` olayıyla
+  aynı biçimde yeni sürüm (`source: "human"`). Geçersiz içerik
+  `422 CONTENT_INVALID` ve sebep kodlarıyla döner, sürüm kaydedilmez. Ayrıca
+  `400`, `413`, `415` önizleme uç noktalarıyla aynıdır.
+- **Uzunluk doğrulaması:** `{{first_name}}` yerine, veritabanındaki en uzun gerçek
+  adın (tüm kullanıcılar, kenar boşlukları atılmış kod nokta sayısı) ve
+  fallback'in büyüğü konur. Kesin kontrol onayda her alıcı için yapılır.
+
+Onay yanıtları (`POST /api/campaigns/{id}/approve`, gövde `{"content_version": N}`,
+`application/json`; eksik, sıfır, negatif veya tam sayı olmayan sürüm `400`,
+`413`/`415` önizleme uç noktalarıyla aynıdır):
+
+- **`200`** — İlk onay ya da onaylanan aynı sürümle tekrar. Gövde: `id`,
+  `status`, `approved_content_version`, `approved_at`, `queued`
+  (`{sms, email, total}`: kuyruğa alınan mesaj sayıları). Tekrarda alıcılar
+  yeniden hesaplanmaz: mevcut `approved_at` ve mesaj satırı sayıları döner, hiçbir iş
+  eklenmez (kampanya `sending`/`completed` olsa da).
+- **`404`** `CAMPAIGN_NOT_FOUND`.
+- **`409`** — `NO_VALIDATED_CONTENT` (hiç doğrulanmış sürüm yok),
+  `STALE_CONTENT_VERSION` (istenen sürüm son doğrulanmış sürüm değil),
+  `CAMPAIGN_ALREADY_APPROVED` (kampanya başka bir sürümle onaylı). Hiçbir iş oluşmaz.
+- **`422`** — `RENDER_LIMIT_EXCEEDED` (bir alıcı için kişiselleştirme sonrası
+  SMS > 160 veya konu > 80; `reasons`: alan, etkilenen alıcı sayısı `count` ve
+  örnek ad `text`), `NO_ELIGIBLE_RECIPIENTS` (hiçbir kanalda uygun alıcı yok),
+  `UNFILTERED_SEGMENT`. Kampanya `draft` kalır, hiçbir iş oluşmaz.
+- `GET /api/campaigns/{id}` onaylı kampanyada `approved_content_version` ve
+  `approved_at` alanlarını da verir.
 
 ## 6. Onay transaction'ı
 
@@ -208,6 +283,27 @@ Mesaj kayıtları oluşturulurken ikinci bir kitle sorgusu çalışmaz.
 `ON CONFLICT DO NOTHING` yalnızca mesaj satırlarını tekilleştirir.
 Yinelenen onay, kilit altında okunan onay sürümüne göre sonuçlanır.
 Worker, provider çağrısından hemen önce kanal iznini tekrar kontrol eder.
+
+Uygulama notları (`campaign.Approver`):
+
+- Uygun alıcılar tek sorguyla (`segment.BuildRecipients`, kitle sayısıyla aynı
+  koşullar) bir kez seçilir: segmente uyan ve en az bir kanalda açık izni olan
+  kullanıcılar, kanal izinleriyle birlikte. Alıcılar **onay anında** seçilir;
+  önizlemeden sonra izni geri çekilen kişi girmez, sonradan eşleşen izinli kişi
+  girer. Bu yüzden kuyruk sayısı önizleme sayısından farklı olabilir; yanıt
+  gerçek kuyruğu bildirir.
+- Her alıcı için yalnızca kendi kanalının metni render edilir ve doğrulanır
+  (SMS alıcısı için SMS, e-posta alıcısı için konu). Adı olmayan alıcıda
+  fallback kullanılır.
+- **Kanala uygunluk (ADR-023):** Kullanıcı bir kanala, o kanal için açıkça izin
+  vermişse **ve** adresi (SMS için telefon, e-posta için e-posta) varsa
+  uygundur. Kitle sayıları ve alıcı listesi aynı ifadeyi kullanır; önizleme ile
+  kuyruk aynı kümeyi sayar (aradaki fark yalnızca önizleme ile onay arasındaki
+  veri/zaman değişimidir).
+- Mesaj satırları kanal başına tek `INSERT … SELECT unnest(…)` ile yazılır;
+  `idempotency_key` = `kampanya:kullanıcı:kanal`.
+- Onay yolunda LLM çağrısı yoktur; kampanya satırı kilidi yalnızca veritabanı
+  işi sürerken tutulur.
 
 ## 7. Claim, sonuç yazımı ve kampanya tamamlama
 
@@ -324,7 +420,7 @@ onun için de uygulanır.
 | --- | --- |
 | Segment çıktısı | JSON şema → mantıksal alan → sabit eşleme tablosu → tip/aralık/derinlik → boş `unsupported` → parametreli SQL. Düzeltme yalnızca söz dizimi hatasında. |
 | Filtresiz veya sıfır uygun alıcı | Onaya açılmaz. |
-| İzin | Yalnızca açıkça izin verilmiş alıcılar sayılır ve fan-out'a eklenir. Kayıt yoksa izin yoktur. Gönderimde limiter beklemesinden sonra tekrar kontrol edilir. |
+| İzin | Yalnızca açıkça izin verilmiş ve ilgili kanalın adresi (telefon/e-posta) olan alıcılar sayılır ve fan-out'a eklenir. Kayıt yoksa izin yoktur. Gönderimde limiter beklemesinden sonra tekrar kontrol edilir. |
 | İçerik çıktısı | JSON şema → değişken whitelist → rune uzunluğu (en uzun gerçek ad ile) |
 | Onay | Alıcı bazlı render doğrulaması ve sürüm kontrolü |
 | İnsan düzenlemesi | Aynı içerik doğrulayıcısı |

@@ -29,7 +29,9 @@
   kontrol et. `main`'deysen veya başka aşamanın branch'indeysen dur ve bana
   söyle. Aşama dışı işi o branch'e ekleme.
 - Branch'i `main`'e PR ile squash merge ederim. Commit atma ve push yapma
-  yasağı geçerli. PR açıklaması ve commit mesajı önerisi hazırlayabilirsin.
+  yasağı geçerli. İstersem commit mesajı önerisi hazırlayabilirsin.
+- Commit mesajlarına `Co-Authored-By` veya Claude'a atıf yapan başka bir satır
+  ekleme. PR açıklamasını ve genel özeti ben yazarım; hazırlama ve önerme.
 - GitHub Actions CI, PR'larda ve `main`'e push'ta çalışır. Şimdiki kapsam:
   Compose doğrulaması, backend ile frontend lint, test ve build. CI
   kırmızıyken aşama bitmiş sayılmaz.

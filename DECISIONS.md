@@ -54,7 +54,8 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   eder. Bu kontrol hız sınırı beklemesinden sonra yapılır. İzin kaydı yoksa
   veya izin geri çekilmişse mesaj `skipped` olur. Yalnızca açıkça izin
   verilmiş kullanıcılar ilgili kanalın uygun alıcı sayısına ve iş kayıtlarına
-  dahil edilir.
+  dahil edilir. Uygunluk ayrıca ilgili kanalın adresini (telefon/e-posta) ister
+  (ADR-023).
 - **Gerekçe ve sonuç:** İzin, onay ile gönderim arasında değişebilir.
   Önizleme toplam kitleyi, SMS'e uygun kişileri ve e-postaya uygun kişileri
   ayrı gösterir.
@@ -158,7 +159,7 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 ## ADR-011 — Onay içerik sürümüne bağlanır
 
-- **Durum:** Taslak.
+- **Durum:** Onaylandı (proje sahibi, 2026-11-17).
 - **Karar:** Onay isteği `content_version` taşır. Onaylanan aynı sürüm
   yeniden gönderilirse mevcut sonuç `200` ile döner. Sürüm çatışması veya
   doğrulanmış sürümün bulunmaması `409`, boş kitle veya render ihlali `422`
@@ -370,3 +371,62 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   - Koyu tema: shadcn `.dark` sınıfı bekler, mevcut ekran
     `prefers-color-scheme` kullanır. Bileşenler kullanılmaya başlanınca
     karara bağlanacak.
+
+## ADR-022 — İçerik doğrulama: fallback metni ve içerik için ayrı LLM arayüzü
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-17). Arayüz ayrıntısı proje
+  sahibinin "mevcut tasarıma uygun genişlet" yetkisiyle uygulandı.
+- **Karar:**
+  - Adı bulunmayan alıcı için `{{first_name}}` yerine `Değerli müşterimiz`
+    yazılır. Ad boşluktan ibaretse de fallback kullanılır.
+  - İçerik üretimi için `llm.Client`'a dokunulmaz; ayrı bir `llm.ContentClient`
+    arayüzü eklenir: `GenerateContent(ctx, req, onChunk) (string, error)`.
+    Model çıktısını `onChunk` ile ham metin parçaları olarak iletir, tamamlanınca
+    bütün JSON metnini döndürür. Akış yarıda kesilirse `llm.ErrStreamInterrupted`
+    döner ve dönen metin boştur (iletilmiş parçalar yalnızca önizlemedir).
+    `Mock` ve `Scripted` her iki arayüzü de uygular.
+  - İçerik doğrulayıcısı (`internal/content`) segment doğrulayıcısı gibi
+    kararlı sebep kodları döndürür. Segment'ten farkı: bütün içerik sorunları
+    otomatik düzeltme denemesine uygundur (CNT-001).
+  - Üretim sırasındaki uzunluk kontrolü, `{{first_name}}` yerine
+    `max(en uzun gerçek ad, fallback)` uzunluğunu koyarak yapılır. Onayda her
+    alıcı için gerçek render ile kesin kontrol yapılır. "En uzun gerçek ad"
+    bilerek segmentten bağımsız olarak **tüm kullanıcılar** arasından alınır
+    (`SELECT max(char_length(btrim(first_name))) FROM users`): basit ve
+    tutucu bir üst sınırdır. Segmentin dışındaki çok uzun bir ad, geçerli bir
+    içeriği gereksiz yere reddettirebilir; bu durumda onaydaki alıcı bazlı
+    kontrol zaten kesin sonucu verir.
+- **Gerekçe ve sonuç:** Fallback, "Merhaba Değerli müşterimiz" gibi sabit ve
+  nötr bir ifadedir. Ayrı arayüz, segment için yazılmış `Client`'ı kullanan
+  `segment.Generator`, `cmd/api` ve testleri değiştirmez; gerçek Claude
+  adaptörü ileride iki arayüzü de uygulayacaktır. Bilinen sınırlama: kod
+  noktası sayımında birleşik karakterler (ör. `e` + birleştirici aksan) iki
+  sayılır; spec Unicode kod noktası sayımını istiyor.
+
+## ADR-023 — Kanala uygunluk: açık izin ve adres; onay anında alıcı seçimi
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-18): seçenek B.
+- **Bağlam:** Önizleme sayıları yalnızca kanal iznine bakıyordu (SEG-001).
+  Seed verisinde kullanıcıların yaklaşık %4'ünün telefonu yok, ama SMS izni
+  telefondan bağımsız verilmiş. `messages.recipient` boş olamaz; izinli ama
+  telefonsuz kullanıcıya SMS işi oluşturulamaz. Önizleme SMS 141 iken kuyruğa
+  134 SMS giriyordu.
+- **Karar (B):** Bir kullanıcı bir kanala uygundur, ancak o kanal için açıkça
+  izin vermişse **ve** o kanalın adresi varsa (SMS için telefon, e-posta için
+  e-posta; "ASCII boşluk dışında en az bir karakter"). Kitle sayıları
+  (`segment.BuildCount`) ve onaydaki alıcı listesi (`segment.BuildRecipients`)
+  aynı ifadeleri kullanır; önizleme ile kuyruk aynı kümeyi sayar. Toplam
+  eşleşen kişi sayısı kanal uygunluğundan bağımsız kalır. Onay yanıtındaki
+  `without_address` alanı kaldırıldı (artık adressiz izinli alıcı kuyruğa
+  aday olmaz). Örnek brief ve seed için önizleme SMS 141 → 134 oldu
+  (e-posta 151).
+- **Reddedilen seçenekler:** A (adressizi onayda atla ve raporla; önizlemedeki
+  "uygun" sayısı gönderilebilecekten büyük görünür), C (adressiz izinli alıcı
+  varsa onayı reddet; seed verisinde örnek brief onaylanamazdı).
+- **Onay anında alıcı seçimi:** Alıcılar onay transaction'ında, tek sorguyla ve
+  o andaki izin, adres ve tarih penceresiyle seçilir. Önizleme ile onay arasında
+  kitlenin kayması (izin geri çekilmesi, 30 günlük pencerenin kayması) bu yüzden
+  kuyruk sayısına yansır ve yanıt gerçek kuyruğu bildirir. Önizleme sayısı yeniden
+  hesaplanıp kaydedilmez (ADR-004 ile uyumlu).
+- **Tekrar onay:** Kampanya draft değilse alıcılar yeniden hesaplanmaz; aynı
+  sürümle `200` ve mevcut sonuç, başka sürümle `409` (ADR-011).

@@ -17,24 +17,39 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
       kodları). İş kuralı ve SQL içermez.
     - `database` — PostgreSQL bağlantısı ve migration çalıştırma.
     - `seed` — Demo kullanıcıları ve kanal izinleri.
-    - `campaign` — Draft kampanyayı kaydetme ve kimliğiyle okuma.
-    - `audience` — Segment sorgusunu çalıştırıp üç kitle sayısını okuma.
+    - `campaign` — Draft kampanyayı kaydetme ve kimliğiyle okuma; doğrulanmış
+      içerik sürümlerini kilit altında kaydetme, son sürümü ve en uzun adı
+      okuma (`ContentStore`); onay (`Approver`): kilit altında sürüm ve
+      alıcı doğrulaması, onay ve `queued` mesajların tek transaction'da yazımı.
+    - `audience` — Segment sorgusunu çalıştırıp üç kitle sayısını ve onaydaki
+      alıcı listesini okuma.
     - `segment` — Segment doğrulama ve parametreli SQL üretimi.
-    - `llm` — Model arayüzü, MockLLM ve test istemcisi.
+    - `content` — SMS ve e-posta içeriğinin doğrulanması (şema, değişken
+      whitelist'i, uzunluk), alıcıya göre render, akışın artımlı çözümü
+      (`delta`) ve bir kez düzeltmeli üretim (`Generator`).
+    - `llm` — Model arayüzleri (segment için `Client`, akışlı içerik için
+      `ContentClient`), MockLLM ve test istemcisi.
     - `testdb` — Entegrasyon testleri için `campaigns_test` hazırlığı.
   - backend/migrations/ — Veritabanı migration dosyaları. Yalnızca
     Oğuzhan isteyince eklenir.
-  - backend/tests/integration/ — Gerçek PostgreSQL ile çalışan testler.
+  - backend/tests/integration/ — Gerçek PostgreSQL ile çalışan testler
+    (kısıtlar ve tetikleyiciler, iki bağlantılı kilit ve eşzamanlılık
+    testleri, migration Down/Up, içerik API'si).
   - backend/tests/e2e/ — API, worker ve mock provider ile uçtan uca testler.
   - Integration ve e2e dosya adı, testin çözdüğü konunun bir veya en fazla iki
     küçük harfli kelimesidir (`idempotency_test.go`, `rate-limit_test.go`).
 - frontend/ — Vue ve TypeScript arayüzü. Brief girişi, kitle önizlemesi,
   canlı içerik, taslak düzenleme, insan onayı ve gönderim takibi burada gelişir.
-  - frontend/src/api/ — API istemcisi ve hata mesajları.
+  - frontend/src/api/ — API istemcisi (kampanya, içerik, onay), SSE ayrıştırıcı
+    (`sse.ts`) ve hata mesajları.
   - frontend/src/segment/ — Segmentin okunur özeti ve sebep kodlarının Türkçe
     açıklamaları.
-  - frontend/src/components/ ve views/ — Bileşenler ve ekranlar. Testler
-    yanındaki `__tests__` klasöründedir.
+  - frontend/src/content/ — İçerik taslağı yardımcıları (sınırlar, uzunluk,
+    akış parçalarının uygulanması) ve içerik/onay hata metinleri.
+  - frontend/src/components/ ve views/ — Bileşenler ve ekranlar:
+    `CampaignPreviewView` (`/`, brief ve kitle önizleme) ve `CampaignView`
+    (`/campaigns/:id`, içerik üretimi, düzenleme ve onay). Testler yanındaki
+    `__tests__` klasöründedir.
   - frontend/src/components/ui/ — `shadcn-vue` ile üretilmiş bileşenler
     (ADR-021). Elle düzenlenmez, eslint dışındadır. `components.json` ve
     `src/lib/utils.ts` shadcn yapılandırmasıdır.
