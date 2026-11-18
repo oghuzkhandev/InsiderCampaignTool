@@ -569,6 +569,9 @@ devam ediyor.
 - ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
   kuyruk aynı kuralı kullanır.
 
+- ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
+  kuyruk aynı kuralı kullanır.
+
 ## Son doğrulama
 
 - **Son çalışan adım (`feat/content-approval`, PR #5 ile `main`'e merge edildi,
