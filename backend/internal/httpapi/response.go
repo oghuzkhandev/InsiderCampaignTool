@@ -12,6 +12,8 @@ type reason struct {
 	Code  string `json:"code"`
 	Field string `json:"field,omitempty"`
 	Text  string `json:"text,omitempty"`
+	// Count, sebebin kaç alıcıyı etkilediğidir (ör. render sınırı aşımı).
+	Count int `json:"count,omitempty"`
 }
 
 type errorDetail struct {

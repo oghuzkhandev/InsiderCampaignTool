@@ -1,6 +1,6 @@
 # Proje İlerlemesi
 
-Son güncelleme: 2026-11-17
+Son güncelleme: 2026-11-18
 
 ## Tamamlanan hazırlık
 
@@ -10,7 +10,9 @@ Son güncelleme: 2026-11-17
 - [x] Araçlar WSL'de hazır: Go 1.27.4, Node 24 (repo özelinde `nvm use`
   ile), `make`, Docker ve Compose.
 - [x] Compose servisleri, test altyapısı ve metrics kararları ADR-013 ile
-  ADR-016 arasında yazıldı. ADR-013'teki başlatma sırası taslak.
+  ADR-016 arasında yazıldı. ADR-013 hâlâ taslak: servis listesi ve portlar
+  onaylı, başlatma sırası onay bekliyor (sıra segment-preview aşamasında
+  uygulandı ve Compose'ta çalıştı).
 - [x] `.gitignore`, `.env.example` ve backend ile frontend için
   `.dockerignore` hazır.
 
@@ -58,20 +60,25 @@ PR #1)
 
 **Çıkış koşulu:** Sağlandı.
 
-**CI'a bilerek eklenmeyenler:** `npm audit`, ek Go lint aracı, Go bağımlılık
-cache'i (henüz `go.sum` yok), `docker compose up` ile `/healthz` doğrulaması.
-PostgreSQL entegrasyon, e2e ve worker testlerini ekleyen aşama CI'ı da
-genişletir.
+**CI'a bilerek eklenmeyenler:** `npm audit`, ek Go lint aracı,
+`docker compose up` ile `/healthz` doğrulaması. (Go bağımlılık cache'i
+başlangıçta `go.sum` olmadığı için kapalıydı; segment-preview aşamasında
+`go.sum` oluşunca açıldı.) PostgreSQL entegrasyon testleri segment-preview
+aşamasında `make test` üzerinden CI'a girdi. e2e ve worker testlerini ekleyen
+aşama CI'ı da genişletir.
 
-## Şu an — PostgreSQL, seed ve segment önizleme
+## Tamamlandı — PostgreSQL, seed ve segment önizleme
 
-**Branch:** `feat/segment-preview`
+**Branch:** `feat/segment-preview` (PR #3 ile `main`'e squash merge edildi,
+`170ecb5`). PR #3'te Backend, Frontend ve Compose kontrolleri yeşil (`gh pr
+view 3` ile doğrulandı).
 
 - [x] Kurallar, ADR'ler, spec'ler ve backend klasörleri PR #2 ile `main`'e
   alındı. Bu aşamanın seçimleri ADR-019'a ve ADR-003 güncellemesine yazıldı.
 - [x] PostgreSQL Compose'a eklendi (`postgres` servisi).
-- [ ] Veritabanı hazır olduğunda migration ve seed otomatik çalışsın
-  (aşağıdaki `cmd/migrate` ve `cmd/seed` maddesi).
+- [x] Veritabanı hazır olduğunda migration ve seed otomatik çalışıyor
+  (aşağıdaki `cmd/migrate` ve `cmd/seed` maddesi). Oğuzhan `docker compose
+  up` ile temiz kurulumda doğruladı: Postgres, migrate ve seed başarılı.
 - [x] Üç bine yakın sahte kullanıcı ve örnek brief için sabit senaryo
   kullanıcıları (`internal/seed`). Seed tekrar çalışınca kayıtlar çoğalmaz.
 - [x] `SEG-001` içinde desteklenen filtreler, sınırlar, 30 günlük pencere ve
@@ -152,43 +159,303 @@ genişletir.
   volume'u eski bağımlılıkları tutar; yeni bağımlılıklar için yalnızca o
   volume silinmeli (`docker compose down` + `docker volume rm
   campaign-tool_frontend_node_modules`). `down -v` postgres verisini de siler.
+  Compose'ta karşılaşılan Tailwind paket hatası bu yüzdendi. Oğuzhan `web`
+  konteynerinde `npm ci` çalıştırarak çözdü.
 - [x] `.env.example` ve MockLLM hazır: demo ve testler gerçek API anahtarı
   olmadan MockLLM ile çalışıyor (`LLM_PROVIDER=mock` varsayılan, `cmd/api`
   bağlı). Gerçek Claude entegrasyonu ayrı bir iş olarak aşağıda
-  ("3. Gerçek Claude entegrasyonu") duruyor ve bu aşamanın çıkış koşuluna
+  ("2. Gerçek Claude entegrasyonu") duruyor ve bu aşamanın çıkış koşuluna
   dahil değil.
 - [x] CI: Backend işi `make test` çalıştırdığı için `postgres` servisini
-  Compose ile başlatır. Go bağımlılık cache'i açıldı. İlk Actions sonucu
-  bekleniyor.
+  Compose ile başlatır. Go bağımlılık cache'i açıldı. PR #3'te Backend,
+  Frontend ve Compose işleri yeşil.
+- [x] Compose ile uçtan uca doğrulama (Oğuzhan): arayüzde örnek brief için
+  toplam 191, SMS'e uygun 141, e-postaya uygun 151 kullanıcı göründü ve draft
+  kampanya kaydedildi. Gerçek API anahtarı kullanılmadı (MockLLM).
+- [x] Playwright kuruldu ve `frontend/e2e/vue.spec.ts` Chromium'da geçti
+  (Oğuzhan yerelde çalıştırdı ve bildirdi; Claude çalıştırmadı). Test yalnızca
+  `h1` başlığını ("Kampanya önizleme") doğrular. CI Playwright çalıştırmıyor. (Sonradan: bu test kaldırıldı ve e2e CI'a eklendi, bkz. ADR-024.)
 
 **Çıkış koşulu:** Compose ile açılan arayüz, gerçek API anahtarı olmadan
 seed verisi üzerinden beklenen kitle sayılarını gösteriyor. CI yeşil.
+Sağlandı.
+
+## Şu an — İçerik üretimi, düzenleme ve onay
+
+**Branch:** `feat/content-approval` (devam ediyor, değişiklikler henüz commit
+edilmedi)
+
+**Spec:** [CNT-001](specs/CNT-001-content-generation-and-approval.md). Kararlar:
+ADR-011 (onay sürüme bağlı, onaylandı), ADR-022 (fallback metni, ayrı LLM
+arayüzü, en uzun ad hesabı, onaylandı) ve ADR-023 (kanala uygunluk: izin ve adres,
+onaylandı → B).
+
+### Yapılanlar
+
+**1. Doğrulama ve üretim (backend paketleri)**
+
+- [x] `internal/content`: içerik doğrulayıcı (JSON şeması, `{{first_name}}`
+  whitelist'i, en uzun ad ile SMS 160 / konu 80 kod noktası sınırı, NUL ve konuda
+  satır sonu reddi), `Render`, kanal bazlı `CheckSMS` / `CheckSubject`.
+  Fallback metni `Değerli müşterimiz` (ADR-022).
+- [x] Akış sırasında JSON parçalarının çözümlenmesi: parça sınırından bağımsız
+  artımlı çözücü (`delta`, `Replace` ile); kaçışlar, `\uXXXX`, vekil çiftleri ve
+  bölünmüş UTF-8 `encoding/json` ile aynı sonucu verir (fuzz testli).
+- [x] `content.Generator`: geçersiz çıktıda tek düzeltme denemesi (düzeltme
+  çıktısı önizlemeye akmaz); zaman aşımı, 429 ve kesilen akışta düzeltme yok;
+  başarısızlıkta doğrulanmamış `partial` metinler düzenleme için sunulur.
+- [x] `llm.ContentClient` (ayrı arayüz) ve `llm.Provider`; MockLLM ve `Scripted`
+  istemcisi içerik akışını destekler. Testler gerçek API anahtarı gerektirmez.
+
+**2. Veritabanı**
+
+- [x] Migration `00002_content_versions_and_messages.sql`: `campaign_contents`,
+  `campaigns` onay alanları, tam `messages` tablosu ve üç indeks, üç
+  tetikleyici (sürüm satırı değişmez, onaylı kampanyaya sürüm eklenemez,
+  onaylanan sürüm değişmez). İçerik metni kısıtı (`content_text_valid`) Go
+  doğrulayıcısının tam aynası değil, temel DB korumasıdır; uygulamadaki kilit ve
+  durum kontrolleri kalır.
+- [x] `Down` koruması: draft olmayan kampanya varken hiçbir veri silmeden
+  reddedilir. Koruma kontrolden önce `campaigns`, `campaign_contents` ve
+  `messages` tablolarını kilitler; kilitsiz korumada, commit edilmemiş bir onay
+  varken Down başarılı olup onay verisini siliyordu (tek kullanımlık testle
+  doğrulandı). Artık uçuştaki onayı bekleyip reddeder.
+
+**3. İçerik API'si**
+
+- [x] İçerik sürümü store'u (`campaign.ContentStore`): kampanya satırı
+  `FOR UPDATE`, durum kilit altında kontrol, `max(version)+1` (kesintisiz
+  1..N), onaydan sonra `ErrNotDraft`; son sürümü ve en uzun gerçek adı okur.
+- [x] `POST /api/campaigns/{id}/content`: SSE (`delta`, `validated`, `error`).
+  `validated` yalnızca commit sonrası gelir; kesilen/zaman aşımı/429/geçersiz
+  üretimde sürüm yoktur; üretim sırasında onay gelirse `CAMPAIGN_NOT_DRAFT`;
+  LLM çağrısı boyunca kilit tutulmaz.
+- [x] `PUT /api/campaigns/{id}/content`: aynı doğrulayıcı, yeni `human` sürümü,
+  geçersizde `422`, onaydan sonra `409`.
+- [x] `GET /api/campaigns/{id}`: son doğrulanmış sürümü `content` alanıyla, onaylı
+  kampanyada `approved_content_version` ve `approved_at` ile döndürür.
+- [x] SSE güvenilirliği: yazma veya flush hatasında üretim iptal edilir ve sürüm
+  kaydedilmez (başlıklar yazılamıyorsa LLM hiç çağrılmaz); her yazmadan önce
+  yenilenen yazma süresi (10 sn, `Deps.SSEWriteTimeout`) yavaş istemciyi keser.
+- [x] `cmd/api` Mock ile bağlandı. Sözleşme ARCHITECTURE §5'te.
+
+**4. Onay (`POST /api/campaigns/{id}/approve`)**
+
+- [x] Alıcı seçimi: `segment.BuildRecipients` (kitle sayısıyla aynı koşullar,
+  tek sorgu, onay anındaki izinler); kanal bazında yalnızca ilgili kanalın metni
+  alıcıya göre render edilir ve sınır doğrulanır.
+- [x] `campaign.Approver`: onay, onaylanan sürüm ve `queued` mesajlar aynı
+  transaction'da yazılır. `409`: sürümsüz, eski sürüm, başka sürümle onaylı;
+  `422`: render sınırı (alan, etkilenen alıcı sayısı, örnek ad), uygun alıcı
+  yok, filtresiz segment; ilk onay ve aynı sürümle tekrar `200` (tekrar
+  alıcıları yeniden hesaplamaz). Onaydan önce hiçbir yolla kuyruğa iş girmez.
+- [x] Kanala uygunluk açık izin **ve** adres ister (ADR-023 → B, onaylandı):
+  `segment.BuildCount` ve `segment.BuildRecipients` aynı ifadeyi kullanır;
+  önizleme ile kuyruk aynı kümeyi sayar, onay yanıtındaki `without_address`
+  kaldırıldı. Seed'li örnek brief için önizleme SMS 141 → 134 (e-posta 151);
+  önizleme ve kuyruk birebir eşit. Test: SQL ve alıcı sorgusu birim testleri,
+  fixture'lı entegrasyon testi (izinli ama telefonsuz/boş telefonlu/boş
+  e-postalı kullanıcılar), seed verisi oracle'ı ve önizleme = kuyruk testi;
+  mutasyonla (telefon şartını yalnızca sayımdan çıkarma) yakalandığı görüldü.
+
+**5. Vue ekranı (`/campaigns/:id`)**
+
+- [x] `CampaignView`: kampanyayı yükler (`GET`), sayfa yenilenince son
+  doğrulanmış içeriği ve onay durumunu geri yükler. Önizleme ekranından
+  "İçeriği hazırla" bağlantısıyla açılır.
+- [x] İçerik üretimi SSE ile canlı gösterilir: geçici önizleme salt okunurdur,
+  `validated` gelince önizleme doğrulanmış sürümle tümüyle değiştirilir (eski
+  metne eklenmez). Üretim sürerken tekrar üretim ve onay kapalıdır.
+- [x] Hata durumları: doğrulanamayan üretimde sebepler Türkçe ve alanın altında
+  gösterilir, doğrulanmamış `partial` metin düzeltmeye açılır (onay yoktur);
+  zaman aşımı, 429 ve yarıda kesilen akışta önceki kayıtlı sürüm korunur ve
+  "Yeniden üret" sunulur; üretmeden "İçeriği elle yaz" seçeneği vardır.
+- [x] Düzenleme: SMS (160) ve konu (80) için kod noktası sayacı ({{first_name}}
+  için fallback uzunluğu varsayan bir tahmin; kesin kontrol sunucuda),
+  kaydedilmemiş değişiklik uyarısı, "Yeni sürüm olarak kaydet" (`PUT`),
+  `422` sebepleri alan altında.
+- [x] Onay: iki adımlı (kutu açılır, "Onayla ve kuyruğa al"), yalnızca
+  kaydedilmiş son sürümle ve kaydedilmemiş değişiklik yokken; çift tıklama tek
+  istek yapar. Başarıda kuyruğa alınan SMS/e-posta sayıları gösterilir ve içerik
+  kilitlenir. `STALE_CONTENT_VERSION` ve `CAMPAIGN_ALREADY_APPROVED` ile son
+  durum yeniden yüklenir; render sınırı aşımında etkilenen alıcı sayısı ve örnek
+  ad gösterilir. Metinler `v-html` ile değil metin olarak basılır.
+- [x] Ekran kapanınca veya başka kampanyaya geçilince (`/campaigns/A` →
+  `/campaigns/B`, aynı bileşen yeniden kullanılır) süren üretim, kaydetme ve
+  onay istekleri iptal edilir, işlem bayrakları ve önceki kampanyanın taslağı
+  sıfırlanır, A'dan geç gelen yanıtlar B'yi değiştirmez. Bu geçişte düğmelerin
+  "Üretiliyor…/Kaydediliyor…" durumunda kilitli kalması hatası bulundu ve
+  düzeltildi (regresyon testleri önce başarısız oldu).
+  **İptal, tamamlanmış (commit edilmiş) bir kaydı geri almaz.** İstemci iptali
+  yalnızca isteği keser: sunucuda işlem commit edilmişse (yanıt istemciye
+  ulaşmamış olsa bile) sürüm veya onay kalır; commit'ten önce bağlam iptal
+  olursa işlem geri alınır. İstemci hangisinin olduğunu bilemez, bu yüzden
+  A'ya dönülünce durum sunucudan yeniden okunur. Onay için ikisi de testle
+  doğrulandı (commit öncesi iptalde kampanya draft ve mesajsız kalır;
+  tamamlanmış onay sonradan gelen iptalle geri alınmaz; mutasyon yakalandı).
+  İçerik üretimi için commit sonrası iptalde sürüm kalır, commit öncesi iptalde
+  kaydedilmez (birim ve entegrasyon testli). `PUT` kaydetme için aynı bağlam
+  mekanizması geçerli, ama commit öncesi iptal ayrıca test edilmedi.
+- [x] Ekran kapanınca süren istekler ve akış iptal edilir. API istemcisi
+  (`api/content.ts`, `api/sse.ts`): artımlı SSE ayrıştırıcı (parça sınırı, CRLF,
+  bölünmüş UTF-8), akış kopması `STREAM_INTERRUPTED`.
+- [x] Kitle sayıları açıklaması ADR-023'e göre güncellendi (izin ve adres).
+
+**6. Frontend e2e testleri (Playwright, ADR-024)**
+
+- [x] İzole ortam: `compose.e2e.yaml` (proje `campaign-e2e`): ayrı container, ağ
+  ve volume'lar, postgres host'a açılmaz ve tmpfs'te çalışır, api host'a açılmaz,
+  web yalnızca `127.0.0.1:18080`. Yerelde `make e2e` (kur, koştur, sil; çıkış
+  kodu testlerin kodu, başarısızlıkta servis logları) ve CI'da aynı tanım.
+  Geliştirme veritabanına ve portlarına (8080, 8081, 5173, 5432) dokunmaz;
+  `playwright.config.ts` adres verilmezse veya bu portlar verilirse testleri
+  başlatmaz (doğrulandı).
+- [x] Kontrollü veri: `SEED_DATASET=e2e` (`seed.GenerateE2E`, `cmd/seed`): 10
+  kullanıcı, rastgelelik yok, tarihler 30 günlük sınırdan en az 15 gün uzak.
+  CASE.md örnek brief'i için sayılar kesin: toplam 7, SMS 3, e-posta 4 (birim
+  testleri, referans zamanı kaydırma, SQL entegrasyon testi).
+- [x] Dört test, her biri kendi kampanyasını oluşturur: (1) brief → kitle
+  (kesin sayılar) → içerik → düzenle → kaydet → onayla → yenileyince onaylı durum
+  korunur (sunucu durumu da doğrulanır); (2) desteklenmeyen değişken: kaydetme
+  reddedilir, sürüm artmaz, onay kapalı; (3) kaydedilmemiş düzenleme: onaylanamaz;
+  (4) iki sekme: eski sürümü onaylamak reddedilir, son sürüm yüklenir, devam
+  edilebilir. Tek tarayıcı (Chromium). Önceki tek basit test
+  (`e2e/vue.spec.ts`, başlık kontrolü) ana akış testi tarafından kapsandığı için
+  kaldırıldı.
+- [x] CI: `E2E` işi eklendi (Playwright Chromium kurulumu, `make e2e-up`, testler,
+  başarısızlıkta servis logları ve rapor/trace artifact'ı, her durumda ortamın
+  silinmesi); Compose işi e2e yapılandırmasını da doğrular. CI henüz çalışmadı.
+- [x] Doğrulama (yerelde, izole ortamda): 4 test geçti; her test 5 kez (20 koşu),
+  4 worker paralel ve her biri tek başına geçti; mutasyonlar (onay kapısı, eski
+  sürüm yenilemesi, salt okunur kilit, kitle sayıları) beklenen testlerce
+  yakalandı; `make e2e` baştan sona (çıkış kodu 0) ve kasıtlı kırılmış hâlinde
+  (çıkış kodu 2, loglar yazıldı, ortam silindi) denendi.
+
+**7. Testler ve doğrulama**
+
+- [x] Frontend (Node 24, CI'ın frontend işiyle aynı komutlar): `oxlint`,
+  `eslint`, `vitest run` ve `npm run build` (tip kontrolü dahil) temiz; 186 birim
+  testi geçiyor (73 mevcut + 113 yeni: SSE ayrıştırıcı, API istemcisi, taslak ve
+  mesaj yardımcıları, `ContentEditor`, `ApprovePanel`, `CampaignView`, route ve
+  bağlantı). Mutasyon kontrolleriyle (önceki sürümü geri yükleme, kod noktası
+  sayacı, iki adımlı onay, kopan akışın başarı sayılması) testlerin yakaladığı
+  görüldü. `docker compose config --quiet` temiz.
+- [x] Gerçek tarayıcıda (Chromium, Playwright betiği; depoda değil) uçtan uca
+  denendi: Vue ekranı → Vite proxy → gerçek `cmd/api` (MockLLM) →
+  `campaigns_test`. Önizleme, içerik üretimi (SSE), sayfa yenileme, geçersiz
+  değişken (422, alan altında), yeni sürüm (insan), iki adımlı onay, onaylı
+  kampanyanın salt okunur yüklenmesi; önizleme SMS 132 / e-posta 150 = kuyruk
+  132 / 150; konsolda hata yok.
+- [x] Vite dev proxy'sinin SSE'yi tamponlamadığı, 0,4 sn aralıklı olay yollayan
+  deneme sunucusuyla ölçüldü (olaylar tek tek geldi). Compose'taki `web`
+  konteyneri (aynı Vite proxy'si) ve nginx'e geçiş sonrası ayrıca doğrulanacak.
+- [x] Birim testleri: doğrulayıcı, çözücü (fuzz), `Generator`, HTTP
+  handler'ları (sahte bağımlılıklarla), alıcı sorgusu, kanal bazlı render.
+- [x] Gerçek PostgreSQL (`campaigns_test`) üzerinde store ve endpoint
+  entegrasyon testleri: üretim/yeniden üretim/düzenleme akışı, başarısız
+  üretimde sürüm yok, onay, alıcı/kanal/izin/adres matrisi, seed verisiyle
+  önizleme-kuyruk uyumu (oracle), atomiklik, onay öncesi kuyruğa iş girmemesi.
+- [x] Veritabanı constraint, tetikleyici ve eşzamanlılık testleri: iki
+  bağlantılı kilit testleri, eşzamanlı yazar/onay senaryoları (kilit beklemesi
+  `pg_stat_activity` ile gözlenir, rastgele gecikme yok), eşzamanlı çift onay,
+  onay/içerik düzenleme yarışı, migration Down/Up gidiş-dönüşü, Down koruması,
+  dolu veritabanına uygulama.
+- [x] Hataları yakalayan regresyon testleri, önce mevcut kodda başarısız olduğu
+  görülerek eklendi: SSE yazma/flush hatası, başlık flush hatası, yazma süresi
+  yenileme, yavaş istemci (gerçek sunucu), Down yarışı. Ayrıca
+  mutasyon kontrolleri (tetikleyiciler, `FOR UPDATE`, kayıt sırası, onay
+  mantığı) testlerce yakalandı.
+- [x] Race kontrolleri: `go test -race` ile içerik, HTTP ve entegrasyon
+  eşzamanlılık testleri, tekrarlı koşturmalarla.
+- [x] Gerçek `cmd/api` ikilisiyle `curl` duman testleri (yalnızca
+  `campaigns_test`, MockLLM): içerik, düzenleme, onay ve SIGTERM ile temiz
+  kapanış (çıkış kodu 0). API'nin kontrollü kapanması PR #3'te yapılmıştı; bu
+  branch'te yalnızca yeni uç noktalarla birlikte yeniden doğrulandı.
+- [x] Oğuzhan Compose üzerinde, **doğrudan `localhost:8081` (api) üzerinden**
+  `curl` ile uçtan uca elle doğruladı (içerikler kayda alınmadı):
+  - `POST /api/campaigns` → `201`, draft kampanya; toplam 191, SMS 141,
+    e-posta 151.
+  - `POST /api/campaigns/{id}/content` → SSE `delta` olayları, ardından
+    `validated`; içerik sürüm 1 (`llm`) kaydedildi.
+  - `GET /api/campaigns/{id}` → kampanya ve içerik sürüm 1 geri okundu.
+  - `PUT /api/campaigns/{id}/content` → `200`; düzenlenen içerik `human`
+    kaynaklı sürüm 2 olarak kaydedildi, `GET` sürüm 2'yi döndürdü.
+  - `POST /api/campaigns/{id}/approve` sürüm 2 → `200`, kampanya `approved`;
+    133 SMS ve 150 e-posta, toplam 283 mesaj işi; 7 telefonsuz alıcı
+    `without_address` olarak raporlandı (o sırada ADR-023 seçenek A
+    uygulanıyordu; B sonrası bu alan kalktı ve önizleme ile kuyruk eşit).
+  - Aynı sürümle tekrar onay → `200`; onay zamanı ve mesaj sayıları aynı kaldı,
+    `without_address` tekrar yanıtta yoktu (tasarım gereği: yalnızca ilk onayda).
+  - Sürüm 1 ile onay → `409 CAMPAIGN_ALREADY_APPROVED`.
+  - Not: önizleme 141 SMS / 151 e-posta iken kuyruğa 133 + 7 telefonsuz = 140
+    SMS ve 150 e-posta girdi; birer kişilik fark var. Olası neden önizleme ile
+    onay arasında 30 günlük pencerenin kayması (alıcılar onay anında seçilir,
+    ADR-023); bu açıklama doğrulanmadı.
+  - Not: ilk içerik üretiminde dev veritabanında `campaign_contents` tablosu
+    yoktu (migration `00002` uygulanmamıştı) ve istek hata verdi. Migration
+    önce `campaigns_test`'te doğrulandı, sonra Oğuzhan dev veritabanına
+    uyguladı ve aynı uç nokta başarılı çalıştı.
+  - Bu denemeler `web` (8080) proxy'si üzerinden değil, api'ye doğrudan
+    yapıldı.
+- [x] Dokümanlar: ARCHITECTURE §4-§6, FAILURE-MODES, REPO-STRUCTURE, CNT-001
+  açık noktaları, DECISIONS (ADR-011, ADR-022, ADR-023).
+
+### Bekleyenler
+
+Aşağıdaki maddelerin hiçbiri Vue ekranına başlamak için çözülmesi gereken bir
+engel değildir; kayıtta tutulur ve ilgili aşamada ele alınır.
+
+- [x] **Karar (Oğuzhan): ADR-023 → B uygulandı** (yukarıda, "Onay" bölümü).
+- [x] Vue ekranı ve frontend lint, test, build kontrolleri (yukarıda).
+- [x] Onay uç noktasının Compose üzerinde elle doğrulanması (Oğuzhan, `8081`
+  üzerinden; yukarıda ayrıntılı).
+- [ ] CI: değişiklikler commit/push edilmediği için CI bu aşama için çalışmadı;
+  CI yeşil olmadan aşama bitmiş sayılmaz. Yerelde CI'ın backend (`make test`),
+  frontend (lint, test, build) ve Compose (`config`) komutları temiz. Entegrasyon
+  testleri `make test` üzerinden Backend işine girer; yeni araç gerekmediği için
+  CI iş akışı değiştirilmedi.
+- [ ] `llm_calls` tablosu (kampanya, tür: segment veya içerik, deneme,
+  doğrulama sonucu, kısa hata kodu, gecikme, token sayıları; ham yanıt
+  saklanmaz) ve `llm_validation_failures_total` metriği (ARCHITECTURE §4, §12).
+  Kapsamı ve zamanı Oğuzhan'la netleştirilecek.
+- [ ] SSE keepalive: düzeltme denemesi sırasında ve ilk parçaya kadar hiç olay
+  gitmez (en kötü durumda iki çağrı × 60 sn). nginx'in varsayılan
+  `proxy_read_timeout` değeri 60 sn; ADR-014'te nginx'e geçildiğinde bağlantı
+  kopabilir. Öneri: periyodik `: keepalive` yorum satırı.
+- [x] Compose'taki `web` (8080) konteyneri üzerinden SSE ve Vue ekranı elle
+  denendi (Oğuzhan, "OK" olarak bildirdi; hangi adımların denendiği ayrıntılı
+  kayda alınmadı). Vite dev proxy'si ayrıca yerelde ölçüldü (tamponlama yok).
+  nginx'e geçişte (ADR-014) `proxy_buffering off` ve `proxy_read_timeout`
+  yeniden doğrulanmalı.
+- [ ] Aktif bir SSE akışı sırasında SIGTERM davranışı test edilmedi (kapanış
+  bütçesi 15 sn, LLM çağrısı zaman aşımı 60 sn).
+- [ ] `httpapi.New` başlangıçta nil bağımlılığı doğrulamıyor (nil `Content`,
+  `Contents` veya `Approver` ilk istekte panik verir) ve `cmd/api` bağlamasını
+  kapsayan test yok.
+- [ ] Maliyet ve kötüye kullanım (ürün kararı): `POST /content` yetkisiz ve hız
+  sınırsız, aynı kampanya için paralel üretim paralel sürüm üretir, `PUT` ile
+  sürüm sayısı sınırsız büyür. Seçenekler: kampanya başına tek eşzamanlı
+  üretim, sürüm üst sınırı.
+- [ ] E-posta gövdesi için uzunluk sınırı: CASE.md yalnızca SMS 160 ve e-posta
+  **konusu** 80 karakter der (satır 32); gövde için sınır CASE.md'de ve CNT-001'de
+  tanımlı değil. Şu an yalnızca boş olmama ve değişken kuralları var.
+- [ ] En uzun ad hesabı şimdilik tüm kullanıcılardan alınır (ADR-022); segmentle
+  sınırlamak istenirse ayrıca karar verilir. `MaxFirstNameRunes` her istekte
+  `users` tablosunu tarar (3 bin kullanıcıda sorun değil).
+- [x] Playwright e2e akışı (içerik ve onay) ve CI'a eklenmesi: yapıldı (yukarıda,
+  "6. Frontend e2e testleri"). CI'daki `E2E` işinin ilk sonucu bekleniyor.
+
+**Çıkış koşulu:** Kullanıcı taslağı canlı görüyor, düzenleyebiliyor ve
+gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
+Backend ve arayüz hazır, yerelde ve Compose'ta (`web` dahil) doğrulandı; yalnızca
+CI (commit/push sonrası) bekliyor.
 
 ## Sonraki adımlar
 
 Her aşama güncel `main`'den açılan ayrı bir branch'te ilerler. Branch
 adları öneridir.
 
-### 1. İçerik üretimi, düzenleme ve onay
-
-**Branch:** `feat/content-approval`
-
-- [ ] Tamamlanan içerik çıktısını (JSON) backend'de doğrula. MockLLM ile
-  çalışır. Segment çıktısı doğrulaması bitti. Gerçek Claude adaptörü ayrı iş
-  (3. Gerçek Claude entegrasyonu).
-- [ ] SMS ve e-posta taslaklarını SSE ile canlı göster. Tamamlanan geçerli
-  taslağı kaydet. Kesilen stream'deki eksik taslağı onaya açma.
-- [ ] İnsan düzenlemelerini doğrula ve yeni bir içerik sürümü olarak kaydet.
-- [ ] Onayda uygun alıcıları kanal bazında bir kez seç. `{{first_name}}`
-  gibi değişkenlerle render et. SMS için 160, e-posta konusu için 80
-  karakter sınırını doğrula.
-- [ ] Onayı ve `queued` mesaj işlerini aynı transaction'da yaz. Eski sürüm
-  `409`, onaylanan aynı sürümün tekrarı `200` dönsün.
-
-**Çıkış koşulu:** Kullanıcı taslağı canlı görüyor, düzenleyebiliyor ve
-gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
-
-### 2. Worker, mock provider ve dashboard
+### 1. Worker, mock provider ve dashboard
 
 **Branch:** `feat/worker-dashboard`
 
@@ -206,7 +473,7 @@ gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
 **Çıkış koşulu:** İlk HTTP yanıtı kaybolduğunda retry yapılır, provider
 yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
 
-### 3. Gerçek Claude entegrasyonu (isteğe bağlı, ayrı iş)
+### 2. Gerçek Claude entegrasyonu (isteğe bağlı, ayrı iş)
 
 **Branch:** `feat/claude-adapter`
 
@@ -239,27 +506,44 @@ devam ediyor.
 
 ## Açık konular
 
-- ADR-013'teki Compose başlatma sırası onay bekliyor.
+- ADR-013'teki Compose başlatma sırası onay bekliyor (ADR hâlâ taslak). Sıra
+  uygulandı ve Oğuzhan'ın Compose çalıştırmasında işledi.
 - Web Vite dev server ile çalışıyor; `/api` proxy'si yalnızca geliştirme
   içindir. Teslimden önce nginx'e geçilecek (ADR-014).
-- `frontend/e2e/vue.spec.ts` yalnızca başlığı doğrulayacak şekilde
-  güncellendi ama çalıştırılmadı: Playwright'ın beklediği tarayıcı sürümü
-  (1255) kurulu değil, makinede 1200 var. CI Playwright çalıştırmıyor.
+- Frontend e2e testleri (Playwright) `frontend/e2e/` altında ve CI'da `E2E` işi
+  olarak koşar (ADR-024). ADR-018'in `backend/tests/e2e/` klasörü (API, worker ve
+  mock provider'lı uçtan uca testler) henüz yalnızca `.gitkeep` içeriyor.
 - Test klasör yapısı ADR-018 ile onaylandı: unit testler kodun yanında,
-  integration ve e2e `backend/tests/` altında. `backend/cmd/api` ve healthz
-  kodu yerinde kalır. `backend/internal/` boş, paketler (worker, seed, queue,
-  mock-provider gibi) aşamalar ilerledikçe açılacak.
-- `make test` şu an yalnızca `go test ./...` çalıştırıyor. Postgres'i ayağa
-  kaldırma ve `campaigns_test` hazırlığı (ADR-015) entegrasyon testi
-  eklenince yapılacak.
-- `SEG-001`, `CNT-001`, `SND-001` ve `TRK-001` spec dosyaları taslak olarak
-  yazıldı ve [specs/README.md](specs/README.md) dizinine eklendi. Henüz
-  commit'lenmedi.
-- Karara bağlanmadı: 30 günlük kuralın yorumu (ADR-010) ve önizleme ile
-  onay arasında kitlenin kayması.
-- Azami brief uzunluğu, segment alan/operatör listesi ve sınırları ile eksik
-  `first_name` için fallback metni ilgili geliştirme aşamasında
-  netleştirilecek (SEG-001, CNT-001).
+  integration ve e2e `backend/tests/` altında. Segment-preview aşamasında
+  `backend/internal/` altında `audience`, `campaign`, `database`, `httpapi`,
+  `llm`, `seed`, `segment` ve `testdb` paketleri açıldı; `cmd/` altında `api`,
+  `migrate` ve `seed` var. `worker`, kuyruk ve `mock-provider` paketleri ilgili
+  aşamalarda açılacak.
+- `make test` önce yalnızca `postgres` servisini başlatır (`make test-db`),
+  sonra `go test ./...` çalıştırır. Entegrasyon testleri `campaigns_test`
+  veritabanını kullanır (ADR-015).
+- `SEG-001`, `CNT-001`, `SND-001` ve `TRK-001` spec dosyaları PR #2 ile
+  `main`'e alındı ([specs/README.md](specs/README.md)). `SEG-001` uygulandı;
+  diğerleri ilgili aşamalarda uygulanacak.
+- 30 günlük kuralın yorumu (ADR-010) hâlâ taslak ve onay bekliyor. Uygulama
+  ve testler önerilen yorumu kullanıyor (son 30 günde sepete ekleme ve aynı
+  dönemde satın alma yok). Önizleme ile onay arasında kitlenin kayması da
+  karara bağlanmadı.
+- Brief uzunluğu ve segment alan/operatör sınırları `SEG-001` içinde
+  netleşti ve uygulandı (brief en fazla 1000 karakter, en fazla 10 koşul vb.).
+  Eksik `first_name` için fallback metni `Değerli müşterimiz` olarak
+  belirlendi (ADR-022).
+- E-posta gövdesi için uzunluk sınırı CASE.md'de (yalnızca SMS 160 ve konu 80) ve
+  CNT-001'de tanımlı değil; şu an yalnızca
+  boş olmama ve değişken kuralları var. Gerekirse ayrıca karar verilir.
+- `llm_calls` tablosu ve `llm_validation_failures_total` metriği içerik
+  aşamasında yazılmadı; kapsamı ve zamanı Oğuzhan'la netleştirilecek
+  (ARCHITECTURE §4 ve §12).
+- Doğrulayıcıdaki kod noktası sayımı birleşik karakterleri (ör. `e` +
+  birleştirici aksan) iki sayar; spec kod noktası istiyor (ADR-022).
+- Markdown çitli (` ```json `) model çıktısı `MALFORMED_OUTPUT` sayılır ve
+  düzeltme denemesine gider. Gerçek Claude adaptöründe JSON modu veya prefill
+  değerlendirilecek.
 - `queue_depth` yalnızca `queued` mesajları sayacak. `ratelimit_wait_seconds`
   türü belirlenmedi.
 - CI'da ek Go lint aracı (`golangci-lint` gibi) yok. CI `gofmt` ve
@@ -274,24 +558,37 @@ devam ediyor.
 - CI Compose için yalnızca `docker compose config --quiet` çalıştırıyor.
   İmajların build edilmesi ve `/healthz` kontrolü CI'da yok.
 
+- ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
+  kuyruk aynı kuralı kullanır.
+
 ## Son doğrulama
 
-- **Son çalışan adım:** PR #1 (`chore/project-setup`) CI'dan geçip `main`'e
-  merge edildi. PR ve `main` push çalışmalarında Backend, Frontend ve
-  Compose işleri yeşil. `gh run list` ve `gh pr view 1` çıktısı bunu
-  doğruluyor.
-- **Çalıştırılan komut ve sonuç (yerel):** `go mod verify`,
-  `go mod tidy -diff`, `gofmt -l`, `go vet ./...` temiz. Kökten `make test`
-  geçti. Frontend'de Node 24 ile `npm ci`, `oxlint .`, `eslint .`,
-  `npm run test:unit -- --run` (73 test) ve `npm run build` geçti.
-  `docker compose config --quiet` çıkış kodu 0.
-- **Doğrulanamayan:** Claude `docker compose up` çalıştıramadı (izin
-  reddedildi), bu yüzden Compose üzerinden çalıştırma yalnızca Oğuzhan'ın
-  doğrulamasına dayanıyor. CI'ın Compose işi yalnızca yapılandırmayı
-  doğrular.
-- **Sıradaki iş:** Oğuzhan `docker compose up` ile (dev veritabanında
-  migration ve seed çalışır) arayüzü `http://127.0.0.1:8080` üzerinde dener,
-  commit ve push yapar, PR'daki Checks sonucuna bakar. Yeşilse PR squash
-  merge edilir ve aşamanın çıkış koşulu sağlanmış olur. Ardından güncel
-  `main`'den yeni branch açılıp içerik üretimi aşamasına geçilir.
+- **Son çalışan adım (`feat/content-approval`, henüz commit edilmedi):** İçerik
+  doğrulama ve üretim, migration `00002` (Down koruması dahil), içerik store'u,
+  `POST`/`PUT /content` (SSE güvenilirliği dahil), `POST /approve`, `GET`'te onay
+  bilgisi, ADR-023 (B: kanala uygunluk izin ve adres) ve Vue içerik/onay ekranı.
+  Önceki aşama PR #3 (`feat/segment-preview`): CI'dan geçip `main`'e squash merge edildi (`170ecb5`).
+- **Çalıştırılan komut ve sonuç (yerel):** `gofmt -l`, `go vet ./...` ve
+  `go mod tidy -diff` temiz. Kökten `make test` geçti (entegrasyon testleri
+  `campaigns_test` üzerinde). Eşzamanlılık, içerik ve HTTP testleri `-race` ile
+  tekrarlı koşturuldu. Çözücü fuzz testi çalıştırıldı. Mutasyon kontrolleri ve
+  hataları yakalayan regresyon testleri (önce başarısız, sonra geçen) çalıştırıldı.
+  Gerçek `cmd/api` ikilisiyle `curl` duman testi (içerik, düzenleme, onay,
+  SIGTERM) yapıldı. Hepsi yalnızca `campaigns_test` üzerinde ve MockLLM ile.
+  Frontend (Node 24): `oxlint`, `eslint`, `vitest run` (186 test) ve `npm run
+  build` (tip kontrolü dahil) temiz; `docker compose config --quiet` temiz.
+  Gerçek Chromium'da Vue ekranı → Vite proxy → gerçek API → `campaigns_test`
+  uçtan uca denendi (betik depoda değil).
+- **Oğuzhan'ın doğrulaması:** Compose'ta `web` (8080) üzerinden SSE ve Vue
+  ekranı (OK). Compose üzerinde, `localhost:8081` (api) üzerinden `curl` ile kampanya `POST`, içerik SSE `POST`, kampanya `GET`,
+  içerik `PUT` ve **onay** (ilk onay, tekrar onay, farklı sürümle `409`)
+  akışları; entegrasyon testlerinin kendi makinesinde çalıştırılması (backend).
+  Dev veritabanında migration `00002` Oğuzhan tarafından uygulandı.
+- **Doğrulanamayan:** CI bu değişiklikler için çalıştırılmadı (commit ve push
+  yok); frontend ve backend kontrolleri yalnızca yerelde çalıştırıldı. Claude
+  geliştirme veritabanına hiç bağlanmadı; Compose
+  üzerindeki çalıştırma yalnızca Oğuzhan'ın bildirimine dayanıyor. Frontend e2e testleri yalnızca yerelde, izole ortamda koşturuldu (Claude); CI'daki
+  `E2E` işi henüz çalışmadı. Aktif akış sırasında SIGTERM ve `PUT` kaydetmenin
+  commit öncesi iptali test edilmedi. nginx'e geçildiğinde SSE yeniden doğrulanmalı.
+- **Sıradaki iş:** Oğuzhan commit/push edip PR'daki CI sonucuna bakar (yukarıdaki "Bekleyenler"). CI yeşilse aşama bitmiş sayılır.
   Migration dosyaları yalnızca Oğuzhan isteyince yazılır.

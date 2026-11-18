@@ -13,6 +13,7 @@ import (
 
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/audience"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/campaign"
+	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/content"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/httpapi"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/llm"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/seed"
@@ -22,13 +23,21 @@ import (
 
 const exampleBriefText = "Son 30 günde sepetine ürün ekleyip alışveriş yapmayan İstanbul'daki kullanıcılara %30 indirim hatırlatması gönder. Samimi ama kısa olsun."
 
-// newAPI, gerçek segment üretimi, kitle sayımı ve kampanya deposuyla bir
-// handler kurar. Yalnızca LLM istemcisi değiştirilebilir.
-func newAPI(db *sql.DB, client llm.Client) http.Handler {
+// newAPI, gerçek segment üretimi, içerik üretimi, kitle sayımı ve depolarla
+// bir handler kurar. Yalnızca LLM sağlayıcısı değiştirilebilir.
+func newAPI(db *sql.DB, provider llm.Provider) http.Handler {
+	return newAPIWith(db, provider, provider)
+}
+
+// newAPIWith, segment ve içerik için ayrı istemciler verilebilen sürümdür.
+func newAPIWith(db *sql.DB, segments llm.Client, contents llm.ContentClient) http.Handler {
 	return httpapi.New(httpapi.Deps{
-		Segments:  &segment.Generator{LLM: client},
+		Segments:  &segment.Generator{LLM: segments},
 		Audience:  audience.NewCounter(db),
 		Campaigns: campaign.NewStore(db),
+		Content:   &content.Generator{LLM: contents},
+		Contents:  campaign.NewContentStore(db),
+		Approver:  campaign.NewApprover(db),
 		Now:       func() time.Time { return now },
 	})
 }
@@ -120,10 +129,10 @@ func TestAPICreateAndGetCampaign(t *testing.T) {
 	for _, u := range seed.Generate(now) {
 		if matches(u, seg) {
 			want.Total++
-			if granted(u, "sms") {
+			if eligible(u, "sms") {
 				want.SMS++
 			}
-			if granted(u, "email") {
+			if eligible(u, "email") {
 				want.Email++
 			}
 		}
@@ -191,7 +200,7 @@ func TestAPIRejectsInvalidSegmentWithoutCampaign(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			db := testdb.Open(t)
 			scripted := llm.NewScripted(tt.steps...)
-			var client llm.Client = scripted
+			var client llm.Provider = scripted
 			if tt.useMock {
 				client = llm.NewMock()
 			}

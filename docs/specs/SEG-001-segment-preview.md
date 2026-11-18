@@ -63,8 +63,11 @@ ulaşabileceğini kanal bazında görür.
 - Geçerli bir kural için toplam eşleşen kişi, SMS'e uygun kişi ve e-postaya
   uygun kişi sayıları ayrı gösterilir.
 - Toplam kişi sayısı kanal izninden bağımsızdır. Kanal bazındaki uygun sayıya
-  yalnızca ilgili kanal için açıkça izin verilmiş kullanıcılar dahil edilir.
-- İzin kaydı bulunmayan kullanıcı ilgili kanala uygun sayılmaz.
+  yalnızca ilgili kanal için açıkça izin verilmiş **ve** o kanalın adresi
+  (SMS için telefon, e-posta için e-posta) bulunan kullanıcılar dahil edilir
+  (ADR-023).
+- İzin kaydı bulunmayan kullanıcı ilgili kanala uygun sayılmaz. İzinli ama
+  telefonu olmayan kullanıcı toplamda sayılır, SMS'e uygun sayılmaz.
 - İki kanala da izni olan kullanıcı her iki kanalın uygun sayısında yer
   alabilir. Kanal sayılarının toplamı benzersiz toplam kişi sayısı değildir.
 - Geçerli bir kural sıfır kişiyle eşleşebilir. Önizleme `0` gösterir.

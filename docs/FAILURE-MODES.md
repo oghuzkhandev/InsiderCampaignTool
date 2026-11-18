@@ -17,18 +17,31 @@ Her satırda iddia ile kanıt yan yana: **ölçülebilir beklenen davranış** v
 | Brief içinde talimat/injection | Davranış prompt'a değil backend doğrulamasına dayanır; aynı reddetme testleri geçerli | Unit (MockLLM) · SEG-001 · CNT-001 |
 | Filtresi olmayan kural (tüm kullanıcılar) | Filtresiz segment kuralı içeren kampanya onaya açılmaz. | Unit · SEG-001 |
 | Geçerli kural ama sıfır uygun alıcı | Onay 422, mesaj oluşmaz | Integration |
-| LLM zaman aşımı / 429 | Zaman aşımı `504 LLM_TIMEOUT`, 429 `503 LLM_RATE_LIMITED`; arayüzde "yeniden dene". Segment için kitle sorgusu çalışmaz, içerik için sürüm kaydedilmez; kısmi içerik onaya açılmaz. Otomatik düzeltme yapılmaz. | Unit (MockLLM gecikme ve 429) · SEG-001 · CNT-001 |
+| LLM zaman aşımı / 429 | **Segment:** zaman aşımı `504 LLM_TIMEOUT`, 429 `503 LLM_RATE_LIMITED`; arayüzde "yeniden dene"; kitle sorgusu çalışmaz. **İçerik:** akış zaten `200` ile başladığı için SSE `error` olayı (`LLM_TIMEOUT`, `LLM_RATE_LIMITED`); sürüm kaydedilmez, kısmi içerik onaya açılmaz. Otomatik düzeltme yapılmaz. | Unit (MockLLM gecikme ve 429) + Integration (içerik) · SEG-001 · CNT-001 |
 
 ## İçerik ve onay
 
 | Senaryo | Beklenen davranış | Test |
 | --- | --- | --- |
-| İçerik JSON akışı birkaç parçadan sonra kesilir | Arayüz hata gösterir; sürüm kaydedilmez, onay kapalıdır. Otomatik düzeltme yapılmaz, yeniden üretme sunulur. | Unit + E2E (MockLLM kesilen akış) |
-| Doğrulama başarısız (limit aşımı, bozuk JSON) | Bir otomatik düzeltme JSON'u arka planda biriktirilir. Geçerliyse kaydedilen içerik önizlemenin tamamını değiştirir; eski metne eklenmez. Hâlâ geçersizse sürüm kaydedilmez, çözümlenmiş alanlar hata mesajıyla düzenlemeye açılır ve onay kapalıdır. Hiç metin çözümlenememişse yeniden üretme veya alanları doldurma sunulur. | Unit · CNT-001 |
-| Doğrulanmış sürüm yokken onay | 409, mesaj satırı yok | Integration · CNT-001 |
-| Kullanıcı V3'ü görürken V4 kaydedildi, V3'ü onaylar | 409, `messages` satır sayısı 0 | Integration |
+| İçerik JSON akışı birkaç parçadan sonra kesilir | SSE `error` olayı `STREAM_INTERRUPTED`; sürüm kaydedilmez, onay kapalıdır. Otomatik düzeltme yapılmaz, yeniden üretme sunulur. Arayüz hatayı gösterir, önceki kayıtlı sürümü korur ve "Yeniden üret" sunar. | Unit + Integration (API) + Frontend (akış kopması, hata gösterimi) |
+| Doğrulama başarısız (limit aşımı, bozuk JSON) | Bir otomatik düzeltme JSON'u arka planda biriktirilir. Geçerliyse kaydedilen içerik önizlemenin tamamını değiştirir; eski metne eklenmez. Hâlâ geçersizse sürüm kaydedilmez, çözümlenmiş alanlar hata mesajıyla düzenlemeye açılır ve onay kapalıdır. Hiç metin çözümlenememişse yeniden üretme veya alanları doldurma sunulur. Backend SSE `error` olayında `CONTENT_INVALID`, sebep kodları ve doğrulanmamış `partial` metinleri döner. Arayüz sebepleri Türkçe ve alanın altında gösterir, `partial` metni düzeltmeye açar ve onayı kapalı tutar. | Unit + Integration + Frontend · CNT-001 |
+| Üretim sürerken kampanya onaylanır | LLM çağrısı boyunca kilit tutulmadığı için onay engellenmez. Kayıt anında durum kilit altında yeniden kontrol edilir: SSE `error` (`CAMPAIGN_NOT_DRAFT`), yeni sürüm kaydedilmez, `validated` gönderilmez. | Integration |
+| Üretim sırasında istemci ayrılır (sekme kapanır) veya SSE yazma/flush hata verir | Üretim hemen iptal olur, sonraki olay yazılmaz, hata olarak loglanmaz ve kimsenin görmediği sürüm kaydedilmez. Başlıklar bile yazılamıyorsa LLM çağrılmaz. `validated` yazılamazsa commit edilmiş sürüm kalır, yeniden yazma denenmez. | Unit |
+| Yavaş (okumayan) SSE istemcisi | Her yazmadan önce yenilenen yazma süresi (varsayılan 10 sn) dolunca yazma hata verir; üretim iptal olur ve sürüm kaydedilmez. Süre toplamı değil tek yazmayı sınırlar. | Unit (gerçek sunucu, okumayan TCP bağlantısı) |
+| `PUT /content` onaylı kampanyada veya geçersiz içerikle | Onaylıda `409 CAMPAIGN_NOT_DRAFT`; geçersizde `422 CONTENT_INVALID` sebep kodlarıyla, sürüm kaydedilmez. NUL karakteri 500 değil 422 olur. | Unit + Integration · CNT-001 |
+| İçerik yazımı ile onay eşzamanlı | Onay kampanya satırını kilitliyken gelen yazım bekler ve onaydan sonra reddedilir; onaylanan sürüm son sürümdür, sürümler kesintisizdir. Uygulama kodu durumu kontrol etmese bile veritabanı tetikleyicileri aynı sonucu verir. | Integration (iki bağlantılı kilit testleri, kontrollü yarış) |
+| Eşzamanlı çift onay, farklı sürümler | İkincisi kilit sonrası onaylanan sürümü değiştiremez (tetikleyici); aynı sürümle tekrar zararsızdır. | Integration |
+| Migration `00002` geri alınır ve draft olmayan kampanya var | Down hiçbir veri silmeden reddedilir. Koruma kontrolden önce tabloları kilitler: uçuştaki onay varsa Down onu bekler, commit sonrası onaylı kampanyayı görüp reddeder (kilitsiz korumada Down başarılı olup onay verisini silerdi). | Integration |
+| İlgili kanala izinli ama telefonu/e-postası olmayan kullanıcı | Kanala uygun sayılmaz: kitle sayısına ve kuyruğa girmez, toplamda sayılır. Önizleme ile kuyruk aynı kuralı kullanır (ADR-023). | Unit + Integration · SEG-001 |
+| Onay işlemdeyken içerik düzenlenir veya üretilir | Düzenleme kampanya satırı kilidinde bekler, onay commit olunca `409 CAMPAIGN_NOT_DRAFT` alır; onaylanan sürüm son sürümdür. | Integration (kontrollü senkronizasyon) |
+| Onay sırasında yeni sürüm yazılıyor | Onay kilitte bekler, yeni sürümü görür ve eski sürümle onayı `409 STALE_CONTENT_VERSION` ile reddeder; iş oluşmaz. | Integration |
+| Mesaj satırları yazılırken hata | Onay da geri alınır: kampanya `draft`, onay alanları boş, hiçbir mesaj yok. | Integration |
+| Onaydan önce herhangi bir yol | Önizleme, içerik üretimi/düzenleme ve reddedilen onaylar kuyruğa iş oluşturmaz. | Integration |
+| Eşzamanlı çift onay (aynı sürüm) | Hepsi `200`, tek ilk onay, iş bir kez oluşur, `approved_at` aynı. | Integration |
+| Doğrulanmış sürüm yokken onay | `409 NO_VALIDATED_CONTENT`, mesaj satırı yok | Integration · CNT-001 |
+| Kullanıcı V3'ü görürken V4 kaydedildi, V3'ü onaylar | `409 STALE_CONTENT_VERSION`, `messages` satır sayısı 0; arayüz uyarıyı gösterir ve son sürümü yükler | Integration + E2E (iki sekme) |
 | Çift tıklama, aynı sürümle onay | 200 ve aynı sonuç; `messages` sayısı değişmez | Integration |
-| Kampanya başka sürümle onaylıyken farklı sürümle onay | 409 | Integration |
+| Kampanya başka sürümle onaylıyken farklı sürümle onay | `409 CAMPAIGN_ALREADY_APPROVED` | Integration |
 | Onaydan sonra içerik düzenleme (`PUT`) | 409; worker hep `approved_content_version` metnini gönderir | Integration |
 | Taslak `{{first_name}}` içeriyor, bir alıcı için render SMS 161 karakter | Onay 422 (kaç alıcı, örnek ad), kampanya `draft`, mesaj satırı yok | Integration |
 | SMS > 160 veya konu > 80 (şablon düzeyinde) | Doğrulama reddeder | Unit · CNT-001 |

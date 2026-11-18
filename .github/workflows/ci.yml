@@ -94,3 +94,63 @@ jobs:
       # Çıkış kodu 0 ise yapılandırma geçerlidir. Aksi halde adım başarısız olur.
       - name: Compose yapılandırmasını doğrula
         run: docker compose config --quiet
+
+      - name: E2E Compose yapılandırmasını doğrula
+        run: docker compose -f compose.yaml -f compose.e2e.yaml config --quiet
+
+  # Uçtan uca (Playwright) testler, geliştirme ortamından ayrı izole Compose
+  # projesinde koşar (compose.e2e.yaml): ayrı veritabanı, kontrollü veri,
+  # yalnızca web üzerinden (bir kullanıcı gibi). Yerelde aynı ortam: `make e2e`.
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Bağımlılıkları kur (npm ci)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Tip kontrolü (e2e)
+        working-directory: frontend
+        run: npm run type-check:e2e
+
+      # Yalnızca Chromium: testler tek tarayıcıda koşar.
+      - name: Playwright Chromium kur
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: İzole e2e ortamını kur
+        run: make e2e-up
+
+      - name: E2E testleri
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://127.0.0.1:18080
+        run: npx playwright test
+
+      - name: Servis logları
+        if: failure()
+        run: make e2e-logs
+
+      - name: Playwright raporu ve izleri
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Ortamı sil
+        if: always()
+        run: make e2e-down

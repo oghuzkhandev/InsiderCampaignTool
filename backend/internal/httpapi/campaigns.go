@@ -36,16 +36,23 @@ type campaignResponse struct {
 	Segment   segment.Segment  `json:"segment"`
 	Audience  audienceResponse `json:"audience"`
 	CreatedAt time.Time        `json:"created_at"`
+	// Content, varsa son doğrulanmış içerik sürümüdür.
+	Content *contentVersionResponse `json:"content,omitempty"`
+	// ApprovedContentVersion ve ApprovedAt, kampanya onaylandıysa bulunur.
+	ApprovedContentVersion *int       `json:"approved_content_version,omitempty"`
+	ApprovedAt             *time.Time `json:"approved_at,omitempty"`
 }
 
 func toResponse(c campaign.Campaign) campaignResponse {
 	return campaignResponse{
-		ID:        c.ID,
-		Brief:     c.Brief,
-		Status:    c.Status,
-		Segment:   c.Segment,
-		Audience:  audienceResponse{Total: c.Audience.Total, SMS: c.Audience.SMS, Email: c.Audience.Email},
-		CreatedAt: c.CreatedAt.UTC(),
+		ApprovedContentVersion: c.ApprovedContentVersion,
+		ApprovedAt:             c.ApprovedAt,
+		ID:                     c.ID,
+		Brief:                  c.Brief,
+		Status:                 c.Status,
+		Segment:                c.Segment,
+		Audience:               audienceResponse{Total: c.Audience.Total, SMS: c.Audience.SMS, Email: c.Audience.Email},
+		CreatedAt:              c.CreatedAt.UTC(),
 	}
 }
 
@@ -98,7 +105,16 @@ func (s *server) getCampaign(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "kampanya okunamadı", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toResponse(c))
+	resp := toResponse(c)
+	v, found, err := s.Contents.Latest(r.Context(), c.ID)
+	if err != nil {
+		s.internalError(w, r, "içerik sürümü okunamadı", err)
+		return
+	}
+	if found {
+		resp.Content = toContentResponse(v)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // writeGenerateError, segment üretiminin hatalarını HTTP yanıtına çevirir.

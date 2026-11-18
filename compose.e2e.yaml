@@ -1,0 +1,50 @@
+# İzole uçtan uca (e2e) test ortamı. Yerelde ve CI'da aynı tanım kullanılır:
+#
+#   make e2e        # ortamı kurar, Playwright testlerini koşturur, ortamı siler
+#   make e2e-up     # yalnızca ortamı kurar (testleri elle koşturmak için)
+#   make e2e-down   # ortamı ve verisini siler
+#
+# Geliştirme ortamından (docker compose up) tamamen ayrıdır:
+#   * ayrı Compose projesi (`name`): ayrı container, ağ ve volume'lar
+#   * postgres host'a açılmaz ve veriyi diske yazmaz (tmpfs); geliştirme
+#     veritabanına ve 5432 portuna dokunulmaz
+#   * api host'a açılmaz; testler yalnızca web (aynı origin /api proxy'si) üzerinden
+#     bir kullanıcı gibi konuşur
+#   * veri: küçük ve kontrollü e2e veri kümesi (SEED_DATASET=e2e)
+#
+# Kullanım: docker compose -f compose.yaml -f compose.e2e.yaml ...
+name: campaign-e2e
+
+services:
+  postgres:
+    ports: !reset []
+    volumes: !override
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+
+  seed:
+    environment:
+      SEED_DATASET: e2e
+
+  api:
+    ports: !reset []
+    environment:
+      LLM_PROVIDER: mock
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+
+  web:
+    # Yalnızca loopback'te ve geliştirme portlarından (8080/8081/5173) farklı.
+    ports: !override
+      - "127.0.0.1:18080:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 90

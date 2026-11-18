@@ -92,8 +92,14 @@ doğrulanmış bir içerik sürümünü gönderim için onaylar.
 
 ## Açık noktalar
 
-- Eksik `first_name` için kullanılacak fallback metni uygulama öncesinde
-  belirlenmeli ve testte açıkça doğrulanmalıdır.
+- Eksik veya boşluktan ibaret `first_name` için fallback metni
+  `Değerli müşterimiz` olarak belirlendi (ADR-022). Testte açıkça
+  doğrulanmalıdır.
+- Kanala uygunluk açık izin ve adres ister (ADR-023, onaylandı): adresi
+  olmayan alıcı kitle sayısına da kuyruğa da girmez.
+- E-posta gövdesi için uzunluk sınırı tanımlı değil: CASE.md yalnızca SMS (160) ve
+  e-posta konusu (80) için sınır verir. Gerekirse ayrıca karar
+  verilir.
 
 ## İlgili belgeler
 

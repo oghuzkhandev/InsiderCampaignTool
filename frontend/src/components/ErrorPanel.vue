@@ -1,5 +1,15 @@
 <script setup lang="ts">
-defineProps<{ title: string; reasons: string[]; retryable: boolean }>()
+withDefaults(
+  defineProps<{
+    title: string
+    reasons: string[]
+    retryable: boolean
+    /** Sebepler varken gösterilen yönlendirme; boş string gizler. */
+    hint?: string
+    retryLabel?: string
+  }>(),
+  { hint: "Brief'i düzenleyip yeniden deneyebilirsiniz.", retryLabel: 'Yeniden dene' },
+)
 defineEmits<{ retry: [] }>()
 </script>
 
@@ -9,9 +19,9 @@ defineEmits<{ retry: [] }>()
     <ul v-if="reasons.length > 0">
       <li v-for="(reason, i) in reasons" :key="i">{{ reason }}</li>
     </ul>
-    <p v-if="reasons.length > 0" class="hint">Brief'i düzenleyip yeniden deneyebilirsiniz.</p>
+    <p v-if="reasons.length > 0 && hint" class="hint">{{ hint }}</p>
     <button v-if="retryable" type="button" class="retry" @click="$emit('retry')">
-      Yeniden dene
+      {{ retryLabel }}
     </button>
   </div>
 </template>

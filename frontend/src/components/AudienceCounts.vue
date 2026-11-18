@@ -26,9 +26,9 @@ const hasRecipients = computed(() => props.audience.sms > 0 || props.audience.em
       </div>
     </dl>
     <p class="note">
-      Kanal sayıları yalnızca ilgili kanal için açıkça izin vermiş kişileri içerir. İki kanala da
-      izni olan kişi ikisinde de sayılır; bu yüzden kanal sayılarının toplamı toplam kişi sayısı
-      değildir.
+      Kanal sayıları yalnızca ilgili kanal için açıkça izin vermiş ve o kanalın adresi (telefon veya
+      e-posta) bulunan kişileri içerir. İki kanala da uygun kişi ikisinde de sayılır; bu yüzden
+      kanal sayılarının toplamı toplam kişi sayısı değildir.
     </p>
     <p v-if="audience.total === 0" class="warning" role="status">
       Bu tanımla hiç kullanıcı eşleşmedi.

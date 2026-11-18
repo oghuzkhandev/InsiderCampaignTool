@@ -28,6 +28,12 @@ type DB interface {
 // tarihleri, bilgileri ve izinleri (silinmiş izin kayıtları dahil) olduğu gibi
 // kalır. Bu yüzden tekrar çalıştırmak kayıt çoğaltmaz ve veriyi değiştirmez.
 func Run(ctx context.Context, db DB, now time.Time) (Result, error) {
+	return RunUsers(ctx, db, Generate(now))
+}
+
+// RunUsers, verilen kullanıcıları Run ile aynı kurallarla yazar (tek transaction,
+// var olan kullanıcıya dokunmaz).
+func RunUsers(ctx context.Context, db DB, users []User) (Result, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, fmt.Errorf("seed: transaction açılamadı: %w", err)
@@ -52,7 +58,7 @@ func Run(ctx context.Context, db DB, now time.Time) (Result, error) {
 	defer insertConsent.Close()
 
 	var res Result
-	for _, u := range Generate(now) {
+	for _, u := range users {
 		var id int64
 		err := insertUser.QueryRowContext(ctx,
 			u.Email, u.FirstName, u.Phone, u.City, u.Language, u.LastCartAddAt, u.LastPurchaseAt, u.OrderCount,

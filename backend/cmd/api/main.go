@@ -14,6 +14,7 @@ import (
 
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/audience"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/campaign"
+	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/content"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/database"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/httpapi"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/llm"
@@ -28,7 +29,7 @@ func newMux() *http.ServeMux {
 
 // newLLM, LLM_PROVIDER değerine göre model istemcisi seçer. Varsayılan mock'tur;
 // testler ve demo gerçek API anahtarı gerektirmez.
-func newLLM(provider string) (llm.Client, error) {
+func newLLM(provider string) (llm.Provider, error) {
 	switch provider {
 	case "", "mock":
 		return llm.NewMock(), nil
@@ -73,6 +74,9 @@ func run() error {
 		Segments:  &segment.Generator{LLM: client},
 		Audience:  audience.NewCounter(db),
 		Campaigns: campaign.NewStore(db),
+		Content:   &content.Generator{LLM: client},
+		Contents:  campaign.NewContentStore(db),
+		Approver:  campaign.NewApprover(db),
 	}))
 
 	srv := &http.Server{

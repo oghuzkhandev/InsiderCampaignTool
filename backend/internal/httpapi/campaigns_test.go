@@ -76,6 +76,9 @@ type harness struct {
 	gen     *fakeGenerator
 	counter *fakeCounter
 	store   *fakeStore
+	cgen    *fakeContentGen
+	content *fakeContents
+	approve *fakeApprover
 	handler http.Handler
 	logs    *strings.Builder
 }
@@ -90,12 +93,18 @@ func newHarness(t *testing.T) *harness {
 		gen:     &fakeGenerator{seg: seg},
 		counter: &fakeCounter{counts: audience.Counts{Total: 10, SMS: 6, Email: 7}},
 		store:   &fakeStore{},
+		cgen:    &fakeContentGen{},
+		content: &fakeContents{},
+		approve: &fakeApprover{},
 		logs:    &strings.Builder{},
 	}
 	h.handler = New(Deps{
 		Segments:  h.gen,
 		Audience:  h.counter,
 		Campaigns: h.store,
+		Content:   h.cgen,
+		Contents:  h.content,
+		Approver:  h.approve,
 		Now:       func() time.Time { return fixedNow },
 		Logger:    slog.New(slog.NewTextHandler(h.logs, nil)),
 	})

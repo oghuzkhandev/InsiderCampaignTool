@@ -32,6 +32,14 @@ type Deps struct {
 	Segments  SegmentGenerator
 	Audience  AudienceCounter
 	Campaigns CampaignStore
+	// Content ve Contents, içerik üretimi ve sürümlerinin saklanması içindir.
+	Content  ContentGenerator
+	Contents ContentStore
+	// Approver, kampanyayı onaylar ve gönderim işlerini yazar.
+	Approver CampaignApprover
+	// SSEWriteTimeout, akışta her yazma için tanınan süredir; her yazmadan
+	// önce yenilenir. Sıfırsa 10 saniye kullanılır.
+	SSEWriteTimeout time.Duration
 	// Now, referans zamandır (30 günlük pencere gibi). Boşsa time.Now.
 	Now func() time.Time
 	// Logger boşsa slog.Default kullanılır.
@@ -58,6 +66,11 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/campaigns", methodNotAllowed(http.MethodPost))
 	mux.HandleFunc("GET /api/campaigns/{id}", s.getCampaign)
 	mux.HandleFunc("/api/campaigns/{id}", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("POST /api/campaigns/{id}/content", s.generateContent)
+	mux.HandleFunc("PUT /api/campaigns/{id}/content", s.putContent)
+	mux.HandleFunc("/api/campaigns/{id}/content", methodNotAllowed(http.MethodPost+", "+http.MethodPut))
+	mux.HandleFunc("POST /api/campaigns/{id}/approve", s.approveCampaign)
+	mux.HandleFunc("/api/campaigns/{id}/approve", methodNotAllowed(http.MethodPost))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Böyle bir adres yok.")
 	})
