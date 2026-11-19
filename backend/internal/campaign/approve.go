@@ -171,13 +171,13 @@ func (a *Approver) Approve(ctx context.Context, campaignID string, version int, 
 	)
 	for _, r := range recipients {
 		if phone, ok := r.SMSAddress(); ok {
-			sms.add(r.UserID, phone)
+			sms.add(r.UserID, phone, r.FirstName)
 			if len(content.CheckSMS(text, r.FirstName)) > 0 {
 				smsOver.note(content.DisplayName(r.FirstName))
 			}
 		}
 		if addr, ok := r.EmailAddress(); ok {
-			email.add(r.UserID, addr)
+			email.add(r.UserID, addr, r.FirstName)
 			if len(content.CheckSubject(text, r.FirstName)) > 0 {
 				subjectOver.note(content.DisplayName(r.FirstName))
 			}
@@ -231,11 +231,16 @@ func (a *Approver) Approve(ctx context.Context, campaignID string, version int, 
 type recipientBatch struct {
 	userIDs    []int64
 	recipients []string
+	// firstNames, onay anında render için kullanılan HAM adlardır (boş olabilir).
+	// Mesaja kopyalanır; worker retry dahil her denemede bu kayıtlı adı kullanır
+	// (ADR-026). Boş veya boşluk ad render sırasında fallback'e gider.
+	firstNames []string
 }
 
-func (b *recipientBatch) add(userID int64, recipient string) {
+func (b *recipientBatch) add(userID int64, recipient, firstName string) {
 	b.userIDs = append(b.userIDs, userID)
 	b.recipients = append(b.recipients, recipient)
+	b.firstNames = append(b.firstNames, firstName)
 }
 
 func (b recipientBatch) len() int { return len(b.userIDs) }
@@ -253,11 +258,11 @@ func (o *FieldOverflow) note(example string) {
 // ON CONFLICT DO NOTHING ile tekilleştirilir (draft kampanyada beklenmez).
 func insertMessages(ctx context.Context, tx *sql.Tx, campaignID, channel string, b recipientBatch) error {
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO messages (campaign_id, user_id, channel, recipient, idempotency_key)
-		 SELECT $1, t.user_id, $2::text, t.recipient, $5::text || ':' || t.user_id::text || ':' || $2::text
-		 FROM unnest($3::bigint[], $4::text[]) AS t(user_id, recipient)
+		`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, idempotency_key)
+		 SELECT $1, t.user_id, $2::text, t.recipient, t.first_name, $5::text || ':' || t.user_id::text || ':' || $2::text
+		 FROM unnest($3::bigint[], $4::text[], $6::text[]) AS t(user_id, recipient, first_name)
 		 ON CONFLICT DO NOTHING`,
-		campaignID, channel, b.userIDs, b.recipients, campaignID,
+		campaignID, channel, b.userIDs, b.recipients, campaignID, b.firstNames,
 	)
 	if err != nil {
 		return fmt.Errorf("campaign: %s mesajları yazılamadı: %w", channel, err)

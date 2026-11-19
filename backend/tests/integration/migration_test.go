@@ -62,6 +62,17 @@ func newGooseProvider(t *testing.T, db *sql.DB) *goose.Provider {
 	return p
 }
 
+// rollBack00003, 00002'nin Down korumasını denemeden önce 00003'ü geri alır.
+// goose, DownTo(1) ile her migration'ı kendi transaction'ında sırayla geri alır:
+// 00003 başarıyla kalkar, 00002 ise reddedilir. 00002'nin reddedilen Down'unun
+// şemayı değiştirmediğini göstermek için başlangıç noktası 00002 olmalıdır.
+func rollBack00003(t *testing.T, p *goose.Provider) {
+	t.Helper()
+	if _, err := p.DownTo(context.Background(), 2); err != nil {
+		t.Fatalf("00003 geri alınamadı: %v", err)
+	}
+}
+
 // 00002 geri alınınca yalnızca kendi nesneleri kalkar, 00001'in verisi korunur
 // ve yeniden uygulanınca şema birebir aynı olur. Yalnızca campaigns_test'te
 // çalışır; bu pakette başka test eşzamanlı çalışmaz ve test bitince şema
@@ -250,6 +261,7 @@ func TestMigration00002DownIsRefusedWhileNonDraftCampaignsExist(t *testing.T) {
 			}
 
 			p := newGooseProvider(t, db)
+			rollBack00003(t, p)
 			schemaBefore := schemaFingerprint(t, db)
 			countsBefore := tableCounts(t, db)
 
@@ -333,6 +345,7 @@ func TestMigration00002DownWaitsForInFlightApprovalAndThenRefuses(t *testing.T) 
 		t.Fatal(err)
 	}
 	p := newGooseProvider(t, db)
+	rollBack00003(t, p)
 	schemaBefore := schemaFingerprint(t, db)
 
 	// Uçuştaki onay: kampanyayı kilitler ve onaylar ama commit etmez.
