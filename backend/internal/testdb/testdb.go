@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // "pgx" sürücüsünü kaydeder
@@ -24,6 +26,69 @@ const Name = "campaigns_test"
 // veritabanına (postgres) giden varsayılan bağlantıdır. TEST_POSTGRES_URL ile
 // değiştirilebilir.
 const defaultAdminURL = "postgres://campaigns:campaigns@127.0.0.1:5432/postgres?sslmode=disable"
+
+// LockKey, campaigns_test'i kullanan testleri SÜREÇLER ARASI sıraya koyan
+// PostgreSQL advisory lock anahtarıdır ("camptest"). `go test ./...` paketleri
+// eşzamanlı çalıştırır; birden çok paket aynı veritabanını kullanınca biri
+// migration Down/Up veya TRUNCATE yaparken diğeri çalışırdı. Open kilidi alır ve
+// test bitince (t.Cleanup) bırakır; kilit oturum düzeyindedir, süreç ölürse
+// bağlantıyla birlikte kendiliğinden düşer.
+const LockKey int64 = 0x63616d7074657374
+
+// lockWait, başka bir paketin testinin kilidi bırakmasını bekleme sınırıdır.
+const lockWait = 5 * time.Minute
+
+// lock, süreç içinde referans sayımlıdır: aynı süreçteki iç içe Open çağrıları
+// kendi kendini kilitlemez; kilit en dıştaki test bitince bırakılır.
+var lock struct {
+	mu   sync.Mutex
+	refs int
+	conn *sql.Conn
+}
+
+func acquireLock(t testing.TB, db *sql.DB) {
+	t.Helper()
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+	if lock.refs == 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), lockWait)
+		defer cancel()
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("testdb: kilit bağlantısı açılamadı: %v", err)
+		}
+		if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, LockKey); err != nil {
+			_ = conn.Close()
+			t.Fatalf("testdb: %s kilidi %s içinde alınamadı (başka bir test paketi uzun süre kullanıyor olabilir): %v", Name, lockWait, err)
+		}
+		lock.conn = conn
+	}
+	lock.refs++
+	t.Cleanup(releaseLock)
+}
+
+func releaseLock() {
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+	lock.refs--
+	if lock.refs == 0 && lock.conn != nil {
+		_, _ = lock.conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, LockKey)
+		_ = lock.conn.Close()
+		lock.conn = nil
+	}
+}
+
+// URL, campaigns_test veritabanının bağlantı adresini döndürür. Alt süreç olarak
+// başlatılan worker ve mock provider'a verilir (ADR-015). Adres her zaman
+// campaigns_test'i gösterir; ortamdaki DATABASE_URL asla kullanılmaz. Veritabanı
+// Open ile hazırlanır, bu işlev yalnızca adresi üretir.
+func URL() (string, error) {
+	adminURL := os.Getenv("TEST_POSTGRES_URL")
+	if adminURL == "" {
+		adminURL = defaultAdminURL
+	}
+	return withDatabase(adminURL, Name)
+}
 
 // Open, campaigns_test veritabanını oluşturur (yoksa), ortak migration'ları
 // uygular, tabloları temizler ve bağlantıyı döndürür. Her yazmadan önce
@@ -52,10 +117,15 @@ func Open(t testing.TB) *sql.DB {
 	if err := RequireTestDatabase(db); err != nil {
 		t.Fatalf("testdb: %v", err)
 	}
+	// Migration ve temizlikten ÖNCE: başka bir test paketi şemayı değiştiriyor
+	// veya veriyi temizliyor olabilir.
+	// Migration ve temizlikten ÖNCE: başka bir test paketi şemayı değiştiriyor
+	// veya veriyi temizliyor olabilir.
+	acquireLock(t, db)
 	if err := migrate(db); err != nil {
 		t.Fatalf("testdb: migration: %v", err)
 	}
-	if _, err := db.Exec(`TRUNCATE messages, campaign_contents, campaigns, user_consents, users RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := db.Exec(`TRUNCATE mock_provider_acceptances, messages, campaign_contents, campaigns, user_consents, users RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("testdb: temizleme: %v", err)
 	}
 	return db
