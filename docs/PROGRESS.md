@@ -683,9 +683,10 @@ dışındaki `4xx` `rejected`'tır.
   E2E işinin süresi 25 dk sınırına yaklaşabilir.
 - [ ] **Onay bekleyen taslak ADR'ler:** ADR-013 (Compose başlatma sırası; sıra artık
   uygulandı, nota bakın), ADR-010 (30 günlük kural yorumu).
-- [ ] **`ai-sessions/`:** Oturum 1-3 var. Bu çalışma oturumunun (4. ve devamı)
-  `/export`'u Oğuzhan tarafından eklenir; paylaşımdan önce anahtar ve kişisel
-  verilerin temizlenmesi gerekir.
+- [ ] **`ai-sessions/`:** Oturum 1-3 var; dizin tablosu (`ai-sessions/README.md`) 1-5.
+  oturumu listeler. 4. oturumun `/export`'u Oğuzhan tarafından eklenir
+  (`Session-04-Worker-MockProvider-Dashboard.txt`), 5. oturum sonunda 5. oturum;
+  paylaşımdan önce anahtar ve kişisel verilerin temizlenmesi gerekir.
 - [ ] **Teslim doğrulaması (aşağıdaki liste):** temiz kopyada kuruldu ve demo çalıştı;
   `make test` temiz kopyada değil çalışma ağacında koştu (aynı Compose postgres'i).
   Gerçek bir `git clone` (commit sonrası) ile son kez denenmeli.
@@ -841,6 +842,40 @@ yapılmadı, aşama bitmedi.
   içinde. `queued`/`sending` ve `attempts > 0` mesaj varsa migration hiçbir veri
   değiştirmeden durur. Mevcut mesajlar `users`'ın şimdiki adıyla doldurulur; bu,
   daha önce denenmiş mesajlarda aynı içeriği garanti etmez.
+
+### Frontend iyileştirmeleri: tasarım ve bileşenleri modernleştirme
+
+**Branch:** ayrı bir feature branch, güncel `main`'den açılır (CLAUDE.md: her aşama için
+yeni branch). Önerilen ad `feat/frontend-modernization`; ad Oğuzhan ile netleşir ve
+branch ancak `feat/worker-dashboard` PR'ı `main`'e merge edildikten sonra açılır.
+**Durum:** planlandı, başlanmadı. Oturumun başında Oğuzhan 4. oturumdaki işin gerçek
+GitHub Actions (CI) sonucunu bildirecek; `feat/worker-dashboard` üzerinde kırmızı
+çıkan bir şey varsa önce o branch'te düzeltilir, frontend işi ondan sonra yeni
+branch'te başlar.
+
+**Kapsam (Oğuzhan'ın tanımı):** frontend'in tasarım kısmı ve bileşenlerin
+modernleştirilmesi. Ayrıntılı kapsam ve öncelik oturumda Oğuzhan ile belirlenir.
+
+**Girdi olarak bilinenler (karar değil, 4. oturumda gözlenenler; onay bekler):**
+
+- Arayüzde iki düğme/biçim sistemi bir arada: eski ekranlarda (`BriefForm`,
+  `CampaignView`, `ApprovePanel`, `ErrorPanel`, `ContentEditor`) bileşen kapsamlı CSS
+  ile yazılmış düz `<button>`, `<input>`, `<textarea>`; yeni dashboard'da shadcn `Button`,
+  `Card`, `Badge`, `Alert`, `Progress`. Mavi birincil düğmeler ile nötr shadcn
+  düğmeleri görsel olarak tutarsız.
+- Koyu tema ve token'lar 4. oturumda düzeltildi (ADR-021 notu, onaylı): shadcn
+  token'ları `--app-*` paletinden geliyor, `prefers-color-scheme` izleniyor. Yeni
+  tasarım işi bu tabanın üzerine kurulmalı.
+- Mevcut güvenceler korunmalı: `e2e/visual-themes.spec.ts` (WCAG kontrastı ve
+  `cursor: pointer`, açık ve koyu tema), erişilebilirlik kuralları (sr-only durum
+  bölgesi, `role="note"`), telefon görünümü, 314 birim ve 17 e2e testi.
+- Kurallar: mevcut shadcn bileşenleri kullanılır, yeni bağımlılık eklenmeden önce
+  Oğuzhan'a sorulur (CLAUDE.md, ADR-021); `any`, `as` ve `!` yok; dış veri `unknown`
+  olarak alınıp api katmanında doğrulanır.
+
+**Çıkış koşulu (öneri, oturumda netleşir):** seçilen ekranlar tek bir bileşen sistemiyle
+tutarlı, iki temada okunabilir ve mobilde sorunsuz; birim, e2e ve görsel testler geçer;
+tasarım kararları ADR-021'e veya yeni bir ADR'ye yazılır.
 
 ### 2. Gerçek Claude entegrasyonu (isteğe bağlı, ayrı iş)
 
@@ -1000,9 +1035,11 @@ bildirilecek. Hata bulunmadı.
   - Gerçek `git clone` ile (commit sonrası) kurulum denemesi.
   - Gerçek Claude adaptörü yok (`LLM_PROVIDER` yalnızca `mock`): teslimin en büyük eksiği.
   - `ai-sessions/`: bu oturumun `/export`'u eklenecek.
-- **Sıradaki iş:** PR aç, CI sonucunu doğrula; ardından gerçek Claude adaptörü (karar:
-  SDK mı düz HTTP mi, anahtar yönetimi); `ai-sessions/` export'u; kalan işler yukarıdaki
-  "Bu aşamada kalan işler" ve "Sonra yapılacaklar" listelerinde.
+- **Sıradaki iş:** PR aç, CI sonucunu doğrula (sonuç **5. oturumda** bildirilecek);
+  **5. oturum: frontend tasarım ve bileşen modernleştirme** (yukarıdaki "Frontend
+  iyileştirmeleri" bölümü, **ayrı yeni branch'te**); ardından gerçek Claude adaptörü (karar: SDK mı düz HTTP mi, anahtar
+  yönetimi); `ai-sessions/` export'ları (4. oturum Oğuzhan tarafından eklenecek); kalan
+  işler "Bu aşamada kalan işler" ve "Sonra yapılacaklar" listelerinde.
 
 ### Önceki aşama: `feat/content-approval`
 
