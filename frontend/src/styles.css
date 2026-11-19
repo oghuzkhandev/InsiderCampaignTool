@@ -3,7 +3,13 @@
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Koyu tema işletim sistemi ayarını izler (prefers-color-scheme), uygulamanın
+ * --app-* renkleriyle aynı kaynaktan. shadcn'ın `dark:` varyantları da buna bağlıdır;
+ * `.dark` sınıfı hiçbir yerde eklenmediği için sınıfa bağlı koyu tema hiç devreye
+ * girmiyor, koyu zeminde beyaz kartlar ve okunmayan koyu yazılar oluşuyordu.
+ */
+@custom-variant dark (@media (prefers-color-scheme: dark));
 
 :root {
   --app-bg: #f6f7f9;
@@ -17,23 +23,29 @@
   --app-danger-bg: #fdecea;
   --app-warning-bg: #fff4d6;
   color-scheme: light dark;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  /*
+   * Zemin, yüzey, metin ve kenarlık uygulamanın --app-* paletinden gelir (iki
+   * temada da tek kaynak); böylece shadcn kartları ile uygulamanın kendi
+   * yüzeyleri aynı renkte olur. Geri kalan token'lar shadcn varsayılanıdır.
+   */
+  --background: var(--app-bg);
+  --foreground: var(--app-text);
+  --card: var(--app-surface);
+  --card-foreground: var(--app-text);
+  --popover: var(--app-surface);
+  --popover-foreground: var(--app-text);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: var(--app-muted);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  /* shadcn'ın varsayılan kırmızısı açık zeminde AA kontrastın altında kalıyordu (4,45). */
+  --destructive: var(--app-danger);
+  --border: var(--app-border);
+  --input: var(--app-border);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
@@ -63,6 +75,33 @@
     --app-danger: #ff8a80;
     --app-danger-bg: #3a1f1d;
     --app-warning-bg: #3a3118;
+
+    /*
+     * shadcn koyu token'ları (varsayılan neutral koyu tema). Zemin, yüzey, metin ve
+     * kenarlık yukarıdaki --app-* değerlerinden gelir; burada yalnızca kalanlar var.
+     */
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
   }
 }
 
@@ -122,43 +161,30 @@ body {
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  /*
+   * Tıklanabilir her öğe imleci el yapar. Tailwind'in preflight'ı düğmelerde
+   * `cursor: default` bırakır; shadcn bileşenleri (components.json: pointer false)
+   * bunu kendiliğinden düzeltmez. Devre dışı öğeler hariçtir: shadcn düğmeleri
+   * `pointer-events: none` taşır, özel düğmeler kendi `not-allowed` kuralını tanımlar.
+   */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='checkbox']:not([aria-disabled='true']):not([data-disabled]),
+  [role='switch']:not([aria-disabled='true']):not([data-disabled]),
+  [role='tab']:not([aria-disabled='true']):not([data-disabled]),
+  [role='menuitem']:not([aria-disabled='true']):not([data-disabled]),
+  a[href],
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='submit']:not(:disabled),
+  input[type='button']:not(:disabled) {
+    cursor: pointer;
   }
   body {
     @apply bg-background text-foreground;
