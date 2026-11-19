@@ -1,6 +1,17 @@
 {
   "extends": "@tsconfig/node24/tsconfig.json",
   "compilerOptions": {
+    // `locator.evaluate` / `page.evaluate` geri çağrıları tarayıcıda çalışır ve DOM
+    // kullanır (getComputedStyle, document); yalnızca tip kontrolü için DOM tipleri.
+    "lib": [
+      "es2024",
+      "ESNext.Array",
+      "ESNext.Collection",
+      "ESNext.Error",
+      "ESNext.Iterator",
+      "ESNext.Promise",
+      "DOM"
+    ],
     "noEmit": true,
     "allowImportingTsExtensions": true
   },

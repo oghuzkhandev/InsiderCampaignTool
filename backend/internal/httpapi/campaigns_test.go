@@ -14,6 +14,7 @@ import (
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/audience"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/campaign"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/llm"
+	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/metrics"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/segment"
 )
 
@@ -81,6 +82,8 @@ type harness struct {
 	approve *fakeApprover
 	handler http.Handler
 	logs    *strings.Builder
+	// llmFailures, llm_validation_failures_total sayacıdır.
+	llmFailures *metrics.Counter
 }
 
 func newHarness(t *testing.T) *harness {
@@ -97,16 +100,19 @@ func newHarness(t *testing.T) *harness {
 		content: &fakeContents{},
 		approve: &fakeApprover{},
 		logs:    &strings.Builder{},
+
+		llmFailures: &metrics.Counter{},
 	}
 	h.handler = New(Deps{
-		Segments:  h.gen,
-		Audience:  h.counter,
-		Campaigns: h.store,
-		Content:   h.cgen,
-		Contents:  h.content,
-		Approver:  h.approve,
-		Now:       func() time.Time { return fixedNow },
-		Logger:    slog.New(slog.NewTextHandler(h.logs, nil)),
+		Segments:              h.gen,
+		Audience:              h.counter,
+		Campaigns:             h.store,
+		Content:               h.cgen,
+		Contents:              h.content,
+		Approver:              h.approve,
+		LLMValidationFailures: h.llmFailures,
+		Now:                   func() time.Time { return fixedNow },
+		Logger:                slog.New(slog.NewTextHandler(h.logs, nil)),
 	})
 	return h
 }

@@ -15,8 +15,8 @@ func idemKey(campaignID string, userID int64, channel string) string {
 
 func insertMessage(db execer, campaignID string, userID int64, channel, recipient string) error {
 	_, err := db.Exec(
-		`INSERT INTO messages (campaign_id, user_id, channel, recipient, idempotency_key)
-		 VALUES ($1, $2, $3, $4, $5)`,
+		`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, idempotency_key)
+		 VALUES ($1, $2, $3, $4, '', $5)`,
 		campaignID, userID, channel, recipient, idemKey(campaignID, userID, channel),
 	)
 	return err
@@ -69,8 +69,8 @@ func TestMessagesConstraints(t *testing.T) {
 
 	insert := func(channel, recipient, status string, attempts int, idem string) error {
 		_, err := db.Exec(
-			`INSERT INTO messages (campaign_id, user_id, channel, recipient, status, attempts, idempotency_key)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, uid, channel, recipient, status, attempts, idem)
+			`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, status, attempts, idempotency_key)
+			 VALUES ($1, $2, $3, $4, '', $5, $6, $7)`, id, uid, channel, recipient, status, attempts, idem)
 		return err
 	}
 
@@ -111,8 +111,8 @@ func TestMessagesConstraints(t *testing.T) {
 
 	// Geçerli durum örnekleri.
 	if _, err := db.Exec(
-		`INSERT INTO messages (campaign_id, user_id, channel, recipient, status, attempts, claim_token, claimed_at, idempotency_key)
-		 VALUES ($1, $2, 'sms', 'x', 'sending', 1, gen_random_uuid(), now(), $3)`, id, uid, key); err != nil {
+		`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, status, attempts, claim_token, claimed_at, idempotency_key)
+		 VALUES ($1, $2, 'sms', 'x', '', 'sending', 1, gen_random_uuid(), now(), $3)`, id, uid, key); err != nil {
 		t.Fatalf("claim'li sending kabul edilmeli: %v", err)
 	}
 	if _, err := db.Exec(`UPDATE messages SET status = 'sent', sent_at = now() WHERE campaign_id = $1`, id); err != nil {
@@ -141,8 +141,8 @@ func TestMessagesAreUniquePerCampaignUserChannel(t *testing.T) {
 
 	// Onay fan-out'u ON CONFLICT DO NOTHING kullanır: ikinci yazım satır eklemez.
 	res, err := db.Exec(
-		`INSERT INTO messages (campaign_id, user_id, channel, recipient, idempotency_key)
-		 VALUES ($1, $2, 'sms', 'x', $3) ON CONFLICT DO NOTHING`, id, uid, idemKey(id, uid, "sms"))
+		`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, idempotency_key)
+		 VALUES ($1, $2, 'sms', 'x', '', $3) ON CONFLICT DO NOTHING`, id, uid, idemKey(id, uid, "sms"))
 	if err != nil {
 		t.Fatal(err)
 	}

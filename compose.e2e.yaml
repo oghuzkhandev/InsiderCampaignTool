@@ -30,21 +30,47 @@ services:
     ports: !reset []
     environment:
       LLM_PROVIDER: mock
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
-      interval: 2s
-      timeout: 3s
-      retries: 90
+
+  # Gönderim servisleri yalnızca `delivery` profiliyle açılır. Mevcut Playwright
+  # testleri onaydan sonra kampanyanın `approved` kaldığını doğrular; worker
+  # çalışsaydı durum `sending`/`completed` olurdu. Gönderim ve dashboard
+  # testleri bu profili bilerek açar (--profile delivery).
+  #
+  # Gönderim testi deterministiktir: rastgele 429/500 yok, gecikme yok. Provider
+  # `accept_then_drop` modundadır: her mesajın ilk kabul yanıtı düşer, worker aynı
+  # Idempotency-Key ile yeniden dener ve provider kayıtlı kabulü döndürür. Böylece
+  # test, tek başarılı yolun yanında yanıt kaybı + idempotency zincirini de gerçek
+  # worker, provider ve veritabanıyla geçer; sonuç yine de her seferinde aynıdır
+  # (7 mesaj gönderildi, hiçbiri başarısız).
+  mock-provider:
+    profiles: ["delivery"]
+    ports: !reset []
+    environment:
+      MOCK_PROVIDER_LATENCY: "0s"
+      MOCK_PROVIDER_429_RATE: "0"
+      MOCK_PROVIDER_500_RATE: "0"
+      MOCK_PROVIDER_MODE: accept_then_drop
+
+  # Yeniden deneme beklemesi kısaltılır; testin süresi saniyeler içinde kalır.
+  worker:
+    profiles: ["delivery"]
+    environment:
+      WORKER_BACKOFF_BASE: "100ms"
+      WORKER_BACKOFF_CAP: "500ms"
+
+  # İsteğe bağlı metrik sunucusu: `observability` profiliyle açılır. Geliştirme
+  # portundan (9091) farklı bir loopback portunda yayımlanır ve veriyi diske yazmaz.
+  prometheus:
+    ports: !override
+      - "127.0.0.1:19091:9090"
+    volumes: !override
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # Prometheus `nobody` olarak çalışır; tmpfs varsayılanı root sahiplidir, bu yüzden
+    # herkese yazılabilir (sekizlik mod seçenek metniyle verilir).
+    tmpfs:
+      - /prometheus:mode=1777
 
   web:
     # Yalnızca loopback'te ve geliştirme portlarından (8080/8081/5173) farklı.
     ports: !override
-      - "127.0.0.1:18080:5173"
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null"]
-      interval: 2s
-      timeout: 3s
-      retries: 90
+      - "127.0.0.1:18080:80"

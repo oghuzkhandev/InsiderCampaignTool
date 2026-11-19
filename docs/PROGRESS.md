@@ -1,6 +1,6 @@
 # Proje İlerlemesi
 
-Son güncelleme: 2026-11-18
+Son güncelleme: 2026-11-19
 
 ## Tamamlanan hazırlık
 
@@ -429,11 +429,12 @@ aşamada veya ayrı küçük işler olarak ele alınır, sıra Oğuzhan'la belir
   kayda alınmadı). Vite dev proxy'si ayrıca yerelde ölçüldü (tamponlama yok).
   nginx'e geçişte (ADR-014) `proxy_buffering off` ve `proxy_read_timeout`
   yeniden doğrulanmalı.
-- [ ] Aktif bir SSE akışı sırasında SIGTERM davranışı test edilmedi (kapanış
-  bütçesi 15 sn, LLM çağrısı zaman aşımı 60 sn).
-- [ ] `httpapi.New` başlangıçta nil bağımlılığı doğrulamıyor (nil `Content`,
-  `Contents` veya `Approver` ilk istekte panik verir) ve `cmd/api` bağlamasını
-  kapsayan test yok.
+- [x] Aktif bir SSE akışı sırasında SIGTERM davranışı: **çözüldü ve test edildi**.
+  Dashboard akışı `cmd/api/shutdown_stream_test.go`, içerik üretimi akışı
+  `cmd/api/shutdown_content_test.go` (ayrıntı: D3 sonrası maddeler).
+- [x] `httpapi.New` nil bağımlılık doğrulaması ve `cmd/api` bağlama testi: **çözüldü**
+  (`Deps.Validate()` başlangıçta çağrılır; `newHandler` gerçek veritabanıyla test
+  edilir). `New` bilerek toleranslı kaldı (ADR-027 seçenek 6).
 - [ ] Maliyet ve kötüye kullanım (ürün kararı): `POST /content` yetkisiz ve hız
   sınırsız, aynı kampanya için paralel üretim paralel sürüm üretir, `PUT` ile
   sürüm sayısı sınırsız büyür. Seçenekler: kampanya başına tek eşzamanlı
@@ -462,21 +463,419 @@ ele alınabilir.
 
 ### 1. Worker, mock provider ve dashboard
 
-**Branch:** `feat/worker-dashboard`
+**Branch:** `feat/worker-dashboard` (devam ediyor)
 
-- [ ] Worker ve mock provider'ı Compose'a ekle. Önce tek bir mesajı kuyruktan
-  alıp provider'a gönder. Worker gönderimden hemen önce kanal iznini kontrol etsin.
-- [ ] Mock provider gecikme, `429` ve `500` üretebilsin. Başarılı kabulü
-  PostgreSQL'e idempotency anahtarıyla kaydetsin.
-- [ ] Aynı anahtarla retry, azami deneme, lease kurtarma ve eski
-  `claim_token` ile sonuç yazılmasının engellenmesini doğrula.
-- [ ] Retry dahil SMS ve e-posta isteklerini ayrı sınırla. Her kanal için
-  kayan bir saniyelik pencerede en fazla 100 istek olduğunu test et.
-- [ ] Dashboard'da canlı gönderim durumunu göster. Health ve metrics
-  endpoint'lerini doğrula.
+**Specler:** [SND-001](specs/SND-001-message-delivery.md),
+[TRK-001](specs/TRK-001-live-delivery-tracking.md). **Kararlar:** ADR-002, 005 ve
+006 onaylandı (2026-11-19); ADR-025 (mock provider) eklendi. `failure_reason`
+yalnızca `exhausted` ve `rejected`. `429` kalıcı hata değildir (retry), `429`
+dışındaki `4xx` `rejected`'tır.
+
+- [x] Worker ve mock provider yazıldı ve Compose'a eklendi (`worker`,
+  `mock-provider`; `cmd/worker`, `cmd/mock-provider`). Worker kanal iznini limiter
+  beklemesinden sonra, provider çağrısından hemen önce (sahiplik ve lease ile
+  aynı sorguda) kontrol ediyor; izin yoksa `skipped`, provider'a istek gitmiyor.
+- [x] Mock provider gecikme, `429` (`Retry-After` ile) ve `500` üretiyor.
+  Başarılı kabulü migration `00003` (`mock_provider_acceptances`) ile
+  PostgreSQL'e idempotency anahtarıyla atomik kaydediyor. Aynı anahtarla farklı
+  alıcı, kanal veya içerik `422` ile reddediliyor. `accept_then_drop` yalnızca
+  ilk kabul yanıtını düşürüyor; sürekli yanıt kaybı ayrı mod
+  (`drop_all_responses`).
+- [x] Aynı anahtarla retry, azami deneme, lease kurtarma ve eski `claim_token`
+  ile sonuç yazılmasının engellenmesi doğrulandı (aşağıda).
+- [x] SMS ve e-posta ayrı limiter'larla sınırlı (retry dahil). Provider'a
+  ulaşan isteklerin zaman damgalarıyla kayan 1 sn pencere ölçüldü: kanal başına
+  en çok 96 (CPU yükü altında 97), sınır 100. Limitsiz kontrol koşusunda 300.
+- [x] **Dashboard frontend'i** (TRK-001): `/campaigns/:id/delivery` ekranı. Ayrıntı
+  aşağıda ("Dashboard frontend'i").
+- [x] **Dashboard SSE uç noktası (backend, D3):** `GET /api/campaigns/{id}/events`
+  ([ARCHITECTURE §5](ARCHITECTURE.md) sözleşmesi). Tek sorguluk sayım
+  (`campaign.Store.DeliverySnapshot`), `internal/httpapi/delivery.go` işleyicisi.
+  - **Heartbeat:** kuyrukta değişiklik olmasa da her aralıkta (1 sn) görüntü
+    yollanır; arayüz sessiz bağlantıyı takılmış sayıp yenilediği için gerekliydi.
+  - **Hata ve temizlik:** okuma başına 3 sn süre sınırı → `error` olayı ve kapanış;
+    `completed` görüntüsünden, istemci ayrılınca ve sunucu kapanırken (`Deps.Shutdown`)
+    akış biter. `cmd/api` `newServer` bu kapanış kanalını `RegisterOnShutdown` ile bağlar.
+  - **Testler:** `tests/integration/delivery-snapshot_test.go` (7, gerçek PostgreSQL
+    sayımı), `delivery-stream_test.go` (4, gerçek handler + gerçek veritabanı:
+    değişiklik sonraki görüntüde, `completed` akışı kapatır, boşta aynı görüntüler,
+    404, draft), `internal/httpapi/delivery_test.go` (15, `-race` temiz),
+    `cmd/api/shutdown_stream_test.go` (2, açık akışla kapanış). Mutasyonlar
+    (heartbeat'i kaldırma, okuma süre sınırını kaldırma, `Shutdown` izlemeyi
+    kaldırma, `RegisterOnShutdown` bağını kaldırma) testlerce yakalandı.
+  - **Gerçek yığın e2e:** `frontend/e2e/delivery-real.spec.ts` (`@real`, hiçbir şey
+    taklit edilmez): kullanıcı gibi oluştur, içerik üret, onayla → dashboard → gerçek
+    worker + mock provider (`accept_then_drop`, her mesajın ilk yanıtı düşer) + gerçek
+    SSE ile `Tamamlandı`, 7/7 gönderildi, 0 başarısız. `make e2e-delivery` (3,2 sn)
+    geçti. Worker ve provider olmayan ortamda test beklenen şekilde başarısız oldu
+    ("Onaylandı, kuyrukta"). Taklitli testler hata, kopma + yeniden bağlanma,
+    takılma ve mobil için kaldı.
+  - **Make/CI:** `e2e-standard` (`--grep-invert @real`, `delivery` profili kapalı),
+    `e2e-delivery` (profil açık, `--grep @real`), `e2e` ikisini koşar; `e2e-down` ve
+    `e2e-logs` profili de kapsar. CI E2E işi ikinci döngüyle genişletildi (yeni araç
+    yok).
+- [x] **Sağlık ve metrik uçları (D1, D2):** ADR-016 ve TRK-001'e göre; uygulama
+  ayrıntıları [ADR-027](../DECISIONS.md#adr-027--metrik-ve-sağlık-uçlarının-uygulama-ayrıntıları)
+  (onaylandı, 2026-11-19).
+  - **`/healthz`** (önceden vardı, veritabanına bakmaz) ve **`/readyz`** (veritabanı
+    ping'i, 2 sn süre sınırı; kesintide `503`, dönünce `200`; hata ayrıntısı yanıta
+    sızmaz, yalnızca durum değişince loglanır). `httpapi.Deps.Validate()` zorunlu
+    bağımlılıklar eksikse API'nin başlamasını engeller (`cmd/api` çağırır).
+  - **`/metrics`**: yeni `internal/metrics` paketi (bağımlılıksız Prometheus metin
+    yazıcısı: sayaç, histogram, `Serve`). API ve worker ana porttan **ayrı iç
+    dinleyicide** (`METRICS_ADDR`, Compose'ta `:9090`, `expose`, `ports` yok) sunar;
+    ana API portunda `/metrics` yoktur (`404`).
+  - **Worker:** `messages_sent_total`, `send_attempts_total{outcome}` (6 sonucun hepsi
+    her zaman), `stale_result_total`, `reaper_requeued_total`,
+    `ratelimit_wait_seconds` (**histogram**; limiter + kapı beklemesi, deneme başına
+    bir gözlem).
+  - **API:** `queue_depth{channel}` (her okunuşta PostgreSQL'den; `sms` ve `email`
+    her zaman) ve `llm_validation_failures_total` (segment ve içerik üretiminde
+    doğrulamadan geçemeyen model çıktısı; insan düzenlemesi sayılmaz). Kuyruk
+    derinliği okunamazsa `503`, kısmi çıktı yok.
+  - **Testler:** `internal/metrics` (biçim, kaçış, histogram, nil güvenliği, `Serve`),
+    worker metrikleri (7, mutasyonla doğrulandı), `httpapi` (sayma kuralları, toplayıcı,
+    `Validate`), `cmd/api` (`readyz` 7 test; `newHandler` bağlama testi **gerçek
+    veritabanı + MockLLM ile bütün rotalar**, `Approver` bağını kaldıran mutasyonla
+    doğrulandı), entegrasyon (`queue-depth_test.go`, 5 test, gerçek PostgreSQL),
+    backend e2e (`observability_test.go`, gerçek API ve worker süreçleri: `/readyz`
+    kesinti, toparlanma ve takılma; worker yokken birikim ve erime; worker sayaçları
+    tam değerlerle ve API'de yok). Compose üzerinde `make e2e-metrics-internal`
+    (iç ağdan okunur, ana port `404`, host'a yayımlanmaz) çalışan ortamda geçti;
+    api portu yayımlanırsa doğru nedenle kırıldığı denendi. CI'ın E2E işine eklendi.
+  - **`promtool` doğrulaması (2026-11-19):** izole `delivery` ortamında gerçek bir
+    gönderimden sonra (7 mesaj, `accept_then_drop`) API (`:9090`) ve worker (`:9090`)
+    çıktıları `promtool check metrics` ile denetlendi (`prom/prometheus:v3.5.0`
+    imajındaki `promtool`, tek seferlik `docker run`; Compose'a servis eklenmedi):
+    **iki çıktı da temiz, `rc=0`, uyarı yok**. Negatif kontrol: `_total` eksik sayaç ve
+    gauge'da `_total` soneki `rc=3` ve 4 uyarıyla yakalandı, yani araç gerçekten lint
+    yapıyor. `--extended` kardinalite: API 3 seri, worker 24 seri (15'i histogram
+    kovaları). Yeniden üretmek için (ortam açıkken):
+
+    ```sh
+    E="docker compose -f compose.yaml -f compose.e2e.yaml --profile delivery"
+    $E exec -T web wget -qO- http://worker:9090/metrics \
+      | docker run --rm -i --entrypoint promtool prom/prometheus:v3.5.0 check metrics
+    ```
+
+    Otomatik hedef/CI adımı eklenmedi: CI'a yeni araç eklemek onayınıza bağlı.
+  - **Sınırlar:** `ratelimit_wait_seconds` kova sınırları sabit. Metrics portu
+    çakışması başlangıç hatasıdır, otomatik test yok. Gerçek bir Prometheus
+    **sunucusuyla** scrape denenmedi (yalnızca `promtool` lint'i). Yeni bağımlılık
+    eklenmedi (ADR-027 seçenek 2).
+- [x] **Aktif içerik üretimi sırasında SIGTERM** (`POST /content`): test edildi
+  (`cmd/api/shutdown_content_test.go`, gerçek `newServer` + `newHandler` + `serve`,
+  gerçek PostgreSQL, akış ortasında tutulan yavaş LLM). Önceki "kapanışı bekletebilir"
+  varsayımı **kısmen doğrulandı, hata değil, tasarım**: devam eden üretime kapanış
+  penceresi (15 sn) tanınır.
+  - Pencere içinde biten üretim tamamlanır: istemci `validated` alır, sürüm kaydedilir,
+    sunucu üretim biter bitmez temiz döner, yeni bağlantı kabul edilmez.
+  - Pencereyi aşan üretim kesilir: sunucu `kapanış tamamlanamadı` hatasıyla döner,
+    LLM çağrısının bağlamı iptal olur (arkada sürmez), **hiçbir sürüm kaydedilmez**.
+  - Mutasyon (`Shutdown` yerine anında `Close`) iki testi de yakaladı.
+  - **Düzeltilen pürüz:** pencere aşılınca `main` "api başlatılamadı" yazıyordu
+    (başlatma değil kapanış hatası). `serve` artık çalışırken veya kapanırken oluşan
+    hataları `*servingError` olarak döndürür, kapanış süresi aşımı ayrıca
+    `errShutdownIncomplete`'tir; `main` `exitMessage` ile mesajı seçer
+    ("api kapanışı süre içinde tamamlanamadı; açık istekler kesildi" /
+    "api sunucusu beklenmedik şekilde durdu" / "api başlatılamadı"). Çıkış kodu
+    değişmedi (`1`). Regresyon testi `cmd/api/exit_test.go` (önce derlenmediği için
+    kırmızıydı, düzeltmeden sonra yeşil). Worker'ın `main`'i aynı kalıbı taşıyor ama
+    `Run` hatası orada beklenmedik bir durumdur; ele alınmadı.
+- [x] **Görsel düzeltmeler ve imleç (frontend):**
+  - **Koyu tema:** shadcn token'ları yalnızca `.dark` sınıfında koyulaşıyordu ve sınıf
+    hiç eklenmiyordu; işletim sistemi koyu temadayken beyaz kartlar ve koyu zeminde
+    koyu yazılı rozetler çıkıyordu. Token'lar ve `dark:` varyantı
+    `prefers-color-scheme: dark`'a bağlandı; zemin, yüzey, metin ve kenarlık
+    `--app-*` paletinden gelir (kartlar uygulamanın kendi yüzeyleriyle aynı renk).
+    Karar notu ADR-021'de (onaylandı, 2026-11-19).
+  - **Kontrast:** açık temada shadcn'ın varsayılan kırmızısı (`destructive`)
+    "Yeniden bağlan" düğmesinde 4,45'te kalıyordu (AA 4,5); `--app-danger`'a bağlandı.
+  - **Rozet:** dashboard'da bağlantı rozeti "Tamamlandı" kampanya durumuyla aynı
+    sözcüktü; "Kapandı" oldu.
+  - **`cursor: pointer`:** `button`, `[role=button|checkbox|switch|tab|menuitem]`,
+    bağlantı, `summary`, `select`, onay ve radyo kutuları için global kural
+    (`styles.css`, devre dışı olanlar hariç). Tailwind ön ayarı düğmelerde varsayılan
+    imleci bırakıyordu.
+  - **Test:** `e2e/visual-themes.spec.ts` açık ve koyu temada kampanya, onay ve
+    dashboard (hata, tamamlandı) ekranlarında WCAG kontrastını (≥ 4,5) ve her
+    tıklanabilir öğenin `cursor: pointer` olduğunu doğrular; ekran görüntüleri
+    `test-results/`'a yazılır. Mutasyonlarla doğrulandı (koyu temada beyaz kart →
+    kontrast 2,89 ile kırıldı; düğme imleç kuralı kaldırılınca kırıldı).
+    `e2e/tsconfig.json`'a yalnızca tip kontrolü için `DOM` lib eklendi
+    (`evaluate` geri çağrıları tarayıcıda çalışır).
+  - **Not:** ekran görüntüsündeki "Böyle bir adres yok" hatası kod hatası değildi:
+    geliştirme ortamındaki API'nin eski kodla çalışması (yeni `/events` ucu yok).
+    API'yi güncel kodla yeniden başlatmak gerekir.
+
+**Gözlemlenebilirlik, nginx ve teslim hazırlığı (2026-11-19):**
+
+- [x] **Prometheus (ADR-028, onaylandı):** `prom/prometheus:v3.5.0`, yalnızca
+  `observability` profiliyle (`docker compose --profile observability up`); normal
+  `docker compose up` yedi servis olarak değişmedi. `observability/prometheus.yml`
+  `api:9090` ve `worker:9090`'ı Docker iç ağından scrape eder (uçlar host'a
+  yayımlanmaz). Arayüz yalnızca `127.0.0.1:9091` (e2e'de `19091`). Saklama 2 gün ve
+  256 MB. Dev yığınında (sizin çalıştırmanız) Prometheus `healthy`, api, worker ve
+  prometheus hedefleri `up`, bayraklar `2d`/`256MiB`.
+- [x] **Gerçek scrape doğrulaması:** `make e2e-observability` (`observability/verify.sh`):
+  api ve worker `up`, `queue_depth{sms,email}` ve worker sayaçları ve histogram
+  geliyor, API worker sayacı sunmuyor, saklama 2d/256MiB, Prometheus yalnızca
+  `127.0.0.1:19091`'de yayımlı, worker durdurulunca `up{job="worker"}=0` ama API hedefi
+  ve `queue_depth` görünmeye devam ediyor (ADR-016). İlk koşuda e2e tmpfs'ine
+  `nobody` yazamadı (`mode=1777` ile düzeltildi) ve Prometheus `256MB`'ı `256MiB`
+  gösterdi (betik düzeltildi).
+- [x] **`promtool` Makefile ve CI'da:** `make metrics-lint` (`check metrics` her iki uç
+  için, boş çıktı hata sayılır; `check config`). `make e2e` artık üç döngü
+  (standart, gönderim, observability). CI E2E işine "Observability" adımı ve
+  profil yapılandırma doğrulaması eklendi.
+- [x] **Worker log mesajı:** yeniden deneme logu her sonuç türü için "geçici hata;
+  yeniden denenecek" diyordu. Artık gerçek türü anlatır ve `tür` alanı taşır: 429 hız
+  sınırı, 5xx provider hatası, kayıp yanıt (sonuç belirsiz, aynı anahtarla yeniden;
+  `WARN`), geçersiz 2xx yanıt (kabul doğrulanamadı; `WARN`). Başarısızlıkta
+  `rejected` (kalıcı red) ile `exhausted` (deneme sınırı, sonuç doğrulanamadı) ayrı
+  anlatılır. Regresyon testleri önce davranışsal olarak kırmızıydı
+  (`outcome_log_test.go`, 5 alt test), düzeltmeden sonra yeşil.
+- [x] **nginx geçişi (ADR-014):** `frontend/Dockerfile` çok aşamalı (node derler, nginx
+  1.28 servis eder), `frontend/nginx.conf` (tek sayfa yönlendirmesi, önbellek
+  başlıkları, `/api` proxy'sinde `proxy_buffering off`, `gzip off`,
+  `proxy_read_timeout 130s`, Docker DNS, API kapalıyken `502` JSON). Konteyner `80`
+  (host `8080`). Vite dev server artık Compose'ta yok (`npm run dev` ile yerelde).
+- [x] **SSE akışları nginx üzerinden doğrulandı:** `e2e/nginx-proxy.spec.ts` (4 test):
+  dashboard `snapshot` olayları ilk olay < 1,5 sn ve ~1 sn aralıklarla gelir;
+  içerik üretimi `delta... validated` eksiksiz ve sıralı gelir; derin bağlantılar
+  (`/campaigns/<id>/delivery`) çalışır; önbellek başlıkları doğru. Mevcut tüm e2e
+  testleri ve `@real` gönderim nginx üzerinden geçti. API kapatılınca `502` JSON ve
+  API dönünce nginx yeni adresi buldu (elle).
+  - **Dürüst sınır:** `proxy_buffering on` ve `gzip on` mutasyonları testi **kırmadı**:
+    bu nginx sürümü, küçük ve her biri flush edilen SSE olaylarını bu ayarlarla da
+    zamanında iletiyor. Testler gözlemlenebilir gereksinimi (gecikmesiz teslim)
+    doğrular, direktifin tek başına gerekli olduğunu kanıtlamaz; direktifler ADR'ye ve
+    savunma amaçlı korunur. MockLLM parçaları anında ürettiği için içerik akışının
+    *aralıklı* gelişi nginx üzerinden zamanlamayla gösterilemedi (yalnızca
+    bütünlük ve sıra).
+- [x] **Teslim kontrolleri:** temiz kopyada (izlenen ve yeni dosyalar, `node_modules` ve
+  `.env` yok; ayrı Compose projesi, dev veritabanına dokunmadan) `docker compose up
+  --build --wait` **73 sn**'de tamamlandı: migration (5) ve seed (3009 kullanıcı, 5311
+  izin) otomatik, tüm servisler hazır. Demo akışı (örnek brief → kitle → içerik akışı
+  28 `delta` → onay → canlı dashboard akışı) 13 sn içinde 285 mesaj `sent`, 0 başarısız
+  ile bitti; dashboard akışı `completed` bildirdi. Aynı kopyada `gofmt`, `go vet`,
+  `go mod tidy -diff` ve `go test -count=1 ./...` temiz.
+  - **Teslimde bulunan ve düzeltilen eksik:** ana `compose.yaml`'da API için sağlık
+    kontrolü yoktu; `up --wait` ve `web` API'yi beklemiyordu, ilk açılışta (API
+    konteyner içinde derlenirken) sayfa açılır ama `/api` istekleri `502` verirdi.
+    `api` artık `/readyz` sağlık kontrolü taşır ve `web` ona bağlıdır.
+- [x] **README:** kurulum, demo adımları, test komutları, isteğe bağlı Prometheus, CI
+  rozeti ve notu, kısa mimari (mermaid), kapsam ve bilinen sınırlamalar (gerçek Claude
+  adaptörü yok dahil).
+
+**Bu aşamada kalan işler (takip listesi, 2026-11-19):**
+
+- [ ] **Dev ortamı:** migration `00003` ve `00004`'ün dev veritabanında uygulandığını
+  Oğuzhan teyit eder (**API ve worker kapalıyken**, ADR-026 komut sırası). Dev yığını
+  yeni kodla yeniden başlatılmış görünüyor (Prometheus ve metrics portları açık).
+  Claude dev veritabanına yazmaz.
+- [ ] **PR ve CI:** Oğuzhan PR açar; **gerçek GitHub Actions sonucunu PR üzerinden
+  ayrıca doğrulayıp bildirecek**, sonra squash merge eder. Yerelde tüm CI kontrolleri
+  koştu ve Oğuzhan bağımsız olarak da doğruladı; GitHub Actions'ın kendisi
+  doğrulanamadı. Yeni
+  adımlar (`e2e-delivery-up`, `e2e-metrics-internal`, `@real`, görsel testler,
+  nginx, `e2e-observability` ve `promtool` imajının çekilmesi) ilk kez orada çalışacak;
+  E2E işinin süresi 25 dk sınırına yaklaşabilir.
+- [ ] **Onay bekleyen taslak ADR'ler:** ADR-013 (Compose başlatma sırası; sıra artık
+  uygulandı, nota bakın), ADR-010 (30 günlük kural yorumu).
+- [ ] **`ai-sessions/`:** Oturum 1-3 var; dizin tablosu (`ai-sessions/README.md`) 1-5.
+  oturumu listeler. 4. oturumun `/export`'u Oğuzhan tarafından eklenir
+  (`Session-04-Worker-MockProvider-Dashboard.txt`), 5. oturum sonunda 5. oturum;
+  paylaşımdan önce anahtar ve kişisel verilerin temizlenmesi gerekir.
+- [ ] **Teslim doğrulaması (aşağıdaki liste):** temiz kopyada kuruldu ve demo çalıştı;
+  `make test` temiz kopyada değil çalışma ağacında koştu (aynı Compose postgres'i).
+  Gerçek bir `git clone` (commit sonrası) ile son kez denenmeli.
+
+**Sonra yapılacaklar (karar bekliyor, şimdilik yapılmıyor):**
+
+- [ ] **Gerçek Claude adaptörü:** `LLM_PROVIDER` yalnızca `mock`; Anthropic'e bağlanan
+  adaptör yok. Case'te LLM entegrasyonu en yüksek ağırlıklı kriterdir (%25); bu
+  **teslimin en büyük eksiğidir** (`PROGRESS` "2. Gerçek Claude entegrasyonu").
+- [ ] **`client_golang`'a geçiş** (Oğuzhan sonra karar verecek): bugün kendi küçük
+  yazıcımız (`internal/metrics`, ADR-027). Geçişte `Collector` ile `queue_depth` için
+  "okunamayan değer 0 gibi görünmez" davranışı korunmalı; Go çalışma zamanı
+  metrikleri kardinaliteyi artırır.
+- [ ] **Grafana ve uyarı kuralları:** daha kapsamlı paneller ileride değerlendirilecek.
+  **Loki eklenmeyecek** (Oğuzhan'ın değerlendirmesi): bu projede log toplama gerekmiyor.
+- [ ] **Açık teknik konular:** SSE keepalive (içerik üretiminde ilk parçaya kadar olay
+  yok), `llm_calls` kaydı, maliyet ve kötüye kullanım limitleri, e-posta gövde sınırı,
+  `failure_reason` için isteğe bağlı CHECK kısıtı, metrics portu çakışması testi,
+  `nginx`'te içerik akışının aralıklı gelişini gösteren (yavaş LLM'li) test.
 
 **Çıkış koşulu:** İlk HTTP yanıtı kaybolduğunda retry yapılır, provider
-yalnızca bir kabul kaydeder ve dashboard sonucu gösterir.
+yalnızca bir kabul kaydeder ve dashboard sonucu gösterir. **Kısmen sağlandı:**
+retry ve tek kabul kanıtlandı (aşağıda); dashboard sonucu gösterimi
+yapılmadı, aşama bitmedi.
+
+#### Bu aşamada yapılanlar ve doğrulama (şu ana kadar)
+
+- **Kod:** `internal/mockprovider` (HTTP arayüzü, `PGStore`, istatistikler,
+  `MaxInWindow`), `internal/worker` (`PGRepo`: claim, ön kontrol, token'lı sonuç
+  yazımı, reaper, kampanya tamamlama; `HTTPProvider`; `Decide` ve `Backoff`;
+  `IntervalLimiter`; `Worker.Run`; `Metrics`; `ConfigFromEnv`),
+  `database.OpenLazy`, `testdb.URL` ve `testdb.LockKey`.
+- **Önemli bulgu (net/http):** `Idempotency-Key` başlıklı ve gövdesi yeniden
+  okunabilen isteği yeniden kullanılan bağlantıda yanıt okunamazsa sessizce bir
+  kez daha gönderiyor. Bu, hız sınırlayıcıyı atlatır ve "2 HTTP isteği" sayımını
+  bozar. Worker istemcisi gövdeyi `GetBody`'siz veriyor; regresyon testi
+  (`TestHTTPProviderDoesNotSilentlyResendOnReusedConnection`) düzeltme
+  kaldırılınca başarısız oluyor.
+- **Önemli bulgu (test altyapısı):** `go test ./...` paketleri eşzamanlı
+  koşturur. `tests/e2e` de `campaigns_test`'i kullanmaya başlayınca, integration
+  paketinin migration Down/Up testleriyle çakışıp veritabanını tutarsız
+  bıraktı (`out-of-order migration`). Düzeltme: `testdb.Open` süreçler arası
+  PostgreSQL advisory lock alıyor (`testdb-lock_test.go`; kilit kaldırılınca test
+  başarısız oluyor). Bozulan `campaigns_test` silinip yeniden oluşturuldu (yalnızca
+  test veritabanı).
+- **Mevcut testler etkilendi:** `00002` Down testleri `DownTo(1)` kullanıyordu;
+  artık önce `00003` kalktığı için `00002` korumasını denemeden önce `00003`
+  geri alınıyor (`rollBack00003`). `testdb.Open` `TRUNCATE` listesine yeni tablo
+  eklendi.
+- **Idempotency ve retry (gerçek PostgreSQL, aynı süreçte):**
+  `TestLostFirstResponseIsRetriedWithTheSameKeyAndDeliveredOnce` (2 HTTP isteği,
+  tek kabul, `attempts = 2`, `duplicate_deliveries = 0`),
+  `TestEveryResponseLostEndsExhaustedWithSingleAcceptance` (5 istek, 1 kabul,
+  `failed`/`exhausted`), `TestRateLimitedRequestIsRetriedOnlyAfterRetryAfter`,
+  `TestTransientServerErrorsAreRetriedUntilAccepted`,
+  `TestPermanentRejectionIsNeverRetried`,
+  `TestIdempotencyKeyReuseIsRejectedNotReplayed`,
+  `TestRevokedOrMissingConsentIsSkippedWithoutAnyProviderRequest`,
+  `TestStaleResultFromWorkerWithExpiredLeaseIsIgnored`, çöken worker ve
+  `claim`/`reaper`/tamamlanma testleri (`worker-claim_test.go`).
+- **Süreç düzeyi e2e (`backend/tests/e2e/`, gerçek ikililer, yalnızca
+  `campaigns_test`):** yanıt kaybı ve idempotency, provider SIGKILL + yeniden
+  başlatma, worker SIGKILL ile lease kurtarma, SIGTERM (devam eden çağrılar
+  tamamlanır, yeni claim yok, çıkış kodu 0), SIGTERM süresi dolunca lease
+  kurtarma, veritabanı kesintisi (test içi TCP proxy ile iki kez kes/geri getir;
+  worker süreçte kalıyor, erişim dönünce kuyruğu işliyor) ve hız sınırı.
+  Süreler test ortamında ortam değişkenleriyle kısaltılıyor; varsayılanlar
+  değişmedi.
+- **Mutasyon kontrolleri (testlerin yakaladığı görüldü):** idempotency anahtarının
+  her denemede değişmesi, sonuç yazımında `claim_token` koşulunun kalkması, izin
+  kontrolünün kapatılması, `Retry-After`'ın yok sayılması, `GetBody` ile sessiz
+  yeniden gönderim, claim döngüsünün SIGTERM'den sonra sürmesi (birim testi
+  yakalar; e2e'yi iptal edilmiş bağlam ayrıca korur) ve `testdb` kilidinin
+  kalkması.
+- **Compose (izole `campaign-e2e` projesi, `delivery` profili; dev
+  veritabanına dokunulmadı):** 7 servis ayağa kalktı; API'den kampanya →
+  içerik → onay → worker gönderimi tamamlandı: 7/7 `sent`, 7 kabul kaydı,
+  kampanya `completed`; `docker compose stop` ile worker ve mock-provider 0,4 sn'de
+  çıkış kodu 0 ile kapandı. Ortam silindi. `compose.e2e.yaml`'da `worker` ve
+  `mock-provider` yalnızca `delivery` profiliyle açılır: mevcut Playwright testleri
+  onaydan sonra `approved` bekliyor.
+- **Dashboard öncesi üç düzeltme (regresyon testli):**
+  1. Sonuç yazıldıktan sonra kampanya tamamlama sorgusu başarısız olursa kampanya
+     `sending`'de kalıyordu. Artık her reaper turu bütün mesajları terminal olan
+     kampanyaları da tamamlıyor (`CompleteIdleCampaigns`).
+  2. Retry sırasında kullanıcı adı değişince aynı anahtarla farklı içerik gidiyor
+     ve provider `422` ile reddediyordu. Ad artık onayda `messages.first_name`'e
+     kopyalanıyor, worker retry dahil bu adı kullanıyor (ADR-026, migration
+     `00004`). Boş ad ve fallback davranışı aynı.
+  3. `2xx` ama gövdesi eksik/okunamayan yanıt `sent` sayılıyordu. Artık
+     `invalid_response`: `sent` olmaz, aynı anahtarla yeniden denenir.
+- **Limiter açığı (kullanıcı bulgusu, regresyon testli):** Limiter işleri ön
+  kontrolden önce aralıklıyordu; veritabanı beklemesi veya süreç duraklaması
+  sonrası ön kontrolde biriken işler birlikte gidip kayan 1 sn pencerede
+  **103–104** isteğe çıkıyordu (sınır 100). Gönderim anına jeton kovası kapısı
+  eklendi (burst 2, 1 sn pencerede ≤ 97); gerçek süreçte `SIGSTOP`/`SIGCONT` ve
+  veritabanı dondurma senaryolarında ölçülen en yüksek pencere **96**. Karar:
+  ADR-005 ek maddesi.
+- **Dashboard frontend'i (TRK-001), backend olmadan:** `/campaigns/:id/delivery`.
+  Onaylı kampanyada kampanya durumu (rozet) ve altı mesaj sayısı (bekleyen,
+  yeniden denenecek, gönderiliyor, gönderildi, başarısız, atlandı) canlı gösterilir;
+  işi biten mesajların oranı çubukla, `exhausted` ("Gönderim sonucu
+  doğrulanamadı; deneme sınırı doldu", kesin teslim edilmedi denmez) ve `rejected`
+  nedenleri ayrı notlarla açıklanır. Onaylanmamış kampanyada "henüz onaylanmadı"
+  denir ve canlı takibe bağlanılmaz. `CampaignView` onay kutusuna "Gönderimi izle"
+  bağlantısı eklendi (düğme değil; mevcut davranışlar ve testler korundu).
+  - **Yapı:** `api/delivery.ts` (fetch, SSE ve `unknown` → tip doğrulaması;
+    `readSse`, `ApiError`, `isRecord`, `isCount` yeniden kullanıldı),
+    `delivery/` (`summary.ts`, `messages.ts`, `useDeliveryStream.ts`),
+    `DeliveryDashboardView`, `DeliveryConnectionStatus`, `DeliveryCounts`.
+    shadcn bileşenleri kullanıldı (`Card`, `Badge`, `Alert`, `Button`, `Progress`,
+    `Skeleton`, `Spinner`); yeni bileşen veya bağımlılık eklenmedi. Yeni kodda
+    `any`, tip dönüşümü (`as`), non-null (`!`) ve bastırma yorumu yok.
+  - **Bağlantı yönetimi:** bağlanıyor / canlı / yeniden bağlanıyor / tamamlandı /
+    hata durumları açık gösterilir. Koparsa 1-2-4-8-10 sn bekleyip yeniden bağlanır
+    (son bilinen sayılar korunur, yeni görüntü sayıları değiştirir, üzerine eklemez),
+    5 ardışık başarısızlıkta vazgeçip "Yeniden bağlan" sunar, 8 sn görüntü gelmezse
+    takılmış sayar, `completed` görüntüsünde bağlantıyı kapatır. Sayfa veya kampanya
+    değişince bağlantı kapanır ve eski kampanyadan geç gelen olay veya hata yeni
+    ekranı değiştirmez (nesil numarasıyla; testle doğrulandı, koruma kaldırılınca 2
+    test düşüyor).
+  - **Erişilebilirlik:** başlık hiyerarşisi, `dl/dt/dd`, bölge adları, çubuk için
+    `aria-label`; bağlantı durumu yalnızca durum değişince okunan ayrı bir `status`
+    bölgesidir (saniyelik saat okunmaz, görünür metin çift okunmasın diye
+    `aria-hidden`); neden notları `role="note"` (canlı bölge değil); hareketi
+    azaltma desteği. Telefon (360 px) görünümü ekran görüntüsüyle ve e2e'de yatay
+    taşma kontrolüyle doğrulandı.
+  - **Sözleşme:** arayüzün beklediği `snapshot` biçimi
+    [ARCHITECTURE §5](ARCHITECTURE.md)'te; backend uç noktası bunu birebir izler
+    (sayı alanları tam sayı ve negatif değil, `exhausted + rejected ≤ failed`).
+  - **Doğrulama:** birim testleri 186 → **314** (API doğrulaması ve hata/kopma
+    durumları, saf özetler ve metinler, bağlantı yaşam döngüsü sahte zamanlayıcıyla,
+    iki bileşen, ekranın tamamı, `CampaignView` bağlantısı, router). Yaşam döngüsü
+    mutasyonları (eski olay koruması, eski bağlantıyı iptal etme, anlık tamamlandı
+    durumu) testlerce yakalandı. Playwright e2e 4 → **9**: kampanya oluşturma, içerik
+    ve onay **gerçek backend** ile; onaydaki gerçek sayılardan (3 SMS + 4 e-posta)
+    türetilen canlı akış, kopma + yeniden bağlanma, tamamlanma, yenileme, hata ve
+    "Yeniden bağlan", taslak kampanya ve olmayan kampanya (ikisi tümüyle gerçek),
+    telefon görünümü. Dashboard testleri 6 tekrar × 5 = 30/30 geçti. `oxlint`,
+    `eslint`, `vitest run`, `npm run build` (tip kontrolü dahil) ve
+    `type-check:e2e` temiz; dokunulan dosyalar prettier'a uygun.
+  - **Sınırlar:** taklitli e2e testlerinde (hata, kopma + yeniden bağlanma, takılma,
+    mobil) yalnızca olay akışı taklit edilir; gerçek akış ve gönderim ayrı `@real`
+    testiyle doğrulanır (Playwright e2e 9 → 10, sonra görsel testlerle **14**:
+    standart döngü 13, `@real` 1).
+    JS paketi 120 → 178 kB (shadcn `Progress`/`Alert` ve bağımlılıkları).
+    (shadcn kartlarının koyu temada beyaz kalması sorunu aşağıdaki "Görsel düzeltmeler"
+    maddesinde çözüldü.)
+- **Dev veritabanı:** migration `00003` ve `00004` dev veritabanına **uygulanmadı**.
+  Oğuzhan uygulayacak. `00004` için **API ve worker kapalıyken** uygulanır ve ikisi
+  güncel kodla başlatılır; komut sırası ve riskli mesaj durumunda ne yapılacağı
+  [ADR-026](../DECISIONS.md#adr-026--alıcı-adı-onayda-mesaja-kopyalanır-worker-retry-dahil-bu-adı-kullanır)
+  içinde. `queued`/`sending` ve `attempts > 0` mesaj varsa migration hiçbir veri
+  değiştirmeden durur. Mevcut mesajlar `users`'ın şimdiki adıyla doldurulur; bu,
+  daha önce denenmiş mesajlarda aynı içeriği garanti etmez.
+
+### Frontend iyileştirmeleri: tasarım ve bileşenleri modernleştirme
+
+**Branch:** ayrı bir feature branch, güncel `main`'den açılır (CLAUDE.md: her aşama için
+yeni branch). Önerilen ad `feat/frontend-modernization`; ad Oğuzhan ile netleşir ve
+branch ancak `feat/worker-dashboard` PR'ı `main`'e merge edildikten sonra açılır.
+**Durum:** planlandı, başlanmadı. Oturumun başında Oğuzhan 4. oturumdaki işin gerçek
+GitHub Actions (CI) sonucunu bildirecek; `feat/worker-dashboard` üzerinde kırmızı
+çıkan bir şey varsa önce o branch'te düzeltilir, frontend işi ondan sonra yeni
+branch'te başlar.
+
+**Kapsam (Oğuzhan'ın tanımı):** frontend'in tasarım kısmı ve bileşenlerin
+modernleştirilmesi. Ayrıntılı kapsam ve öncelik oturumda Oğuzhan ile belirlenir.
+
+**Girdi olarak bilinenler (karar değil, 4. oturumda gözlenenler; onay bekler):**
+
+- Arayüzde iki düğme/biçim sistemi bir arada: eski ekranlarda (`BriefForm`,
+  `CampaignView`, `ApprovePanel`, `ErrorPanel`, `ContentEditor`) bileşen kapsamlı CSS
+  ile yazılmış düz `<button>`, `<input>`, `<textarea>`; yeni dashboard'da shadcn `Button`,
+  `Card`, `Badge`, `Alert`, `Progress`. Mavi birincil düğmeler ile nötr shadcn
+  düğmeleri görsel olarak tutarsız.
+- Koyu tema ve token'lar 4. oturumda düzeltildi (ADR-021 notu, onaylı): shadcn
+  token'ları `--app-*` paletinden geliyor, `prefers-color-scheme` izleniyor. Yeni
+  tasarım işi bu tabanın üzerine kurulmalı.
+- Mevcut güvenceler korunmalı: `e2e/visual-themes.spec.ts` (WCAG kontrastı ve
+  `cursor: pointer`, açık ve koyu tema), erişilebilirlik kuralları (sr-only durum
+  bölgesi, `role="note"`), telefon görünümü, 314 birim ve 17 e2e testi.
+- Kurallar: mevcut shadcn bileşenleri kullanılır, yeni bağımlılık eklenmeden önce
+  Oğuzhan'a sorulur (CLAUDE.md, ADR-021); `any`, `as` ve `!` yok; dış veri `unknown`
+  olarak alınıp api katmanında doğrulanır.
+
+**Çıkış koşulu (öneri, oturumda netleşir):** seçilen ekranlar tek bir bileşen sistemiyle
+tutarlı, iki temada okunabilir ve mobilde sorunsuz; birim, e2e ve görsel testler geçer;
+tasarım kararları ADR-021'e veya yeni bir ADR'ye yazılır.
 
 ### 2. Gerçek Claude entegrasyonu (isteğe bağlı, ayrı iş)
 
@@ -498,32 +897,48 @@ devam ediyor.
 
 ## Teslim doğrulaması
 
-- [ ] Temiz bir klonda **`docker compose up`** ile Vue, Go API, PostgreSQL,
-  migration, seed, worker ve mock provider çalışıyor.
-- [ ] Örnek brief'ten canlı gönderim takibine kadar demo tamamlanıyor.
-- [ ] **`make test`** gerçek API anahtarı olmadan geçiyor.
-- [ ] Anahtar varsa gerçek Claude adaptörüyle örnek brief doğrulandı.
-- [ ] `README.md` kurulum, kısa mimari özeti, CI notu veya rozeti ve bilinen
+- [x] Temiz bir kopyada **`docker compose up`** ile Vue (nginx), Go API, PostgreSQL,
+  migration, seed, worker ve mock provider çalışıyor (73 sn, 2026-11-19). Gerçek
+  `git clone` ile commit sonrası son kez denenmeli.
+- [x] Örnek brief'ten canlı gönderim takibine kadar demo tamamlanıyor (temiz kurulumda
+  285 mesaj, 13 sn, 0 başarısız).
+- [x] **`make test`** gerçek API anahtarı olmadan geçiyor (çalışma ağacında ve temiz
+  kopyada `go test ./...`).
+- [ ] Anahtar varsa gerçek Claude adaptörüyle örnek brief doğrulandı: **yapılamaz,
+  adaptör yok** (yukarıdaki "Sonra yapılacaklar").
+- [x] `README.md` kurulum, kısa mimari özeti, CI rozeti ve notu ve bilinen
   sınırlamaları içeriyor.
-- [ ] `DECISIONS.md` kabul edilen kararları ve gerekçelerini içeriyor.
-- [ ] Case için yapılan Claude oturumları `ai-sessions/` altında. Paylaşım
-  öncesi gerçek API anahtarları ve kişisel bilgiler temizlendi.
+- [x] `DECISIONS.md` kabul edilen kararları ve gerekçelerini içeriyor (ADR-001...028).
+- [ ] Case için yapılan Claude oturumları `ai-sessions/` altında. Oturum 1-3 var;
+  güncel oturum Oğuzhan'ın `/export`'unu bekliyor. Paylaşım öncesi gerçek API
+  anahtarları ve kişisel bilgiler temizlenmeli.
 
 ## Açık konular
 
 - ADR-013'teki Compose başlatma sırası onay bekliyor (ADR hâlâ taslak). Sıra
   uygulandı ve Oğuzhan'ın Compose çalıştırmasında işledi.
-- Web Vite dev server ile çalışıyor; `/api` proxy'si yalnızca geliştirme
-  içindir. Teslimden önce nginx'e geçilecek (ADR-014).
+- Web artık nginx ile servis edilir (ADR-014, 2026-11-19); Vite dev server yalnızca
+  yerelde `npm run dev` içindir ve `/api` proxy'si yalnızca onun için kalır.
+  SSE akışları nginx üzerinden doğrulandı (D3 sonrası maddeler).
 - Frontend e2e testleri (Playwright) `frontend/e2e/` altında ve CI'da `E2E` işi
-  olarak koşar (ADR-024). ADR-018'in `backend/tests/e2e/` klasörü (API, worker ve
-  mock provider'lı uçtan uca testler) henüz yalnızca `.gitkeep` içeriyor.
+  olarak koşar (ADR-024). ADR-018'in `backend/tests/e2e/` klasörü artık dolu:
+  gerçek `worker` ve `mock-provider` ikilileriyle süreç düzeyinde testler içeriyor
+  (`.gitkeep` hâlâ duruyor, silinebilir). Bu testler `make test` içinde koşar,
+  bu yüzden CI'ın Backend işi onları zaten çalıştırır; CI yapılandırması
+  değişmedi (yeni araç yok).
 - Test klasör yapısı ADR-018 ile onaylandı: unit testler kodun yanında,
-  integration ve e2e `backend/tests/` altında. Segment-preview aşamasında
-  `backend/internal/` altında `audience`, `campaign`, `database`, `httpapi`,
-  `llm`, `seed`, `segment` ve `testdb` paketleri açıldı; `cmd/` altında `api`,
-  `migrate` ve `seed` var. `worker`, kuyruk ve `mock-provider` paketleri ilgili
-  aşamalarda açılacak.
+  integration ve e2e `backend/tests/` altında. `backend/internal/` altında
+  `audience`, `campaign`, `database`, `httpapi`, `llm`, `seed`, `segment`,
+  `testdb`, `worker` ve `mockprovider` paketleri var; `cmd/` altında `api`,
+  `migrate`, `seed`, `worker` ve `mock-provider` var.
+- `campaigns_test`'i kullanan testler `testdb.Open` içindeki PostgreSQL advisory
+  lock ile süreçler arası sıraya konur (`go test ./...` paketleri eşzamanlı
+  çalıştırır). Bir paketin testi başka bir paketin testini bekleyebilir.
+- `failure_reason` değerleri (`exhausted`, `rejected`) şimdilik veritabanında
+  `CHECK` ile zorlanmıyor; yalnızca worker yazıyor. Zorlamak şema değişikliğidir
+  ve Oğuzhan onayı ister.
+- Retry'dan sonra `last_error` başarıda temizlenmiyor (son hatayı gösterir).
+  Dashboard bunu nasıl göstereceği TRK-001 aşamasında belirlenecek.
 - `make test` önce yalnızca `postgres` servisini başlatır (`make test-db`),
   sonra `go test ./...` çalıştırır. Entegrasyon testleri `campaigns_test`
   veritabanını kullanır (ADR-015).
@@ -573,6 +988,60 @@ devam ediyor.
   kuyruk aynı kuralı kullanır.
 
 ## Son doğrulama
+
+### Güncel aşama: `feat/worker-dashboard` (2026-11-19)
+
+**Durum:** Aşamanın kodu, testleri ve dokümanları tamam. PR henüz açılmadı; **gerçek
+GitHub Actions sonucu PR üzerinden Oğuzhan tarafından ayrıca doğrulanacak** ve
+bildirilecek. Hata bulunmadı.
+
+- **Claude'un yerelde koşturdukları:** `gofmt -l`, `go vet ./...` ve `go mod tidy -diff`
+  temiz. `make test` ve `go test -count=1 ./...` (unit, entegrasyon ve backend e2e)
+  geçti; `-race` `cmd/api`, `internal/...` ve entegrasyon üzerinde temiz. Frontend
+  (Node 24): `oxlint`, `eslint`, `vitest run` (**314 test**), `npm run build` (tip
+  kontrolü dahil) ve `type-check:e2e` temiz. `make e2e` üç döngü: standart Playwright
+  **17/17**, gerçek worker + mock provider + SSE (`@real`) **1/1**, Prometheus scrape ve
+  `promtool` (`make e2e-observability`). `docker compose config` (varsayılan, `delivery`
+  ve `observability` profilleri) temiz. Temiz kopyada `docker compose up --wait`
+  (73 sn) ve demo akışı (285 mesaj, 13 sn, 0 başarısız) ile `go test ./...`.
+- **Oğuzhan'ın bağımsız doğrulaması (ayrı çalıştırma, hata yok):**
+  - Frontend birim testlerinin 314'ü geçti; lint, build ve tip kontrolleri geçti.
+  - Backend unit, entegrasyon ve e2e testleri geçti; worker, provider ve metrics
+    paketlerinin `-race` kontrolleri geçti.
+  - Standart Playwright testleri 17/17, gerçek worker + provider + SSE testi 1/1,
+    Prometheus scrape ve `promtool` kontrolleri geçti. Go bağımlılık, format, `vet` ve
+    Compose kontrolleri temiz.
+  - **Elle `curl` akışı:** kampanya oluşturma `201` (kitle 7: SMS 3, e-posta 4);
+    içeriksiz onay `409`; içerik üretiminde `delta` olayları ardından `validated`, sürüm 1
+    kaydedildi; geçersiz düzenleme `422` ve sürüm artmadı; geçerli düzenleme `200`, human
+    kaynaklı sürüm 2; eski sürümle onay `409`; güncel sürümle onay ve tekrar onay `200`
+    (onay zamanı ve sayılar aynı kaldı); onay sonrası düzenleme `409`; dashboard SSE
+    `completed` ve 7 `sent` gösterdi; yanlış adres, yöntem, içerik türü ve büyük gövde
+    için beklenen `404`, `405`, `415`, `400` ve `413`.
+  - **Veritabanı doğrulaması:** 7 mesajın her biri 2 denemede gönderilmişti; provider'da
+    14 istek, 7 kabul ve 0 tekrar teslimat (yanıt kaybı + idempotency zinciri).
+  - **Sağlık uçları:** izole test veritabanı duraklatılınca `/readyz` `503` oldu, `/healthz`
+    `200` kaldı; veritabanı devam ettirilince `/readyz` yeniden `200` oldu.
+  - **Prometheus:** ayağa kaldırılıp birçok endpoint denendi, hepsi sorunsuz; `queue_depth`
+    ve gönderim metrikleri geliyor. API, PostgreSQL, worker ve mock provider akışı
+    testlerde sorunsuz çalıştı.
+- **Gözlemlenebilirlik değerlendirmesi (Oğuzhan):** ileride Grafana ile grafikler
+  eklenebilir. Oğuzhan normalde gözlemlenebilirlik için Loki kullanıyor, ama bu projede
+  gerek görmüyor: loglar yapılandırılmış `slog` çıktısıyla `docker compose logs`
+  üzerinden okunuyor ve metrikler Prometheus'ta. Loki eklenmeyecek.
+- **Doğrulanamayan / bekleyen:**
+  - GitHub Actions'ın kendisi (PR üzerinden Oğuzhan doğrulayacak; yeni adımlar ilk kez
+    orada koşacak: nginx build, `promtool` imajı, `e2e-observability`, görsel testler).
+  - Gerçek `git clone` ile (commit sonrası) kurulum denemesi.
+  - Gerçek Claude adaptörü yok (`LLM_PROVIDER` yalnızca `mock`): teslimin en büyük eksiği.
+  - `ai-sessions/`: bu oturumun `/export`'u eklenecek.
+- **Sıradaki iş:** PR aç, CI sonucunu doğrula (sonuç **5. oturumda** bildirilecek);
+  **5. oturum: frontend tasarım ve bileşen modernleştirme** (yukarıdaki "Frontend
+  iyileştirmeleri" bölümü, **ayrı yeni branch'te**); ardından gerçek Claude adaptörü (karar: SDK mı düz HTTP mi, anahtar
+  yönetimi); `ai-sessions/` export'ları (4. oturum Oğuzhan tarafından eklenecek); kalan
+  işler "Bu aşamada kalan işler" ve "Sonra yapılacaklar" listelerinde.
+
+### Önceki aşama: `feat/content-approval`
 
 - **Son çalışan adım (`feat/content-approval`, PR #5 ile `main`'e merge edildi,
   `b5cb799`):** İçerik doğrulama ve üretim, migration `00002` (Down koruması dahil), içerik store'u,

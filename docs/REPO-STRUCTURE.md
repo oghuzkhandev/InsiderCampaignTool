@@ -10,7 +10,8 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
   Migration,
   demo kullanıcı verisini oluşturan seed ve Go testleri de burada yer alır.
   - backend/cmd/ — Çalıştırılabilir komutlar: `api`, `migrate` (bekleyen
-    migration'ları uygular) ve `seed` (demo kullanıcılarını yazar).
+    migration'ları uygular), `seed` (demo kullanıcılarını yazar), `worker`
+    (kuyruk işleyici) ve `mock-provider` (sahte SMS/e-posta sağlayıcısı).
   - backend/internal/ — Uygulama paketleri. Unit testler (`*_test.go`)
     test ettikleri paketin yanında durur.
     - `httpapi` — API'nin HTTP katmanı (yönlendirme, handler'lar, durum
@@ -29,29 +30,59 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
       (`delta`) ve bir kez düzeltmeli üretim (`Generator`).
     - `llm` — Model arayüzleri (segment için `Client`, akışlı içerik için
       `ContentClient`), MockLLM ve test istemcisi.
-    - `testdb` — Entegrasyon testleri için `campaigns_test` hazırlığı.
+    - `worker` — Kuyruk işleyici: `FOR UPDATE SKIP LOCKED` ile claim (`PGRepo`),
+      kanal başına hız sınırı (`IntervalLimiter`), provider istemcisi
+      (`HTTPProvider`, sonuç sınıflandırması), retry kararı ve backoff
+      (`Decide`, `Backoff`), reaper, token'lı sonuç yazımı, kampanya tamamlama,
+      sayaçlar (`Metrics`, `ratelimit_wait_seconds` histogramı dahil, Prometheus
+      çıktısı) ve ortam değişkenleriyle yapılandırma.
+    - `metrics` — Bağımlılıksız Prometheus metin biçimi: sayaç, histogram,
+      yazıcı, `/metrics` handler'ı ve ana porttan ayrı iç dinleyici (`Serve`).
+      API ve worker aynı paketi kullanır (ADR-016, ADR-027).
+    - `mockprovider` — Sahte SMS/e-posta sağlayıcısı: HTTP arayüzü, hata ve
+      gecikme enjeksiyonu, `accept_then_drop` ve `drop_all_responses` modları,
+      PostgreSQL'e atomik kabul kaydı (`PGStore`), bellekte istatistikler ve
+      kayan pencere ölçümü (`MaxInWindow`).
+    - `testdb` — Entegrasyon testleri için `campaigns_test` hazırlığı ve alt
+      süreçlere verilen `campaigns_test` adresi (`URL`).
   - backend/migrations/ — Veritabanı migration dosyaları. Yalnızca
     Oğuzhan isteyince eklenir.
   - backend/tests/integration/ — Gerçek PostgreSQL ile çalışan testler
     (kısıtlar ve tetikleyiciler, iki bağlantılı kilit ve eşzamanlılık
     testleri, migration Down/Up, içerik API'si).
-  - backend/tests/e2e/ — API, worker ve mock provider ile uçtan uca testler.
+  - backend/tests/e2e/ — Gerçek `api`, `worker` ve `mock-provider` ikilileri alt
+    süreç olarak (yalnızca `campaigns_test`'e bağlı): yanıt kaybı ve idempotency,
+    provider yeniden başlatma, worker `SIGKILL`/`SIGTERM`, veritabanı
+    kesintisi, kayan pencere hız sınırı ve gözlemlenebilirlik (`/readyz`
+    kesinti ve toparlanma, `queue_depth`, worker sayaçları). `make test` içinde koşar.
   - Integration ve e2e dosya adı, testin çözdüğü konunun bir veya en fazla iki
     küçük harfli kelimesidir (`idempotency_test.go`, `rate-limit_test.go`).
 - frontend/ — Vue ve TypeScript arayüzü. Brief girişi, kitle önizlemesi,
   canlı içerik, taslak düzenleme, insan onayı ve gönderim takibi burada gelişir.
-  - frontend/src/api/ — API istemcisi (kampanya, içerik, onay), SSE ayrıştırıcı
-    (`sse.ts`) ve hata mesajları.
+  - frontend/src/api/ — API istemcisi (kampanya, içerik, onay, gönderim takibi
+    `delivery.ts`), SSE ayrıştırıcı (`sse.ts`) ve hata mesajları. Dışarıdan gelen
+    her yanıt `unknown` olarak alınıp burada doğrulanır.
   - frontend/src/segment/ — Segmentin okunur özeti ve sebep kodlarının Türkçe
     açıklamaları.
   - frontend/src/content/ — İçerik taslağı yardımcıları (sınırlar, uzunluk,
     akış parçalarının uygulanması) ve içerik/onay hata metinleri.
+  - frontend/src/delivery/ — Gönderim takibi (TRK-001) mantığı: mesaj sayılarından
+    özetler (`summary.ts`), Türkçe metinler (`messages.ts`) ve canlı takip
+    bağlantısının yaşam döngüsü (`useDeliveryStream.ts`: yeniden bağlanma, takılan
+    bağlantıyı fark etme, kampanya değişince eski akışı kapatma).
   - frontend/src/components/ ve views/ — Bileşenler ve ekranlar:
-    `CampaignPreviewView` (`/`, brief ve kitle önizleme) ve `CampaignView`
-    (`/campaigns/:id`, içerik üretimi, düzenleme ve onay). Testler yanındaki
-    `__tests__` klasöründedir.
+    `CampaignPreviewView` (`/`, brief ve kitle önizleme), `CampaignView`
+    (`/campaigns/:id`, içerik üretimi, düzenleme ve onay) ve
+    `DeliveryDashboardView` (`/campaigns/:id/delivery`, canlı gönderim takibi;
+    `DeliveryConnectionStatus` ve `DeliveryCounts` bileşenleriyle, shadcn
+    bileşenleri kullanılarak). Testler yanındaki `__tests__` klasöründedir.
   - frontend/e2e/ — Playwright uçtan uca testleri ve yardımcıları. Her test kendi
     kampanyasını oluşturur. `make e2e` ile izole ortama karşı koşar (ADR-024).
+    `delivery-dashboard.spec.ts` gönderim takibinin hata, yeniden bağlanma ve mobil
+    senaryolarını sınar: yalnızca olay akışı taklit edilir, kampanya ve onay
+    gerçektir. `delivery-real.spec.ts` (`@real`) hiçbir şeyi taklit etmez: gerçek
+    worker, mock provider ve SSE ile gönderimin tamamlandığını gösterir
+    (`make e2e-delivery`, `delivery` Compose profili).
   - frontend/src/components/ui/ — `shadcn-vue` ile üretilmiş bileşenler
     (ADR-021). Elle düzenlenmez, eslint dışındadır. `components.json` ve
     `src/lib/utils.ts` shadcn yapılandırmasıdır.
@@ -66,8 +97,19 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
 
 - `compose.e2e.yaml` — İzole e2e ortamı (ayrı Compose projesi, ayrı port,
   diske yazmayan veritabanı, kontrollü veri). `compose.yaml` ile birlikte
-  kullanılır; `make e2e`, `make e2e-up` ve `make e2e-down` hedefleri bunu
-  çalıştırır.
+  kullanılır; `make e2e` (üç döngü), `make e2e-up` ve `make e2e-down` hedefleri bunu
+  çalıştırır. `worker` ve `mock-provider` bu ortamda yalnızca `delivery`
+  profiliyle açılır: mevcut Playwright testleri onaydan sonra kampanyanın
+  `approved` kaldığını doğrular. `prometheus` yalnızca `observability` profiliyle açılır.
+
+- `observability/` — İsteğe bağlı Prometheus (ADR-028): `prometheus.yml` (scrape
+  hedefleri `api:9090`, `worker:9090`) ve `verify.sh` (`make e2e-observability`:
+  gerçek scrape'te iki hedef `up`, gerçek metrikler, saklama sınırı, worker durunca
+  `up=0`). `make metrics-lint` `promtool` ile çıktıyı ve yapılandırmayı denetler.
+
+- `frontend/Dockerfile` ve `frontend/nginx.conf` — Çok aşamalı imaj (derleme + nginx)
+  ve proxy yapılandırması (ADR-014): tek sayfa yönlendirmesi, önbellek başlıkları,
+  `/api` proxy'sinde buffering kapalı.
 
 - [DECISIONS.md](../DECISIONS.md) — Oğuzhan'ın verdiği önemli teknik
   kararlar

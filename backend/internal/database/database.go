@@ -30,8 +30,12 @@ func URLFromEnv() (string, error) {
 	return url, nil
 }
 
-// Open, bağlantı havuzunu açar ve veritabanına erişildiğini doğrular.
-func Open(ctx context.Context, url string) (*sql.DB, error) {
+// OpenLazy, bağlantı havuzunu açar ama veritabanına erişildiğini doğrulamaz:
+// veritabanı kapalı olsa da döner, bağlantılar ilk kullanımda kurulur. Worker ve
+// mock provider gibi, veritabanı kesintisinde sonlanmaması gereken süreçler için
+// (SND-001); erişilemeyen veritabanı o süreçlerin kendi yeniden deneme
+// mantığında ele alınır. Adres biçimi bozuksa hata verir.
+func OpenLazy(url string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", url)
 	if err != nil {
 		return nil, fmt.Errorf("database: bağlantı açılamadı: %w", err)
@@ -39,7 +43,15 @@ func Open(ctx context.Context, url string) (*sql.DB, error) {
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
+	return db, nil
+}
 
+// Open, bağlantı havuzunu açar ve veritabanına erişildiğini doğrular.
+func Open(ctx context.Context, url string) (*sql.DB, error) {
+	db, err := OpenLazy(url)
+	if err != nil {
+		return nil, err
+	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("database: veritabanına erişilemedi: %w", err)

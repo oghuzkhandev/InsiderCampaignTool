@@ -15,7 +15,7 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 ## ADR-002 — PostgreSQL kuyruk olarak kullanılır
 
-- **Durum:** Taslak.
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19).
 - **Seçenekler:** PostgreSQL, RabbitMQ ve Redis Streams.
 - **Karar:** Kampanya onayı ve gönderim işleri aynı PostgreSQL transaction'ında
   yazılır. Worker işleri `FOR UPDATE SKIP LOCKED` ile sahiplenir ve
@@ -23,6 +23,10 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 - **Gerekçe ve sonuç:** Onay ve kuyruk kaydı atomik olur. Dashboard aynı mesaj
   kayıtlarından beslenir. Bu yaklaşım polling gecikmesi getirir ve yüksek
   hacimde kuyruk ile diğer veritabanı işlemleri kaynak paylaşır.
+- **Proje sahibinin gerekçesi:** PostgreSQL kullanılır çünkü kampanya onayı ve
+  mesajların kuyruğa yazılması aynı transaction içinde olacaktır; ya ikisi
+  birlikte kaydedilir ya da hiçbiri kaydedilmez. Ayrıca mevcut veritabanı
+  kullanılır ve ek bir kuyruk servisi kurulmaz.
 
 ## ADR-003 — Segment çıktısı doğrulanmış JSON DSL olur
 
@@ -62,7 +66,7 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 ## ADR-005 — Tek worker süreci ve kanal başına hız sınırı
 
-- **Durum:** Taslak.
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19).
 - **Karar:** Compose demosunda tek worker süreci çalışır. SMS ve e-posta
   ayrı limiter kullanır. İlk ayar kanal başına 95 istek/sn ve burst 1.
   Retry dahil her provider çağrısı limite tabidir.
@@ -70,16 +74,51 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   geçer. 95 istek/sn yapılandırma hedefidir. Brief'teki 100 istek/sn sınırı,
   provider'ın aldığı istekler üzerinden kayan bir saniyelik pencereyle
   test edilir. Replikalar arasında ortak limit bu sürümün kapsamı dışındadır.
+- **Sıra ve kapasite (onaylandı):** Her provider çağrısı şu sırayı izler:
+  claim → limiter beklemesi → kanal izni kontrolü → claim token ve lease
+  kontrolü → çağrı. Limiter beklemesi lease'e dahil olduğundan kanal başına
+  eşzamanlı sahiplenilen iş sayısı küçük tutulur (varsayılan 10, ayarlanabilir);
+  büyük bir sahiplenilmiş kuyruk oluşturulmaz. Kuyruk boşken yoklama aralığı
+  200 ms'dir, DB hatasında backoff uygulanır. Limiter süreç içindedir,
+  replikalar arasında paylaşılmaz (bilinen sınırlama, README'de belirtilecek).
+- **Gönderim anı kapısı (proje sahibinin talebiyle eklendi, 2026-11-19):**
+  Limiter işleri ön kontrolden **önce** aralıklar. Ama limiter'dan geçen işler
+  ön kontrolde (veritabanı beklemesi) veya bir süreç duraklamasında (GC, SIGSTOP,
+  VM dondurma) takılıp birlikte serbest kalırsa, kayan 1 sn pencerede
+  "sürekli hız + birikmiş iş sayısı" kadar istek çıkardı. Ölçülen: gerçek
+  provider'da pencere başına **103–104** istek (brief sınırı 100). Düzeltme:
+  ön kontrolden hemen sonra, HTTP çağrısından önce bir jeton kovası kapısı
+  (`TokenGate`): hız `Rate` (95/s), burst `SendBurst` (varsayılan 2). Sınır
+  matematikseldir: herhangi bir T süresinde en çok `burst + Rate·T` gönderim; 1 sn
+  pencerede ≤ 97, yani brief'in 100'ünün altında, ağ ve zamanlayıcı kaymaları için
+  pay kalır. Kapı bekletirse ön kontrol (sahiplik, lease, kanal izni) **yenilenir**;
+  kapı, gönderimden önceki son adımdır. Limiter (burst 1 aralık) yerinde kalır:
+  normal akışta kapı bekletmez, yalnızca birikimde devreye girir. Bilinen
+  sınırlama: kapının izin verdiği an ile HTTP yazımı arasında süreç duraklarsa
+  (mikrosaniyelik pencere) o anda kapıdan geçmiş en çok birkaç iş birlikte gider;
+  bu pencereyi tamamen kapatmak kullanıcı alanı koduyla mümkün değildir.
 
 ## ADR-006 — İş sahipliği, retry ve idempotency
 
-- **Durum:** Taslak. Tekilleştirme kapsamı onaylandı.
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19). Tekilleştirme kapsamı daha
+  önce onaylanmıştı.
 - **Karar:** `attempts` işleme denemelerini sayar. `claim_token` her
   sahiplenmede yenilenir. Provider'a iletilen `Idempotency-Key` ise mesaj
   boyunca sabit kalır. Sonuç yalnızca güncel claim token ile yazılabilir.
 - **Retry:** `429`, `5xx`, timeout ve geçici bağlantı hataları backoff ile
   yeniden denenir. `429` için geçerli `Retry-After` dikkate alınır.
-  Diğer `4xx` yanıtları kalıcı hata sayılır.
+  `429` diğer `4xx` yanıtlarından ayrıdır ve her zaman geçici hata sayılır.
+  `429` dışındaki `4xx` yanıtları kalıcı hata sayılır: retry yapılmaz, mesaj
+  `failed` olur ve `failure_reason = rejected` yazılır.
+- **`failure_reason` değerleri (onaylandı):** `exhausted` (deneme sınırı doldu;
+  son deneme `429`, `5xx`, timeout, bağlantı hatası veya lease kaybıyla bitti,
+  sonuç doğrulanamadı) ve `rejected` (`429` dışındaki bir `4xx` ile provider
+  isteği kesin reddetti). Başka değer yoktur. `exhausted` için arayüz
+  “Gönderim sonucu doğrulanamadı; deneme sınırı doldu” açıklamasını gösterir,
+  `rejected` için provider'ın isteği reddettiği belirtilir.
+- **Deneme sınırı kenar durumu:** Yeniden denenebilir bir hata geldiğinde
+  `attempts` zaten azami değerdeyse mesaj `queued`'a dönmez, doğrudan
+  `failed` (`exhausted`) olur. Reaper da aynı kuralı uygular.
 - **Kurtarma:** En fazla beş claim yapılır. Lease'i dolan işin deneme hakkı
   varsa yeniden kuyruğa alınır. Hak bittiyse iş hata sebebiyle kapatılır.
 - **Gerekçe ve sonuç:** `UNIQUE(campaign_id, user_id, channel)` iş kaydını
@@ -186,6 +225,12 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 ## ADR-013 — Yedi Compose servisi ve başlatma sırası
 
+> **Not (2026-11-19):** Varsayılan `docker compose up` hâlâ bu yedi servistir. İsteğe bağlı
+> sekizinci servis `prometheus` yalnızca `observability` profiliyle açılır
+> (ADR-028). API artık
+> sağlık kontrolü taşır (`/readyz`) ve `web` ona bağlıdır: ilk açılışta API derlenirken
+> `up --wait` ve arayüz hazır olana kadar bekler.
+
 - **Durum:** Taslak. Servis listesi ve host portları onaylandı; başlatma sırası
   onay bekliyor.
 - **Karar:** Compose yedi servis çalıştırır: `postgres`, `migrate`, `seed`,
@@ -214,6 +259,18 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   iletilmesi gerekir. İçerik üretimi ve dashboard SSE akışları nginx
   tarafından biriktirilirse canlı olmaz. Aynı origin sayesinde CORS ayarı
   gerekmez ve `docker compose up` için yerelde `npm` çalıştırmak gerekmez.
+- **Uygulama (2026-11-19):** `frontend/Dockerfile` çok aşamalı (node derler, nginx
+  1.28 servis eder), `frontend/nginx.conf`: tek sayfa yönlendirmesi, `index.html`
+  `no-store`, karmalı `/assets/` kalıcı önbellek, `/api/` proxy'sinde `proxy_buffering
+  off`, `gzip off`, `proxy_read_timeout 130s` (LLM çağrısı 60 sn'ye kadar sürebilir ve
+  düzeltmeyle iki çağrı olabilir), Docker DNS'iyle ad çözümü (API yeniden oluşunca
+  yeni IP bulunur) ve API kapalıyken HTML yerine `502 API_UNAVAILABLE` JSON hatası.
+  Konteyner `80` dinler (host `8080`). Geliştirirken hızlı yenileme için `npm run dev`
+  (Vite) kullanılır. **Ölçüm notu:** bu nginx sürümünde, küçük ve her biri flush
+  edilen SSE olayları `proxy_buffering on` ve `gzip on` ile de zamanında iletildi;
+  yani bu mutasyonlar testlerle yakalanamadı. Direktifler ADR'ye ve savunma amaçlı
+  (büyük veya ani olay yığınları, başka sürümler) bu yüzden korunur; testler
+  gözlemlenebilir gereksinimi (gecikmesiz teslim) doğrular.
 
 ## ADR-015 — `make test` yalnızca Postgres'i ayağa kaldırır
 
@@ -371,6 +428,16 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   - Koyu tema: shadcn `.dark` sınıfı bekler, mevcut ekran
     `prefers-color-scheme` kullanır. Bileşenler kullanılmaya başlanınca
     karara bağlanacak.
+  - **Koyu tema uygulaması (2026-11-19, onaylandı: proje sahibi):** shadcn
+    token'ları ve `dark:` varyantı `.dark` sınıfı yerine `prefers-color-scheme: dark`'a
+    bağlandı (`@custom-variant dark (@media (prefers-color-scheme: dark))`);
+    zemin, yüzey, metin ve kenarlık token'ları uygulamanın `--app-*` paletinden
+    gelir (tek kaynak), açık temadaki `destructive` `--app-danger`'a bağlandı.
+    Neden: `.dark` sınıfı hiçbir yerde eklenmiyordu; işletim sistemi koyu temadayken
+    beyaz kartlar ve koyu zeminde okunmayan koyu yazılar çıkıyordu. Alternatif:
+    sınıfı JS ile ekleyip kullanıcıya tema anahtarı sunmak (kullanıcı tercihi
+    saklanır); daha fazla kod ve bir ürün davranışıdır, bu yüzden yapılmadı. Bedel:
+    kullanıcı işletim sistemi temasından bağımsız tema seçemez.
 
 ## ADR-022 — İçerik doğrulama: fallback metni ve içerik için ayrı LLM arayüzü
 
@@ -466,3 +533,173 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   backend (`seed.E2EExpected`) ve `frontend/e2e/helpers.ts` içinde ayrı tutulur;
   backend birim ve entegrasyon testleri backend tarafını sabitler.
 
+## ADR-025 — Mock provider: kabul kaydı, anahtar çakışması ve hata modları
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19), aşağıdaki düzeltmelerle.
+- **Karar:**
+  - **Kabul kaydı:** `mock_provider_acceptances` (migration `00003`) yalnızca
+    başarılı kabulleri saklar. `idempotency_key` birincil anahtardır; yazma
+    `INSERT … ON CONFLICT DO NOTHING` ile atomiktir. `messages` tablosuna
+    yabancı anahtar yoktur: provider harici bir sistemi temsil eder ve uygulama
+    tablolarına bağımlı olmamalıdır. İlişki yalnızca anahtar metniyle kurulur;
+    testler `messages` ile birleştirerek doğrular. Kayıtlı sonuç her zaman
+    `200 {message_id}` olduğu için durum kodu saklanmaz; `429` ve `500`
+    kabulden önce enjekte edilir, kaydedilmez.
+  - **Anahtar çakışması (proje sahibinin düzeltmesi):** Aynı `Idempotency-Key`
+    ile farklı alıcı, farklı kanal veya farklı içerik gelirse provider isteği
+    reddeder (`422 IDEMPOTENCY_KEY_REUSED`) ve kayıtlı sonucu döndürmez. Bu
+    yüzden kayıt kanalı, alıcıyı ve içeriğin SHA-256 özetini (`content_hash`)
+    saklar. Worker için bu yanıt `429` dışındaki bir `4xx`'tir: retry yok,
+    `failed`, `failure_reason = rejected` (ADR-006). Aynı anahtar ve aynı
+    istek ise kayıtlı sonucu alır (`200`, aynı `message_id`).
+  - **Hata modları:** `accept_then_drop` ana senaryoda **yalnızca ilk kabul
+    yanıtını** düşürür (kayıt commit edildikten sonra); tekrar isteği kayıtlı
+    sonucu alır. Sürekli yanıt kaybı ayrı bir moddur (`drop_all_responses`):
+    kabul kaydedilir ama kabul edilen isteğin **her** yanıtı düşürülür; deneme
+    sınırında mesaj `failed`, `exhausted` olur. İki mod ayrı testlerle
+    doğrulanır. Gecikme, `429` (`Retry-After` ile) ve `500` ortam
+    değişkenleriyle ayarlanır.
+  - **İstatistikler bellekte (onaylandı):** Deneme zaman damgaları,
+    `duplicate_requests` ve `duplicate_deliveries` provider belleğinde tutulur
+    (`GET /admin/stats`). Yeniden başlatmada yalnızca kabul kayıtları kalıcıdır.
+- **Gerekçe ve sonuç:** Atomik kabul kaydı ve içerik özeti, yanıt kaybında
+  retry'ın ikinci teslimata yol açmadığını ve yanlış kullanılan anahtarın sessizce
+  başka bir mesajın sonucunu döndürmediğini gösterir. Bellekte istatistik,
+  saniyede ~95 istekte ek veritabanı yazmasından kaçınır; bedeli, provider
+  yeniden başlayınca istatistiklerin sıfırlanmasıdır (yeniden başlatma testi
+  yalnızca kabul kayıtlarına bakar). `duplicate_deliveries` benzersiz anahtar
+  yüzünden yapısal olarak `0` kalır; testlerin kanıtı worker'ın aynı anahtarla
+  birden fazla istek yapıp tek kabul görmesidir.
+
+## ADR-026 — Alıcı adı onayda mesaja kopyalanır; worker retry dahil bu adı kullanır
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19): seçenek A.
+- **Bağlam:** Worker adı her claim'de `users` tablosundan okuyordu. Ad iki deneme
+  arasında değişirse aynı `Idempotency-Key` farklı içerikle giderdi ve provider
+  isteği `422 IDEMPOTENCY_KEY_REUSED` ile reddederdi. En kötü durum: provider ilk
+  isteği kabul edip yanıtı kaybetmişse, kabul edilmiş mesaj yanlışlıkla
+  `failed/rejected` olurdu.
+- **Karar:**
+  - Migration `00004`: `messages.first_name text NOT NULL`. Onay transaction'ı,
+    render için kullanılan **ham** adı (kullanıcının `first_name`'i, yoksa boş
+    metin) her kanalın mesajına yazar. Boş veya yalnızca boşluktan oluşan ad
+    render sırasında eskisi gibi fallback'e (`Değerli müşterimiz`) gider; kontrol
+    karakterleri boşluğa çevrilir (`content.Render`, davranış değişmedi).
+  - Worker adı `users`'tan değil `messages.first_name`'den okur. Retry dahil her
+    deneme aynı adı, dolayısıyla aynı içeriği ve aynı anahtarı kullanır.
+  - Şemada, onaylanan hâlden küçük bir sıkılaştırma: `DEFAULT ''` yalnızca mevcut
+    satırların doldurulması içindir ve doldurmadan sonra kaldırılır. Sütunu bilmeyen
+    eski bir API mesaj eklerse varsayılan sessizce adsız (fallback'li) mesaj
+    üretirdi; şimdi onay `NOT NULL` hatasıyla gürültülü şekilde başarısız olur ve
+    kampanya `draft` kalır. Geri almak tek satırdır (migration'daki `DROP DEFAULT`).
+- **Eski mesajlar (açık sınırlama):** Mevcut mesajlar için onay anındaki ad
+  bilinmez. Migration `users.first_name`'in **şimdiki** değerini yazar. Bu, daha
+  önce **denenmiş** bir mesajda (`attempts > 0`) ilk denemede gönderilen içerikle
+  aynı olmayabilir. Provider ilk isteği kabul edip yanıtı kaybetmiş olabileceği için
+  bunu zararsız saymak da, eski worker'la boşaltmak da güvenli değildir (ad değişirse
+  retry farklı içerikle gider). Bu yüzden:
+  - `queued` veya `sending` durumunda `attempts > 0` olan **en az bir** mesaj varsa
+    migration **hiçbir veri değiştirmeden durur** (`messages` tablosu önce kilitlenir,
+    uçuştaki claim beklenir). Otomatik `failed` yapmaz, riskli mesajı sessizce güvenli
+    saymaz.
+  - Güvenli olanlar: `queued` ve `attempts = 0` (provider'a hiç istek gitmedi; ad
+    migration anındaki değerle gider) ve terminal mesajlar (`sent`, `failed`,
+    `skipped`; yalnızca bilgi).
+  - Ne yapılacağına operatör karar verir. Dayanak yalnızca şudur: bu mesajların sonucu
+    doğrulanamamıştır. Operatör isterse sonucu doğrulanamayan olarak açıkça kapatır
+    (`failed` / `exhausted`; kendi SQL'iyle, migration yapmaz), sonra migration'ı
+    yeniden çalıştırır.
+- **Uygulama sırası (dev ve her ortam):** Migration sırasında **API ve worker
+  kapalı** olmalıdır. Eski worker adı `users`'tan okumaya devam eder; eski API sütunu
+  bilmediği için onayı başarısız olur. İkisi de yeni migration'dan **sonra güncel
+  kodla** başlatılır:
+
+  ```sh
+  docker compose stop api worker                    # web ve mock-provider açık kalabilir
+  docker compose up migrate                         # 00004; riskli mesaj varsa HATA verir, veri değişmez
+  docker compose up -d --force-recreate api worker  # ikisi de güncel kodla (derleme başlangıçta yapılır)
+  ```
+
+  `migrate` hata verirse **api ve worker'ı başlatmayın**: güncel kod `first_name`
+  sütununu bekler. Önce riskli mesajları çözüp migration'ı yeniden çalıştırın.
+  Riskli mesajları görmek için (salt okunur):
+
+  ```sql
+  SELECT status, attempts, count(*) FROM messages
+  WHERE status IN ('queued','sending') AND attempts > 0 GROUP BY 1, 2 ORDER BY 1, 2;
+  ```
+
+- **Gerekçe ve sonuç:** Proje sahibinin tercihi A: kopya onay anında yazılır, alıcı
+  kümesinin onayda sabitlenmesiyle (ADR-023) aynı mantıktır ve en az kod
+  değiştirir. Bedel: `messages` tablosunda ek bir sütun ve yukarıdaki geçiş
+  prosedürü. Kopya satır olarak değişmez kabul edilir; şimdilik veritabanı bunu
+  tetikleyiciyle zorlamıyor, yalnızca worker okuyor.
+
+## ADR-027 — Metrik ve sağlık uçlarının uygulama ayrıntıları
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19), önerilen seçeneklerle. Kod bu
+  önerilerle yazıldı ve testlerle doğrulandı. ADR-016 (iç dinleyici, `queue_depth`
+  veritabanından) ve TRK-001 zaten karar verdiği için burada yalnızca TRK-001'in
+  "uygulamada belirlenir" dediği ayrıntılar vardır. Prometheus **servisi** Compose'a
+  şimdilik eklenmez (aşağıdaki "Sonradan" notuna bakın).
+- **Seçenekler ve öneri:**
+  1. **`ratelimit_wait_seconds` türü.** (a) *Histogram* (öneri): bekleme dağılımını
+     verir; kova sınırları 1 ms–10 sn (100/sn hızın aralığı 10 ms). (b) İki sayaç
+     (`..._total` toplam süre, `..._count` sayı): daha basit, ama dağılım ve yüzdelik
+     yok. (c) Gauge: son değer; hızlı değişen bekleme için anlamsız. Öneri (a):
+     "hız sınırı gerçekten ne kadar bekletiyor" sorusunu yalnızca dağılım yanıtlar.
+     Bedel: kova sınırları sabit; yanlış seçilirse yeniden yapılandırılır.
+  2. **Prometheus metin biçimi.** (a) *Küçük, bağımlılıksız yazıcı* (öneri,
+     `internal/metrics`): 3 metrik türü, yaklaşık 250 satır, testli. (b)
+     `prometheus/client_golang`: standart ve olgun, ama yeni bağımlılıktır ve
+     varsayılan olarak Go çalışma zamanı metriklerini de ekler. Yeni bağımlılık
+     CLAUDE.md gereği onayınıza bağlı; bu yüzden (a) ile ilerlendi. Metrik sayısı
+     arttıkça (b)'ye geçmek kolaydır: sayaç ve histogram arayüzü küçüktür.
+  3. **İç dinleyici.** (a) *`METRICS_ADDR` ile ayrı port* (öneri): boşsa kapalı,
+     Compose'ta `:9090`, `ports` ile yayımlanmaz, yalnızca `/metrics` sunar, açılamazsa
+     süreç başlamaz. (b) Ana portta kaynak IP kontrolü: Docker host portu NAT ile
+     geçtiği için istemci IP'si güvenilir ayırt edici değildir. Öneri (a). Opt-in
+     olması testlerin aynı makinede birden çok worker çalıştırabilmesi içindir.
+  4. **Okunamayan değer.** `queue_depth` okunamazsa `/metrics` `503` döner, kısmi
+     çıktı sunulmaz (öneri): sessiz `0`, "kuyruk boş" gibi okunur. Bedel: veritabanı
+     kesintisinde API'nin sayaçları da o scrape'te görünmez.
+  5. **`/readyz`.** Veritabanı `PingContext`, 2 sn süre sınırı; `503` gövdesi
+     ayrıntı vermez; yalnızca durum değişince loglanır. `/healthz` veritabanına
+     bakmaz (kesintide süreç yeniden başlatılmaz, yalnızca trafikten çıkar).
+  6. **Nil bağımlılık.** `httpapi.Deps.Validate()` zorunlu yedi bağımlılığı denetler
+     ve `cmd/api` başlangıçta çağırır (öneri). `httpapi.New` toleranslı kalır:
+     mevcut testler yalnızca ilgili rotanın bağımlılığını verir; `New`'ü katılaştırmak
+     onları yeniden yazmayı gerektirirdi.
+  7. **`llm_validation_failures_total`.** Segment ve içerik üretiminde doğrulamadan
+     geçemeyen model çıktısı sayılır; kullanıcının elle düzenlemesi sayılmaz.
+- **Etki:** Worker ve API `/metrics` uçları açık, Compose'ta host'a yayımlanmıyor;
+  `make e2e-metrics-internal` bunu çalışan ortamda denetler (CI dahil).
+- **Sonradan:** Çıktı `promtool check metrics` ile doğrulanır (Prometheus sunucusu
+  gerekmez). Prometheus sunucusunu Compose'a eklemek (scrape yapılandırması, depolama,
+  uyarı kuralları) ayrı bir karardı; ADR-028 ile isteğe bağlı profil olarak eklendi.
+
+## ADR-028 — İsteğe bağlı Prometheus profili ve promtool denetimi
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-19).
+- **Seçenekler:** (a) Prometheus'u hiç eklememek; (b) normal `docker compose up`'a
+  eklemek; (c) yalnızca `observability` Compose profiliyle isteğe bağlı eklemek.
+  Metrik biçimi için ayrıca: kendi küçük yazıcımız veya `prometheus/client_golang`.
+- **Karar:** (c). `docker compose up` değişmez (yedi servis); `docker compose --profile
+  observability up` Prometheus'u (`prom/prometheus:v3.5.0`) ekler. Prometheus API ve
+  worker `/metrics` uçlarını Docker iç ağından okur (`api:9090`, `worker:9090`);
+  bu uçlar host'a yayımlanmaz (ADR-016 aynen sürer). Prometheus arayüzü yalnızca
+  `127.0.0.1:9091`'de açılır (e2e'de `127.0.0.1:19091`). Saklama sınırlıdır: 2 gün
+  ve 256 MB. Grafana şimdilik yok; daha kapsamlı paneller için ileride
+  değerlendirilecek. `client_golang`'a geçiş **şimdilik yapılmaz**, sonra karar
+  verilecek (kendi yazıcımız ADR-027 ile kalır). `promtool` denetimi Makefile'a
+  (`make metrics-lint`, `make e2e-observability`) ve CI'a eklenir.
+- **Gerekçe ve sonuç:** Proje sahibinin tercihi: izleme isteğe bağlı olsun, varsayılan
+  kurulum sade kalsın ve metrik uçları iç ağda kalsın. Bedel: sekizinci (isteğe
+  bağlı) servis, depolama ve ek bir imaj; arayüz host'a açıldığı için yalnızca
+  loopback'e bağlanır. `make e2e-observability` gerçek scrape'i doğrular: api ve worker
+  `up`, gerçek metrikler geliyor, saklama sınırları doğru, worker durunca `up=0` olurken
+  API'nin `queue_depth`'i görünmeye devam ediyor; ardından `promtool check metrics`
+  ve `promtool check config`. CI'a `promtool` imajı (Docker) bu yüzden dahildir.
+  Sonra karar verilecekler: Grafana, `client_golang`, uyarı kuralları. **Loki**
+  (log toplama) bu projede gerekli görülmedi: loglar yapılandırılmış `slog` çıktısıyla
+  `docker compose logs` üzerinden okunur.

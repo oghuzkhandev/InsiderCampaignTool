@@ -576,6 +576,51 @@ describe('onay', () => {
     expect(sms(w).readOnly).toBe(true)
     expect(w.findAll('button')).toHaveLength(0)
   })
+
+  // Gönderim takibine geçiş: düğme değil bağlantıdır (işlem düğmesi sayılmaz).
+  describe('gönderimi izleme bağlantısı', () => {
+    const deliveryLink = (w: VueWrapper) =>
+      w.findAllComponents(RouterLinkStub).find((l) => l.props('to') === `/campaigns/${ID}/delivery`)
+
+    it('onay sonrası gönderim takibi ekranına bağlantı verir', async () => {
+      routes({
+        [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+        [APPROVE]: () => jsonResponse(200, approvedBody),
+      })
+      const w = await mountView()
+      expect(deliveryLink(w)).toBeUndefined() // taslakta gönderim takibi yok
+
+      await confirmApproval(w, 1)
+
+      const link = deliveryLink(w)
+      expect(link?.text()).toBe('Gönderimi izle →')
+      expect(w.findAll('button')).toHaveLength(0) // bağlantı, işlem düğmesi değil
+    })
+
+    it('onaylı kampanya yeniden yüklenince de bağlantı vardır', async () => {
+      routes({
+        [GET]: () =>
+          detail({
+            status: 'sending',
+            content: contentBody({ content_version: 2 }),
+            approved_content_version: 2,
+            approved_at: '2026-11-18T11:00:00Z',
+          }),
+      })
+      const w = await mountView()
+
+      expect(deliveryLink(w)).toBeDefined()
+      expect(w.find('[data-testid="delivery-link"]').exists()).toBe(true)
+    })
+
+    it('taslak kampanyada bağlantı yoktur', async () => {
+      routes({ [GET]: () => detail() })
+      const w = await mountView()
+
+      expect(deliveryLink(w)).toBeUndefined()
+      expect(w.find('[data-testid="delivery-link"]').exists()).toBe(false)
+    })
+  })
 })
 
 // Aynı ekran bileşeni /campaigns/A'dan /campaigns/B'ye geçince yeniden kullanılır

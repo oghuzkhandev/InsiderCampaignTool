@@ -126,6 +126,7 @@ func (s *server) writeGenerateError(w http.ResponseWriter, r *http.Request, err 
 	case errors.Is(err, segment.ErrBriefTooLong):
 		writeError(w, http.StatusUnprocessableEntity, "BRIEF_TOO_LONG", "Brief çok uzun.")
 	case errors.As(err, &invalid):
+		s.LLMValidationFailures.Inc() // model çıktısı doğrulamadan geçemedi
 		reasons := make([]reason, 0, len(invalid.Issues))
 		for _, is := range invalid.Issues {
 			reasons = append(reasons, reason{Code: string(is.Code), Field: is.Field, Text: is.Text})
