@@ -58,23 +58,107 @@ services:
       PORT: "8081"
       LLM_PROVIDER: "${LLM_PROVIDER:-mock}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # İç /metrics dinleyicisi (ADR-016): ana porttan ayrı. `ports` ile host'a
+      # YAYIMLANMAZ; yalnızca Compose ağındaki servisler `api:9090`'a erişir.
+      METRICS_ADDR: ":9090"
+    expose:
+      - "9090"
+    # İlk açılışta API konteyner içinde derlenir (birkaç dakika sürebilir). Hazır olana
+    # kadar `docker compose up --wait` ve `web` beklesin; aksi halde sayfa açılır ama
+    # /api istekleri 502 verirdi. /readyz veritabanına erişimi de denetler.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/readyz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 150
     depends_on:
       seed:
         condition: service_completed_successfully
 
+  # Sahte SMS/e-posta sağlayıcısı (SND-001, ADR-025). Gerçek hiçbir kişiye mesaj
+  # gitmez. Retry ve hız sınırı mantığı sınanabilsin diye varsayılan olarak zaman
+  # zaman gecikme, 429 (Retry-After ile) ve 500 üretir; kabul kayıtları
+  # PostgreSQL'de tutulur. MOCK_PROVIDER_MODE: accept_then_drop (her anahtarın ilk
+  # kabul yanıtını düşürür) veya drop_all_responses (kabul edilenin her yanıtını
+  # düşürür). Hataları kapatmak için oranları 0 yapın.
+  mock-provider:
+    <<: *backend
+    # `go run` PID 1 olunca SIGTERM'i uygulamaya iletmez; derle ve `exec` ile çalıştır.
+    command: ["sh", "-c", "go build -o /tmp/mock-provider ./cmd/mock-provider && exec /tmp/mock-provider"]
+    stop_grace_period: 20s
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      <<: *database-env
+      PORT: "8082"
+      MOCK_PROVIDER_LATENCY: "${MOCK_PROVIDER_LATENCY:-50ms}"
+      MOCK_PROVIDER_429_RATE: "${MOCK_PROVIDER_429_RATE:-0.03}"
+      MOCK_PROVIDER_500_RATE: "${MOCK_PROVIDER_500_RATE:-0.03}"
+      MOCK_PROVIDER_RETRY_AFTER: "${MOCK_PROVIDER_RETRY_AFTER:-1s}"
+      MOCK_PROVIDER_MODE: "${MOCK_PROVIDER_MODE:-}"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  # Kuyruk işleyici (SND-001): tek süreç. Onaylanan kampanyaların mesajlarını
+  # PostgreSQL kuyruğundan alıp mock provider'a gönderir. Host'a port açmaz.
+  worker:
+    <<: *backend
+    command: ["sh", "-c", "go build -o /tmp/worker ./cmd/worker && exec /tmp/worker"]
+    # Uygulamanın kapanış süresi 15 sn (ARCHITECTURE §8); Docker'ın varsayılanı
+    # 10 sn olduğu için süre açıkça uzatılır.
+    stop_grace_period: 20s
+    environment:
+      <<: *database-env
+      PROVIDER_URL: "http://mock-provider:8082"
+      # İç /metrics dinleyicisi (ADR-016): host'a yayımlanmaz, `worker:9090`.
+      METRICS_ADDR: ":9090"
+    expose:
+      - "9090"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+  # İsteğe bağlı metrik sunucusu (ADR-028): yalnızca `observability` profiliyle açılır,
+  # normal `docker compose up` değişmez. API ve worker `/metrics` uçlarını Docker iç
+  # ağından okur. Arayüz yalnızca 127.0.0.1:9091'dedir. Saklama sınırlıdır: 2 gün
+  # veya 256 MB (hangisi önce dolarsa).
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --storage.tsdb.retention.size=256MB
+    ports:
+      - "127.0.0.1:9091:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Vue uygulaması derlenir ve nginx ile servis edilir; `/api` aynı origin üzerinden
+  # API'ye proxy'lenir, buffering kapalıdır (ADR-014). Hızlı yenileme için geliştirirken
+  # `npm run dev` (Vite) kullanılır; bu servis derlenmiş çıktıyı sunar.
   web:
     build:
       context: ./frontend
-    environment:
-      API_PROXY_TARGET: "http://api:8081"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "127.0.0.1:8080:5173"
-    volumes:
-      - ./frontend:/app
-      - frontend_node_modules:/app/node_modules
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
 volumes:
   postgres_data:
-  frontend_node_modules:
+  prometheus_data:
