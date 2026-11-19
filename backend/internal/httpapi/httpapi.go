@@ -2,12 +2,15 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/audience"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/campaign"
+	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/metrics"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/segment"
 )
 
@@ -37,6 +40,21 @@ type Deps struct {
 	Contents ContentStore
 	// Approver, kampanyayı onaylar ve gönderim işlerini yazar.
 	Approver CampaignApprover
+	// Deliveries, gönderim durumunu okur (dashboard olay akışı).
+	Deliveries DeliveryReader
+	// DeliveryInterval, dashboard akışında iki durum görüntüsü arasındaki süredir.
+	// Değişiklik olmasa da her aralıkta görüntü yollanır. Sıfırsa 1 saniye.
+	DeliveryInterval time.Duration
+	// DeliveryQueryTimeout, tek bir durum okumasının süre sınırıdır; aşılırsa akışa
+	// `error` olayı yollanıp kapatılır. Sıfırsa 3 saniye.
+	DeliveryQueryTimeout time.Duration
+	// Shutdown, sunucu kapanmaya başlayınca kapanan kanaldır. Dashboard gibi uzun
+	// ömürlü akışlar bunu izleyip kendiliğinden biter; aksi halde sunucunun düzgün
+	// kapanışı bu akışları sonuna kadar beklerdi. Nil ise hiç kapanmaz.
+	Shutdown <-chan struct{}
+	// LLMValidationFailures, model çıktısı doğrulamadan geçemeyince artırılır
+	// (`llm_validation_failures_total`). Nil ise sayılmaz.
+	LLMValidationFailures *metrics.Counter
 	// SSEWriteTimeout, akışta her yazma için tanınan süredir; her yazmadan
 	// önce yenilenir. Sıfırsa 10 saniye kullanılır.
 	SSEWriteTimeout time.Duration
@@ -44,6 +62,35 @@ type Deps struct {
 	Now func() time.Time
 	// Logger boşsa slog.Default kullanılır.
 	Logger *slog.Logger
+}
+
+// Validate, API'nin çalışması için zorunlu bağımlılıkların bağlı olduğunu
+// doğrular. Eksik biri ilk istekte nil işaretçi paniğine dönüşürdü; üretimde
+// başlangıçta (cmd/api) çağrılır ve süreç hiç başlamaz. New bilerek toleranslıdır:
+// testler yalnızca ilgili rotanın bağımlılıklarını verir. Zorunlu olmayanlar
+// (Now, Logger, süreler, Shutdown, LLMValidationFailures) boş kalabilir.
+func (d Deps) Validate() error {
+	missing := []string{}
+	for _, dep := range []struct {
+		name    string
+		unbound bool
+	}{
+		{"Segments", d.Segments == nil},
+		{"Audience", d.Audience == nil},
+		{"Campaigns", d.Campaigns == nil},
+		{"Content", d.Content == nil},
+		{"Contents", d.Contents == nil},
+		{"Approver", d.Approver == nil},
+		{"Deliveries", d.Deliveries == nil},
+	} {
+		if dep.unbound {
+			missing = append(missing, dep.name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("httpapi: zorunlu bağımlılıklar bağlanmamış: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 type server struct {
@@ -71,6 +118,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/campaigns/{id}/content", methodNotAllowed(http.MethodPost+", "+http.MethodPut))
 	mux.HandleFunc("POST /api/campaigns/{id}/approve", s.approveCampaign)
 	mux.HandleFunc("/api/campaigns/{id}/approve", methodNotAllowed(http.MethodPost))
+	mux.HandleFunc("GET /api/campaigns/{id}/events", s.deliveryEvents)
+	mux.HandleFunc("/api/campaigns/{id}/events", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Böyle bir adres yok.")
 	})

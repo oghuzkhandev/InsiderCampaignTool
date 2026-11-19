@@ -196,6 +196,7 @@ func (s *server) sendGenerateError(es *eventStream, r *http.Request, err error) 
 	case errors.Is(err, context.Canceled):
 		// İstemci bağlantıyı kapattı; yazacak kimse yok.
 	case errors.As(err, &invalid):
+		s.LLMValidationFailures.Inc() // model çıktısı doğrulamadan geçemedi
 		ev := errorEvent{
 			Code:    "CONTENT_INVALID",
 			Message: "Üretilen içerik doğrulanamadı. Alanları düzenleyebilir veya yeniden üretebilirsiniz.",
