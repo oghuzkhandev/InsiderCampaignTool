@@ -15,9 +15,9 @@ export default defineConfig({
     },
   },
   server: {
-    // Geliştirmede /api isteklerini API'ye yönlendirir (aynı origin, CORS yok).
-    // Compose'ta API_PROXY_TARGET=http://api:8081. Teslimden önce nginx'e
-    // geçilecek (ADR-014).
+    // Yalnızca `npm run dev` için: /api isteklerini yerel API'ye yönlendirir (aynı
+    // origin, CORS yok). Compose'taki `web` servisi nginx'tir (ADR-014) ve kendi
+    // /api proxy'sini taşır (frontend/nginx.conf).
     proxy: {
       '/api': {
         target: process.env.API_PROXY_TARGET ?? 'http://localhost:8081',
