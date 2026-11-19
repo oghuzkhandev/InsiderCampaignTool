@@ -85,10 +85,11 @@ temel metrikleri health ve metrics endpoint'lerinden okunabilir.
 
 ## Açık noktalar
 
-- `ratelimit_wait_seconds` metriğinin türü uygulamada belirlenmelidir.
+- `ratelimit_wait_seconds` metriğinin türü uygulamada **histogram** olarak
+  seçildi ([ADR-027](../../DECISIONS.md#adr-027--metrik-ve-sağlık-uçlarının-uygulama-ayrıntıları), onaylandı).
 - API'nin host'a açılan portundan `/metrics` sunmaması, ADR-016'ya göre
-  host'a yayımlanmayan ayrı bir iç dinleyici gerektirir. Uygulama ayrıntısı
-  geliştirme aşamasında belirlenir.
+  host'a yayımlanmayan ayrı bir iç dinleyici gerektirir. Uygulama: `METRICS_ADDR`
+  ile ayrı port, Compose'ta `expose` edilir, `ports` ile yayımlanmaz (ADR-027).
 
 ## İlgili belgeler
 

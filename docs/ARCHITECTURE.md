@@ -139,12 +139,21 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
   failure_reason, sent_at
   - `UNIQUE (campaign_id, user_id, channel)`; `idempotency_key` biçimi
     `CHECK` ile zorlanır. `user_id` yabancı anahtarı silmeyi engeller,
-    kampanya silinince mesajlar silinir. `failure_reason` değer listesi
-    SND-001'de belirlenecek, şimdilik kısıtlı değil.
+    kampanya silinince mesajlar silinir. `failure_reason` yalnızca iki değer
+    alır (ADR-006): `exhausted` (deneme sınırı doldu, sonuç doğrulanamadı) ve
+    `rejected` (`429` dışında bir `4xx`). Bu liste henüz veritabanında `CHECK`
+    ile zorlanmıyor, yalnızca worker yazıyor.
   - Gönderilecek metin mesaja kopyalanmaz. Worker,
-    `campaigns.approved_content_version` üzerinden okur.
-- `mock_provider_acceptances`: benzersiz `idempotency_key`, ilk kabul
-  sonucu, kabul zamanı
+    `campaigns.approved_content_version` üzerinden okur. Alıcı adı ise onayda
+    mesaja kopyalanır (`first_name`, migration `00004`, ADR-026): ham ad, yoksa
+    boş metin; worker retry dahil her denemede bu kayıtlı adı kullanır, böylece
+    kullanıcı adı sonradan değişse de aynı anahtarla aynı içerik gider. Boş veya
+    boşluk ad render sırasında fallback'e gider.
+- `mock_provider_acceptances` (migration `00003`): `idempotency_key` (birincil
+  anahtar), `channel`, `recipient`, `content_hash` (SHA-256, 32 bayt),
+  `message_id` (uuid, benzersiz), `accepted_at`. Yalnızca başarılı kabuller
+  saklanır. `messages` tablosuna yabancı anahtar yoktur: provider harici bir
+  sistemi temsil eder, ilişki yalnızca anahtar metniyle kurulur (ADR-025).
 - `llm_calls`: campaign_id, kind (segment | content), attempt, validation_ok,
   validation_error (kısa kod), latency_ms, token sayıları.
   **Ham yanıt saklanmaz.**
@@ -165,8 +174,9 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 | `PUT /api/campaigns/{id}/content` | İnsan düzenlemesi doğrulanır ve yeni sürüm oluşturur (`200`). Onaydan sonra `409` döner. |
 | `POST /api/campaigns/{id}/approve` | Gövde `{"content_version": N}` taşır. Onay, onaylanan sürüm ve `queued` mesajlar tek transaction'da yazılır (bölüm 6). |
 | `GET /api/campaigns/{id}/events` | Dashboard SSE, her bağlantıda önce güncel snapshot |
-| `GET /healthz`, `/readyz` | Liveness, DB ping |
-| `GET /metrics` | Prometheus. Yalnızca Docker iç ağından erişilir, host'a açılan portta sunulmaz (ADR-016). |
+| `GET /healthz` | Liveness: süreç çalışıyorsa `200 {"status":"ok"}`. Veritabanına bakmaz; veritabanı kesintisinde de `200` kalır. |
+| `GET /readyz` | Readiness: veritabanı ping'i (2 sn süre sınırı) başarılıysa `200 {"status":"ok"}`, değilse `503 {"status":"unavailable"}`. Hata ayrıntısı yanıtta yer almaz; yalnızca durum değişince loglanır. |
+| `GET /metrics` | Prometheus. **Ana API portunda yoktur** (`8081`'de `404`); ayrı bir iç dinleyicide (`METRICS_ADDR`, Compose'ta `api:9090`) sunulur ve host'a yayımlanmaz (ADR-016). |
 
 Kampanya önizleme (`POST /api/campaigns`, `GET /api/campaigns/{id}`):
 
@@ -228,6 +238,54 @@ Kampanya önizleme (`POST /api/campaigns`, `GET /api/campaigns/{id}`):
 - **Uzunluk doğrulaması:** `{{first_name}}` yerine, veritabanındaki en uzun gerçek
   adın (tüm kullanıcılar, kenar boşlukları atılmış kod nokta sayısı) ve
   fallback'in büyüğü konur. Kesin kontrol onayda her alıcı için yapılır.
+
+Dashboard olay akışı (`GET /api/campaigns/{id}/events`, TRK-001). **Durum: arayüz
+ve backend uç noktası bu sözleşmeye göre uygulandı ve doğrulandı** (`internal/httpapi/delivery.go`,
+`campaign.Store.DeliverySnapshot`).
+
+- **İstek:** `Accept: text/event-stream`, gövdesiz. Kampanya yoksa (geçersiz uuid
+  dahil) akış başlamadan düz JSON `404 CAMPAIGN_NOT_FOUND`. Yanıt başlıkları:
+  `Content-Type: text/event-stream`, `Cache-Control: no-store`,
+  `X-Accel-Buffering: no`.
+- **`snapshot` olayı:** bağlantı açılır açılmaz ilk olay olarak, sonra her saniye
+  yollanır; her biri öncekinin yerini alır (üzerine eklenmez):
+
+  ```json
+  {
+    "status": "sending",
+    "messages": { "queued": 3, "retrying": 1, "sending": 1, "sent": 2, "failed": 0, "skipped": 0 },
+    "failures": { "exhausted": 0, "rejected": 0 }
+  }
+  ```
+
+  `status`: `draft`, `approved`, `sending` veya `completed`. `messages` sayıları
+  tam sayı ve negatif olmayan: `queued` yalnızca `attempts = 0`, `retrying`
+  `queued` ve `attempts > 0` (birbirine dahil değil); diğerleri mesaj durumudur.
+  `failures`, `failed` mesajların nedenidir (`failure_reason`): `exhausted +
+  rejected ≤ messages.failed`. Bu kurala uymayan görüntü arayüzce geçersiz sayılır.
+- **`error` olayı:** `{"code","message"}`, ardından akış kapanır.
+- **Sunucu davranışı:**
+  - **Heartbeat:** kuyrukta hiçbir şey değişmese de her aralıkta (varsayılan 1 sn,
+    `Deps.DeliveryInterval`) görüntü yollanır; görüntü aynı zamanda heartbeat'tir.
+    Arayüz görüntü gelmeyen bağlantıyı takılmış sayıp yenilediği için sessiz ama
+    sağlıklı bir bağlantı ayırt edilemezdi.
+  - **Okuma süre sınırı:** her okuma 3 sn ile sınırlıdır (`Deps.DeliveryQueryTimeout`).
+    Takılan veya hata veren okuma `error` olayına (`INTERNAL`, "Gönderim durumu
+    okunamadı.") dönüşür ve akış kapanır; istemci yeniden bağlanır. Sessiz kalınmaz.
+    İlk okuma akıştan önce yapılır: kampanya yoksa `404`, başka hata `500` düz JSON.
+  - **Bitiş:** `completed` görüntüsü yollanınca, istemci ayrılınca ve sunucu
+    kapanmaya başlayınca (`Deps.Shutdown`, `srv.RegisterOnShutdown`) akış biter.
+    Sonuncusu olmasaydı `Shutdown`, açık her akışı 15 sn dolana kadar beklerdi.
+  - **Sayım:** tek sorgu, `messages` üzerindeki `FILTER` toplamları; mesajı olmayan
+    kampanya sıfır sayılarla döner.
+- **İstemci davranışı:** Her görüntü gösterilen sayıları değiştirir. Akış kopar
+  veya kapanırsa istemci 1, 2, 4, 8, 10 sn bekleyip yeniden bağlanır (yeni bağlantı
+  güncel görüntüyle başlar, kaçırılanlar birikmez); 5 ardışık başarısızlıkta
+  vazgeçip "Yeniden bağlan" sunar. 8 sn görüntü gelmezse bağlantıyı takılmış sayıp
+  yeniler. `completed` görüntüsü gelince ekran tamamlandı gösterir, bağlantıyı
+  kapatır ve bir daha bağlanmaz. Yeniden denenmeyen hatalarda (`404`, bilinmeyen
+  kod) hemen vazgeçilir. Ekrandan ayrılınca veya kampanya değişince bağlantı
+  kapatılır.
 
 Onay yanıtları (`POST /api/campaigns/{id}/approve`, gövde `{"content_version": N}`,
 `application/json`; eksik, sıfır, negatif veya tam sayı olmayan sürüm `400`,
@@ -301,7 +359,8 @@ Uygulama notları (`campaign.Approver`):
   kuyruk aynı kümeyi sayar (aradaki fark yalnızca önizleme ile onay arasındaki
   veri/zaman değişimidir).
 - Mesaj satırları kanal başına tek `INSERT … SELECT unnest(…)` ile yazılır;
-  `idempotency_key` = `kampanya:kullanıcı:kanal`.
+  `idempotency_key` = `kampanya:kullanıcı:kanal`. Aynı ifade render için
+  kullanılan ham alıcı adını `first_name` olarak yazar (ADR-026).
 - Onay yolunda LLM çağrısı yoktur; kampanya satırı kilidi yalnızca veritabanı
   işi sürerken tutulur.
 
@@ -355,6 +414,11 @@ WHERE c.id = $1
   );
 ```
 
+Her terminal yazımdan sonraki tamamlama kontrolü başarısız olabilir (örneğin geçici
+veritabanı hatası); o kampanyada başka mesaj kalmadıysa kimse onu tekrar kontrol
+etmezdi. Bu yüzden her reaper turu ayrıca aynı kuralı (hiç `queued` veya `sending`
+mesaj kalmadı, en az bir mesaj var) bütün `approved`/`sending` kampanyalara uygular.
+
 | Mekanizma | Görevi |
 | --- | --- |
 | `claim_token` | Eski worker'ın geç gelen sonucunun yeni sahibin durumunu ezmesini önler. |
@@ -372,10 +436,20 @@ WHERE c.id = $1
 | Reaper aralığı | 10 sn | Lease dolunca hakkı olan iş `queued`, hakkı biten iş hata sebebiyle `failed` olur. |
 | Backoff | Taban 2 sn, katsayı 2, tavan 60 sn, tam jitter | `Retry-After` varsa ona uyulur. |
 | Azami deneme | 5 | Varsayılan, ayarlanabilir. |
-| Hız sınırı | Kanal başına ayrı limiter, hedef ~95/s, burst 1, **retry'lar dahil** | Her provider çağrısının önünde. |
+| Hız sınırı | Kanal başına ayrı limiter, hedef ~95/s, burst 1, **retry'lar dahil** | Her provider çağrısının önünde (ön kontrolden önce, işleri aralıklar). |
+| Gönderim anı kapısı | Kanal başına jeton kovası: hız = hız sınırı, burst 2. Herhangi bir T süresinde en çok `burst + hız·T` gönderim (1 sn'de ≤ 97) | Ön kontrolden hemen sonra, HTTP çağrısından önce. Veritabanı beklemesi veya süreç duraklaması sonrası birikmiş işlerin birlikte gitmesini engeller. Kapı bekletirse ön kontrol yenilenir. |
 
 `SIGTERM` geldiğinde yeni claim durur. Devam eden çağrılara 15 sn tanınır.
 Süre dolarsa kalan satırları lease mekanizması geri alır.
+
+Bu değerler `DefaultConfig` içindedir ve testlerde ortam değişkenleriyle
+kısaltılabilir (`WORKER_LEASE`, `WORKER_REAP_INTERVAL`, `WORKER_SHUTDOWN_TIMEOUT`,
+`WORKER_BACKOFF_BASE`, `WORKER_BACKOFF_CAP`, `WORKER_DB_BACKOFF_MIN/MAX`,
+`WORKER_POLL_INTERVAL`, `WORKER_RATE`, `WORKER_SEND_BURST`, `WORKER_CAPACITY`,
+`WORKER_MAX_ATTEMPTS`). Uygulamanın varsayılanları değişmez; lease kapanış
+süresinden uzun olmak zorundadır (yapılandırma doğrulanır). Kanal başına aynı
+anda sahiplenilen iş sayısı varsayılan 10'dur. Reaper ayrıca `queued` ama
+deneme hakkı bitmiş işleri de `failed`/`exhausted` yapar.
 
 Compose'ta `api` servisi için `stop_grace_period: 20s` tanımlıdır; Docker'ın
 varsayılanı 10 sn olduğu için tanımlanmazsa süreç 15 sn dolmadan `SIGKILL` alır.
@@ -428,19 +502,38 @@ onun için de uygulanır.
 
 ## 11. Mock provider sözleşmesi
 
-`POST /v1/sms` ve `POST /v1/email` isteklerinde `Idempotency-Key` zorunludur.
-Yanıtlar `200` (`{message_id}`), `400` (geçersiz alıcı), `429`
-(`Retry-After`) veya `500`. Hata modları ortam değişkenleriyle ayarlanır.
+`POST /v1/sms` (`{"to","text"}`) ve `POST /v1/email` (`{"to","subject","body"}`)
+isteklerinde `Idempotency-Key` zorunludur. Yanıtlar `200` (`{message_id}`),
+`400` (anahtar yok, geçersiz gövde veya alıcı), `422`
+(`IDEMPOTENCY_KEY_REUSED`), `429` (`Retry-After`) veya `500`.
+
+Worker, `2xx` yanıtı yalnızca gövde `{"message_id": "<dolu>"}` içeriyorsa kabul
+sayar. Aksi hâlde sonuç `invalid_response` olur (`send_attempts_total{outcome}`
+ayrı sayar): mesaj `sent` olmaz, aynı anahtarla yeniden denenir. Provider
+kaydı zaten commit ettiği için yeniden deneme güvenlidir (kayıtlı sonuç döner).
+Yanıt gövdesi `last_error`'a yazılmaz.
+
+Hata modları ortam değişkenleriyle ayarlanır: `MOCK_PROVIDER_LATENCY`,
+`MOCK_PROVIDER_429_RATE`, `MOCK_PROVIDER_500_RATE`,
+`MOCK_PROVIDER_RETRY_AFTER` ve `MOCK_PROVIDER_MODE`. Sıra: varış kaydı →
+doğrulama (`400`) → gecikme → rastgele `429` → rastgele `500` → kalıcı kabul →
+yanıt (düşürülebilir).
 
 Provider ilk kabulü mevcut PostgreSQL içindeki `mock_provider_acceptances`
-tablosuna **atomik** kaydeder. `idempotency_key` üzerinde benzersiz kısıt
-vardır. Aynı anahtarla gelen istek kaydedilmiş ilk sonucu döndürür.
-`accept_then_drop`, bir anahtar için yalnızca ilk kabul yanıtını, kayıt
-commit edildikten sonra düşürür. Tekrar istekleri kayıtlı sonucu alır.
-Provider yeniden başlasa da kabul kaydı korunur.
+tablosuna **atomik** kaydeder (`INSERT … ON CONFLICT DO NOTHING`).
+`idempotency_key` birincil anahtardır. Aynı anahtarla, aynı kanal, alıcı ve
+içerikle gelen istek kaydedilmiş ilk sonucu döndürür. Aynı anahtarla **farklı
+alıcı, kanal veya içerik** gelirse provider isteği `422` ile reddeder ve
+kayıtlı sonucu döndürmez; worker bunu kalıcı hata (`rejected`) sayar. İçerik,
+SHA-256 özeti olarak karşılaştırılır.
 
-Bütün yanıtların kaybolması ayrı bir hata enjeksiyonuyla test edilir.
-Deneme sınırında mesaj `failed`, `failure_reason = exhausted` olur.
+`accept_then_drop`, bir anahtar için **yalnızca ilk** kabul yanıtını, kayıt
+commit edildikten sonra düşürür (bağlantı yanıt yazılmadan kesilir). Tekrar
+istekleri kayıtlı sonucu alır. Provider yeniden başlasa da kabul kaydı korunur.
+
+Bütün yanıtların kaybolması ayrı bir moddur: `drop_all_responses` kabul edilen
+isteğin **her** yanıtını düşürür (kabul yine tek kez kaydedilir). Deneme
+sınırında mesaj `failed`, `failure_reason = exhausted` olur.
 Arayüz “Gönderim sonucu doğrulanamadı; deneme sınırı doldu” açıklamasını
 gösterir. Bu sonuç provider'ın kesinlikle kabul etmediği anlamına gelmez;
 aynı idempotency key ve kalıcı kabul kaydı tekrar teslimatı önler.
@@ -461,7 +554,7 @@ Yapılandırılmış log `slog` ve request ID kullanır.
 | `send_attempts_total{outcome}` | counter | worker |
 | `stale_result_total` | counter | worker |
 | `reaper_requeued_total` | counter | worker |
-| `ratelimit_wait_seconds` | uygulamada belirlenir | worker |
+| `ratelimit_wait_seconds` | histogram ([ADR-027](../DECISIONS.md#adr-027--metrik-ve-sağlık-uçlarının-uygulama-ayrıntıları)) | worker |
 | `llm_validation_failures_total` | counter | api |
 | `queue_depth{channel}` | gauge | api |
 
@@ -471,12 +564,31 @@ counter'larını göremez. `queue_depth` bellekte tutulmaz: API, `/metrics`
 her okunduğunda `messages` tablosundan kanal başına `queued` mesaj sayısını
 hesaplar. Böylece worker durduğunda da kuyruk birikimi görünür.
 
+- **`queue_depth{channel}`:** `status = 'queued'` mesajlar; yeniden denenecekler
+  (`attempts > 0`) ve gelecekteki `next_attempt_at`'lılar dahildir, `sending`
+  ve terminal durumlar değil. `sms` ve `email` her zaman yazılır (boşsa `0`).
+  Veritabanı okunamazsa `/metrics` `503` döner ve kısmi çıktı sunulmaz:
+  okunamayan değer `0` gibi görünmemeli.
+- **`llm_validation_failures_total`:** model çıktısı doğrulamadan geçemediğinde
+  artar: segment (`SEGMENT_INVALID`) ve içerik üretimi (`CONTENT_INVALID`).
+  Kullanıcının elle düzenlediği geçersiz içerik model çıktısı olmadığı için
+  sayılmaz.
+- **`ratelimit_wait_seconds`:** bir gönderim denemesinin provider çağrısından
+  önce hız sınırı yüzünden beklediği toplam süre (limiter + gönderim anı kapısı),
+  deneme başına tek gözlem. Hiç beklemeyen deneme sıfıra yakın gözlenir.
+- **Worker sayaçları:** `messages_sent_total`, `send_attempts_total{outcome}`
+  (altı sonuç türünün hepsi her zaman yazılır), `stale_result_total`,
+  `reaper_requeued_total`.
+
 API ve worker `/metrics` endpoint'lerine yalnızca Docker iç ağından erişilir;
-host'a yayımlanan portlardan sunulmaz. Gerekçe:
+host'a yayımlanan portlardan sunulmaz: ayrı bir iç dinleyicidir (`METRICS_ADDR`,
+boşsa kapalı; Compose'ta `:9090`) ve yalnızca `/metrics` sunar. Adres açılamazsa
+süreç başlamaz. Gerekçe:
 [ADR-016](../DECISIONS.md#adr-016--worker-kendi-metrics-endpointini-sunar).
 
-`/healthz` API süreci çalıştığında `200` döner. `/readyz` DB erişimine
-bağlıdır.
+`/healthz` API süreci çalıştığında `200` döner ve veritabanına bakmaz.
+`/readyz` DB erişimine bağlıdır (bkz. bölüm 5). API, zorunlu bağımlılıklardan
+biri bağlanmamışsa başlamaz (`httpapi.Deps.Validate`).
 
 ## 13. Test katmanları
 
@@ -526,14 +638,23 @@ Gerekçe: [ADR-013](../DECISIONS.md#adr-013--yedi-compose-servisi-ve-başlatma-s
 | postgres | Veritabanı | `127.0.0.1:5432` | |
 | migrate | Tek seferlik, migration | | postgres healthy |
 | seed | Tek seferlik, idempotent demo verisi | | migrate tamamlandı |
-| api | REST/SSE, LLM, doğrulama, onay | `127.0.0.1:8081` | seed tamamlandı |
-| worker | Kuyruk işleyici, tek süreç | | seed tamamlandı |
+| api | REST/SSE, LLM, doğrulama, onay | `127.0.0.1:8081`; iç `api:9090` (`/metrics`, host'a yayımlanmaz) | seed tamamlandı; kendi sağlık kontrolü `/readyz` |
+| worker | Kuyruk işleyici, tek süreç | iç `worker:9090` (`/metrics`, host'a yayımlanmaz) | seed tamamlandı |
 | mock-provider | Sahte SMS/e-posta servisi | `127.0.0.1:8082` | seed tamamlandı |
-| web | nginx, statik Vue ve `/api` proxy'si | `127.0.0.1:8080` | api |
+| web | nginx, statik Vue ve `/api` proxy'si | `127.0.0.1:8080` (konteyner `80`) | api **healthy** (ilk açılışta API derlenirken bekler) |
+| prometheus | **İsteğe bağlı** (`observability` profili), `api:9090` ve `worker:9090`'ı scrape eder | `127.0.0.1:9091` (yalnızca loopback) | |
 
 - Portların hepsi yalnızca `127.0.0.1`'e açılır. Worker host'a port açmaz.
+- `prometheus` yalnızca `docker compose --profile observability up` ile başlar; normal
+  `docker compose up` yedi servistir. Saklama 2 gün ve 256 MB ile sınırlıdır
+  ([ADR-028](../DECISIONS.md)). `web` konteyneri nginx'tir: derlenmiş Vue çıktısı ve
+  `/api` proxy'si; proxy'de buffering kapalı, `proxy_read_timeout` 130 sn
+  ([ADR-014](../DECISIONS.md)). API kapalıyken nginx `502` ve JSON `API_UNAVAILABLE` döner.
 - API ve worker `/metrics` endpoint'lerine yalnızca Docker iç ağından
-  erişilir; API'nin host'a açılan `8081` portundan sunulmaz (ADR-016).
+  erişilir; API'nin host'a açılan `8081` portundan sunulmaz (ADR-016). İkisi de
+  `METRICS_ADDR=:9090` ile ayrı bir dinleyicide sunulur; Compose'ta bu port
+  `expose` edilir ama `ports` ile yayımlanmaz. `make e2e-metrics-internal` bunu
+  çalışan ortamda doğrular (CI'da da koşar).
 - Başlatma sırası taslaktır, onay bekliyor.
 - `web` içindeki `/api` proxy'sinde buffering kapalıdır; `delta` ve dashboard
   olayları bekletilmeden tarayıcıya ulaşır (ADR-014).

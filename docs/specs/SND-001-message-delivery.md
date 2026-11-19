@@ -32,18 +32,33 @@ ve tekrar teslimat oluşturulmadan mock sağlayıcılara gönderilir.
 - `429`, `5xx`, timeout ve geçici bağlantı hataları, deneme hakkı varsa
   backoff ve jitter ile yeniden denenir.
 - `429` yanıtındaki geçerli `Retry-After` değerinden önce yeniden deneme
-  yapılmaz. Diğer `4xx` yanıtlarında retry yapılmaz ve mesaj `failed` olur.
+  yapılmaz. Geçerli değer, 0 ile 24 saat arasında tam saniye veya gelecekteki
+  bir HTTP tarihidir; geçersiz değer yok sayılır ve yalnızca backoff uygulanır.
+- `429` diğer `4xx` yanıtlarından ayrıdır ve her zaman yeniden denenebilir.
+  `429` dışındaki `4xx` yanıtlarında retry yapılmaz, mesaj `failed` olur ve
+  `failure_reason = rejected` yazılır.
+- `2xx` yanıt tek başına kabul sayılmaz: gövde `{"message_id": "<boş olmayan
+  metin>"}` içermelidir. Gövde eksik, boş, JSON olmayan, `message_id`'siz veya
+  okunamıyorsa (yarıda kesilen) kabul doğrulanamamıştır: mesaj `sent` olmaz,
+  geçici hata gibi aynı idempotency anahtarıyla yeniden denenir ve deneme
+  sınırında `failed`, `failure_reason = exhausted` olur.
+- Yeniden denenebilir bir hata geldiğinde `attempts` azami değere ulaşmışsa
+  mesaj kuyruğa dönmez, doğrudan `failed` (`exhausted`) olur.
+- Mock provider, aynı `Idempotency-Key` farklı bir alıcı, kanal veya içerikle
+  gelirse isteği `422` ile reddeder ve kayıtlı sonucu döndürmez. Worker için bu
+  `429` dışında bir `4xx`'tir: retry yok, `failed`, `failure_reason = rejected`.
 - Varsayılan azami işleme denemesi beştir; yapılandırılabilir.
 - Aynı işin bütün denemeleri sabit `campaign:user:channel` idempotency
   anahtarını kullanır.
 - Mock provider ilk kabulü ve sonucunu PostgreSQL'e atomik kaydeder.
   Aynı anahtarla gelen istek ikinci teslimat oluşturmadan kayıtlı sonucu alır.
 - Provider yeniden başlatılsa da kabul kaydı korunur.
-- `accept_then_drop`, ilk kabul kaydı commit edildikten sonra yalnızca ilk
-  kabul yanıtını düşürür. Tekrar isteği kayıtlı sonucu döndürür.
-- Bütün yanıtların kaybolması durumunda deneme sınırında mesaj `failed`,
-  `failure_reason = exhausted` olur. Bu sonuç provider'ın mesajı kesinlikle
-  kabul etmediği anlamına gelmez.
+- `accept_then_drop`, ilk kabul kaydı commit edildikten sonra bir anahtarın
+  yalnızca ilk kabul yanıtını düşürür. Tekrar isteği kayıtlı sonucu döndürür.
+- Sürekli yanıt kaybı ayrı bir hata modudur (`drop_all_responses`): provider
+  isteği kabul eder ve kaydeder ama kabul edilen isteğin her yanıtını düşürür.
+  Bu modda deneme sınırında mesaj `failed`, `failure_reason = exhausted` olur.
+  Bu sonuç provider'ın mesajı kesinlikle kabul etmediği anlamına gelmez.
 - Yanıt alınamaması nedeniyle deneme sınırı dolduğunda arayüz
   “Gönderim sonucu doğrulanamadı; deneme sınırı doldu” açıklamasını gösterir.
 - Worker çökerse lease'i dolan iş, kalan deneme hakkı varsa yeniden kuyruğa

@@ -1,38 +1,140 @@
 # Insider One Campaign Tool
 
+[![CI](https://github.com/oghuzkhandev/InsiderCampaignTool/actions/workflows/ci.yml/badge.svg)](https://github.com/oghuzkhandev/InsiderCampaignTool/actions/workflows/ci.yml)
+
 Doğal dilde yazılan bir brief'ten hedef kitle, SMS ve e-posta taslağı
 üreten bir kampanya aracı. Pazarlamacı taslağı inceler, gerekirse
 düzenler ve onaylar. Gönderim işleri arka planda işlenir ve sonuçlar
-dashboard'da izlenir. Demo, sahte kullanıcılar ve mock gönderim
-sağlayıcısı kullanır.
+canlı dashboard'da izlenir. Demo, sahte kullanıcılar (seed'de ~3 bin kişi)
+ve **mock** SMS/e-posta sağlayıcısı kullanır; gerçek hiçbir kişiye mesaj gitmez.
 
-## Proje durumu
+## Hızlı başlangıç
 
-Proje geliştirme aşamasında. Güncel durum ve sıradaki görev
-[ilerleme notunda](docs/PROGRESS.md) yer alır.
+Gereksinim: Docker ve Docker Compose. Başka bir şey kurmanız gerekmez.
 
-## Kurulum ve test
+```sh
+docker compose up
+```
 
-Teslimde repo kökünden `docker compose up` komutu arayüzü, API'yi,
-PostgreSQL'i, worker'ı ve mock provider'ı başlatacak. Migration ve
-demo kullanıcı seed'i kurulum sırasında otomatik çalışacak.
+Migration ve demo kullanıcı seed'i kurulum sırasında otomatik çalışır.
+**İlk açılışta API, worker ve mock provider konteyner içinde derlenir ve Vue
+uygulaması build edilir; birkaç dakika sürebilir.** `docker compose up --build -d --wait`
+hepsi hazır olunca döner. Hazır olunca:
 
-`make test` gerçek bir API anahtarı gerektirmeden çalışacak.
+- Arayüz: <http://localhost:8080>
+- API (doğrudan): <http://localhost:8081> (`/healthz`, `/readyz`)
 
-Tarayıcıdan uçtan uca (Playwright) testler için `make e2e`: geliştirme
-ortamından ayrı, izole bir Compose projesinde (`compose.e2e.yaml`) çalışır ve
-geliştirme veritabanına dokunmaz. Gereksinimler: Docker ve
-`cd frontend && npx playwright install chromium` (bir kez).
-Kurulum doğrulandıktan sonra uygulama adresi ve demo adımları
-bu bölüme eklenecek.
+### Demo akışı
+
+1. <http://localhost:8080> adresini açın, **"Örnek brief'i kullan"** ile brief'i
+   doldurun (veya kendiniz yazın) ve **"Kitleyi hesapla"** düğmesine basın.
+   Segment doğrulanır; toplam, SMS'e ve e-postaya uygun kişi sayıları görünür.
+2. **"İçeriği hazırla"** → **"İçerik üret"**: SMS metni, e-posta konusu ve gövdesi
+   akarak gelir. Alanları düzenleyebilir ve **"Yeni sürüm olarak kaydet"** ile
+   yeni sürüm oluşturabilirsiniz (`{{first_name}}` değişkeni desteklenir).
+3. **"Onayla (sürüm N)"** → onay kutusu → **"Onayla ve kuyruğa al"**. Onaylanan
+   sürüm ve gönderim işleri tek transaction'da kuyruğa yazılır; onaydan sonra içerik
+   değiştirilemez.
+4. **"Gönderimi izle"**: dashboard bekleyen, yeniden denenecek, gönderilen,
+   başarısız ve atlanan mesajları canlı gösterir. Mock provider kasıtlı olarak
+   zaman zaman 429 ve 500 üretir; yeniden denemeleri worker loglarında
+   (`docker compose logs -f worker`) ve dashboard'daki "Yeniden denenecek" sayısında
+   görebilirsiniz.
+
+Mock provider'ın davranışı ortam değişkenleriyle değişir
+([`.env.example`](.env.example)): gecikme, 429/500 oranı ve yanıt kaybı modları
+(`accept_then_drop`, `drop_all_responses`).
+
+### İsteğe bağlı: Prometheus
+
+```sh
+docker compose --profile observability up -d
+```
+
+Prometheus arayüzü yalnızca <http://127.0.0.1:9091> adresinde açılır; API ve worker
+`/metrics` uçlarını Docker iç ağından okur (bu uçlar host'a yayımlanmaz). Veri 2 gün
+veya 256 MB ile sınırlıdır. Normal `docker compose up` Prometheus'u başlatmaz.
+
+## Test
+
+```sh
+make test      # birim ve entegrasyon testleri (gerçek API anahtarı gerektirmez)
+make e2e       # tarayıcı ve gerçek süreç uçtan uca testleri (izole Compose ortamı)
+```
+
+- `make test`: PostgreSQL'i Compose ile başlatır ve `campaigns_test` veritabanında
+  `go test ./...` çalıştırır. Gereksinim: Docker ve Go 1.27 (`backend/go.mod`).
+  Tüm LLM testleri MockLLM ile çalışır. Geliştirme veritabanına dokunulmaz.
+- `make e2e`: üç döngü, her biri `campaign-e2e` adlı ayrı bir Compose projesinde
+  (ayrı veritabanı ve portlar, geliştirme ortamına dokunmaz): standart tarayıcı
+  testleri, gerçek worker + mock provider + SSE ile gönderim (`@real`) ve
+  Prometheus doğrulaması (`promtool` dahil). Gereksinim: Docker, Node
+  `^22.18 || >=24.12` ve bir kez `cd frontend && npx playwright install chromium`.
+  Tek tek: `make e2e-standard`, `make e2e-delivery`, `make e2e-observability`.
+- Frontend: `cd frontend && npm ci && npm run test:unit -- --run && npm run build`.
+
+### CI
+
+GitHub Actions (`.github/workflows/ci.yml`) her PR'da ve `main`'e push'ta çalışır:
+backend (gofmt, vet, `go mod tidy`, `make test`), frontend (oxlint, eslint, birim
+testleri, build), Compose yapılandırması ve E2E (standart, gönderim, observability).
 
 ## Mimari
 
-Vue arayüzü Go API ile iletişim kurar. API, Claude veya MockLLM çıktısını
-doğrular ve onaylanan gönderim işlerini PostgreSQL'e kaydeder. Go worker
-işleri alır, kanal iznini kontrol eder ve mock provider'a gönderir.
+```mermaid
+flowchart LR
+  Web["Vue 3 (nginx)"] -- "REST / SSE (/api)" --> API[Go API]
+  API --> LLM{{LLM arayüzü}}
+  LLM --> Mock[MockLLM]
+  API --> PG[(PostgreSQL)]
+  Worker[Go worker] --> PG
+  Worker --> Prov[Mock provider]
+  Prov --> PG
+  Prom[Prometheus - isteğe bağlı] -. scrape .-> API
+  Prom -. scrape .-> Worker
+```
+
+Vue arayüzü aynı origin üzerinden nginx ile Go API'ye bağlanır; `/api` proxy'sinde
+buffering kapalıdır, böylece içerik üretimi ve dashboard SSE akışları canlı kalır.
+API, model çıktısını (segment ve içerik) backend'de doğrular; model çıktısı
+hiçbir zaman SQL olarak çalıştırılmaz. Onay, onaylanan içerik sürümü ve `queued`
+mesaj satırları tek PostgreSQL transaction'ında yazılır; kuyruk ayrı bir servis
+değil PostgreSQL'dir (`FOR UPDATE SKIP LOCKED`). Go worker boş kapasitesi kadar işi
+sahiplenir, kanal başına 100/sn hız sınırı uygular, kanal iznini gönderimden hemen
+önce yeniden kontrol eder ve sonucu yalnızca güncel sahiplik jetonuyla yazar.
+Mock provider `Idempotency-Key` ile mükerrer teslimi önler; kayıp yanıtta aynı
+anahtarla yeniden denenir.
 
 - [Case brief'i](docs/CASE.md)
-- [Mimari](docs/ARCHITECTURE.md)
-- [Teknik kararlar](DECISIONS.md)
+- [Mimari](docs/ARCHITECTURE.md) ve [hata modları](docs/FAILURE-MODES.md)
+- [Teknik kararlar (ADR)](DECISIONS.md)
+- [İlerleme ve açık işler](docs/PROGRESS.md)
+- [Repo yapısı](docs/REPO-STRUCTURE.md)
 - [Claude çalışma oturumları](ai-sessions/README.md)
+
+## Kapsam ve bilinen sınırlamalar
+
+Çekirdek akış (brief → doğrulanmış segment ve kitle → içerik → insan onayı →
+güvenilir gönderim → canlı izleme) uçtan uca çalışır ve testlidir. Yetiştirilemeyenler
+ve bilinçli sınırlar:
+
+- **Gerçek Claude adaptörü yok.** LLM arayüzü hazır (`llm.Provider`) ve tüm akış
+  MockLLM ile çalışır ve test edilir; `LLM_PROVIDER` şimdilik yalnızca `mock` kabul
+  eder. Anthropic API'ye bağlanan adaptör yazılmadı.
+- **Tek worker süreci** (ADR-005). Eşzamanlı claim (`SKIP LOCKED`, sahiplik jetonu,
+  lease) entegrasyon testlidir, ama birden çok worker *süreci* birlikte çalıştırılıp
+  denenmedi; kanal başına hız sınırı da süreç başınadır.
+- **Kimlik doğrulama ve yetkilendirme yok.** Herkes her kampanyayı görür; içerik
+  üretimi (LLM maliyeti) için hız veya maliyet sınırı yok.
+- **Bonus özellikler yok:** zamanlanmış gönderim, A/B varyantları, çok dilli içerik.
+- **Mock provider istatistikleri bellektedir** (yeniden başlayınca sıfırlanır); kabul
+  kayıtları PostgreSQL'dedir. Worker sayaçları da süreç belleğindedir.
+- **Prometheus yalnızca isteğe bağlı bir demo/izleme aracıdır;** Grafana yok, uyarı
+  kuralı yok. Metrik istemci kütüphanesi (`client_golang`) yerine küçük bir yazıcı
+  kullanılır.
+- **Veritabanı migration'ı** `00004`, riskli (daha önce denenmiş) mesaj varsa
+  veriye dokunmadan durur; uygulama sırası [ADR-026](DECISIONS.md)'dadır.
+- Arayüz koyu temada işletim sistemi ayarını izler; elle tema anahtarı yoktur.
+- Arayüzde yalnızca MockLLM çıktısına göre ayarlanmış ekranlar test edildi;
+  gerçek bir modelin üreteceği uzun veya bozuk çıktılar için doğrulama ve onarım
+  mantığı birim testlidir, canlı model ile denenmemiştir.
