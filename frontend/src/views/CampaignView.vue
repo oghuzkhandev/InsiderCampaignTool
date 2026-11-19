@@ -19,6 +19,7 @@ import AudienceCounts from '@/components/AudienceCounts.vue'
 import ContentEditor from '@/components/ContentEditor.vue'
 import ErrorPanel from '@/components/ErrorPanel.vue'
 import SegmentSummary from '@/components/SegmentSummary.vue'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps<{ id: string }>()
 
@@ -383,6 +384,11 @@ const approvedAtText = computed(() => {
           gönderim için kuyruğa alındı.
         </p>
         <p class="hint">İçerik artık değiştirilemez.</p>
+        <Button as-child variant="outline" class="justify-self-start">
+          <RouterLink :to="`/campaigns/${id}/delivery`" data-testid="delivery-link">
+            Gönderimi izle →
+          </RouterLink>
+        </Button>
       </section>
     </template>
   </main>

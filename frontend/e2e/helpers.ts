@@ -42,6 +42,21 @@ export async function generateContent(page: Page) {
   await expect(page.getByTestId('version')).toHaveText('Sürüm 1 · Yapay zekâ ile üretildi')
 }
 
+/**
+ * Bir kullanıcı gibi kampanyayı oluşturur, içerik üretir ve onaylar; onayın
+ * kuyruğa aldığı mesaj sayısını doğrular. Kampanya kimliğini döndürür.
+ */
+export async function approvedCampaign(page: Page): Promise<string> {
+  const id = await createCampaign(page)
+  await generateContent(page)
+  await approve(page, 1)
+  await expect(page.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 1')
+  await expect(page.getByTestId('queued')).toContainText(
+    `${EXPECTED.sms} SMS ve ${EXPECTED.email} e-posta mesajı`,
+  )
+  return id
+}
+
 /** Sunucudaki gerçek durum (arayüzden bağımsız, web proxy'si üzerinden okuma). */
 export async function serverState(page: Page, id: string) {
   const response = await page.request.get(`/api/campaigns/${id}`)
