@@ -27,7 +27,8 @@ test(
     const stream = page.waitForResponse(
       (response) => response.url().endsWith(`/api/campaigns/${id}/events`) && response.ok(),
     )
-    await page.getByRole('link', { name: 'İleri: Gönderimi izle' }).click()
+    // Onaydan sonra otomatik açılan takip ekranını yenileyerek gerçek akışı yeniden okur.
+    await page.reload()
     await page.waitForURL(new RegExp(`/campaigns/${id}/delivery$`))
     await expect(page.getByRole('heading', { level: 1, name: 'Gönderim takibi' })).toBeVisible()
     expect((await stream).headers()['content-type']).toContain('text/event-stream')

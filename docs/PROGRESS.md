@@ -2,6 +2,73 @@
 
 Son güncelleme: 2026-11-20
 
+## Şu an — Zamanlanmış gönderim
+
+**Branch:** `feat/audience-preview-list`; Oğuzhan aynı branch'te devam edilmesini onayladı.
+Kapsam ADR-033 ve SCH-001; Oğuzhan'ın son isteğiyle zamanlayıcı için gerçek yığın e2e de eklendi.
+
+- Onay kartında hemen gönderim veya cihazın yerel saatine göre tarih/saat seçimi var.
+  Son onayda saat dilimi/ofset görünür; geçersiz/geçmiş zaman seçimi reddedilir.
+- `00007_scheduled_delivery.sql`, campaigns.scheduled_at ve onay sonrası değişmezlik
+  korumasını ekler. Dev veritabanına uygulanmadı. Dev'e migration önce, API/web build sonra.
+- Onay, zaman ve mesajların next_attempt_at değerleri tek transaction'da yazılır. Alıcılar
+  onay anında sabitlenir. Mevcut worker sorgusu zamanı gelmemiş işleri almaz; yeni servis yok.
+- Aynı sürüm ve aynı anla tekrar 200; zaman geçmiş olsa da replay yeni iş oluşturmaz.
+  Farklı zaman 409; yeni onayda geçmiş zaman 422. PostgreSQL saati ve UTC/mikro-saniye
+  normalizasyonu kullanılır. İçerik sürümüne bağlı onay ve gönderimde izin kontrolü korunur.
+- GET, sayfalı kampanya listesi ve SSE scheduled_at taşır. Kampanya, liste ve dashboard'da
+  plan görünür; durum sözlüğüne yeni değer eklenmedi. Worker kapalıysa işler geç başlayabilir.
+- Yerel doğrulama: zamanlayıcının handler/gerçek PostgreSQL testleri geçti. Erken claim yok,
+  zamanı gelince gerçek worker/provider gönderiyor; gecikmiş replay ve ofset eşdeğerliği,
+  paralel onay, rollback ve migration Down koruması sınandı. Frontend 726 test geçti;
+  lint/oxlint, build ve e2e tip kontrolü geçti. Son `make test`, Go vet/tidy/gofmt,
+  Prettier ve `git diff --check` temiz. İstanbul saat dilimiyle zaman/form testleri de 17/17 geçti.
+  Eski onay kilit testi SELECT metnini birebir arıyordu; scheduled_at alanı eklenince
+  sabiti güncellendi. Önceki başarısız koşudan sonra ilgili test ve tam make test geçti.
+- `scheduled-delivery-real.spec.ts`: iki `@real` Playwright testi eklendi. Gerçek API/DB/worker/
+  provider/SSE, İstanbul saat dilimi; yenilemede planın korunması, erken gönderilmeme ve vadesinde
+  7 mesajın tamamlanması, aynı/farklı saatle tekrar onay ve boş/geçmiş saat reddi sınanıyor.
+  Yerel `e2e-delivery` koşusu 3/3 geçti (mevcut anlık gönderim + iki yeni zamanlayıcı testi).
+  Planlı gerçek gönderim 1,1 dakikada, hata senaryosu yaklaşık 1 saniyede geçti; 7/7 sent,
+  sıfır failed ve aynı planla replay doğrulandı. Test saati/fetch/SSE taklit edilmedi.
+  `campaign-schedule-e2e` projesi, 18086 portu ve ayrı artifact klasörü kullanıldı; ortam silindi.
+  Type-check:e2e, eslint, oxlint, Prettier ve git diff kontrolü temiz. Mevcut CI E2E işinin
+  `--grep @real` adımı yeni dosyayı otomatik keşfeder; adım adı zamanlanmış gönderimi de
+  belirtiyor. Yeni araç, servis veya job gerekmedi. Gerçek GitHub Actions doğrulanmadı.
+  Commit/push yok. Normal `make test` mevcut backend süreç e2e testlerini de içerir.
+
+## Şu an — Kişi listesi ve çalışma alanı sayfaları
+
+**Branch:** `feat/audience-preview-list`. Oğuzhan beş sayfanın aynı branch'e eklenmesini
+ve kalıcı şablon tablosu için migration yazılmasını açıkça onayladı (ADR-032).
+
+- Menü: Genel bakış, Yeni kampanya, Kampanyalar, Kitleler, İçerik şablonları.
+- Genel bakış gerçek veritabanı özeti; kampanyalar durum filtreli ve sayfalı.
+- Kitleler tüm demo kullanıcılarında arama ve sayfalama yapar; kampanyanın segmentine
+  uyan kişiler önizlemede ayrı listelenir. Kanal uygunluk sebepleri korunur.
+- `00006_content_templates.sql`: kalıcı şablon tablosu. Mevcut doğrulayıcı kullanılır.
+  Şablonu kampanyaya uygulamak düzenleyiciyi doldurur; sürüm kaydetme/onay ayrıca gerekir.
+  Şablonu düzenleme/silme kaydedilmiş kampanya sürümlerini değiştirmez.
+- Yeni API'ler: GET overview, GET audience, GET/POST templates, PUT/DELETE templates/{id};
+  kampanya listesinin sayfalı/filtreli çağrısı. Ayrıntılı sözleşme ARCHITECTURE ve WRK-001'de.
+- Son yerel doğrulama: frontend 638 test (37 dosya), eslint/oxlint, build ve e2e tip kontrolü
+  geçti. `make test`, `go test -count=1 ./...`, go vet, go mod verify/tidy ve gofmt temiz.
+  Workspace ve migration Down/Up testleri `-race` ile de geçti. Standart Playwright 40/40,
+  gerçek worker/provider/SSE döngüsü 1/1; iç metrics erişimi/port yalıtımı kontrolü geçti.
+  Sonuçlar `campaign-workspace-e2e` projesi ve 18084 portunda alındı; test ortamı silindi.
+  İsteğe bağlı observability döngüsü bu değişiklikte yeniden çalıştırılmadı; gerçek CI bekliyor.
+- Doğrulamada görülenler: başka bir agent aynı `campaign-e2e` projesini kullanınca ilk toplu
+  deneme bağlantı hataları aldı; ayrı proje/port ve `E2E_OUTPUT_DIR` ile çakışma giderildi.
+  Eski menü/listenin konumuna bağlı testler yeni sayfalara uyarlandı. Mobil taşma testi,
+  görsel olarak kırpılmış ekran okuyucu başlıklarını görünür sayıyordu; gerçek computed clip
+  kontrolü eklendi. Son tarayıcı koşusu temiz.
+- Mevcut `TestDeliveryCompletesCampaignAndRecordsEveryAcceptanceOnce` bir `make test`
+  koşusunda bir mesaj için fazladan deneme gördü. Nedeni doğrulanmadı; test değiştirilmedi.
+  Aynı test 5 tekrarda ve sonraki tam `make test` koşusunda geçti. CI'da tekrar ederse
+  mesajın `last_error`/attempt verisi korunarak incelenmeli; bu kayıt gizlenmedi.
+- Dev veritabanına migration uygulanmadı. Commit/push yapılmadı; gerçek GitHub Actions
+  sonucu henüz doğrulanmadı. `00006` Down şablon verilerini siler, kampanyaları silmez.
+
 ## Tamamlanan hazırlık
 
 - [x] Repo klonlandı ve başlangıç klasörleri oluşturuldu.

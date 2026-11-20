@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import {
   CheckIcon,
+  EyeIcon,
   FileTextIcon,
+  MegaphoneIcon,
   MessageSquareTextIcon,
   PencilLineIcon,
   SaveIcon,
   ShieldCheckIcon,
   SparklesIcon,
 } from '@lucide/vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import { routerKey } from 'vue-router'
 import { ApiError, isAbortError, type ApiReason } from '@/api/campaigns'
 import {
   approveCampaign,
@@ -22,18 +25,21 @@ import {
 } from '@/api/content'
 import { applyDelta, emptyFields, hasText, sameFields } from '@/content/draft'
 import { FIELD_LABELS, contentErrorTitle, contentReasonMessage } from '@/content/messages'
-import { useUnsavedChangesGuard } from '@/content/useUnsavedChangesGuard'
+import { useUnsavedChangesGuard, UNSAVED_MESSAGE } from '@/content/useUnsavedChangesGuard'
 import ApprovePanel from '@/components/ApprovePanel.vue'
 import AudienceCounts from '@/components/AudienceCounts.vue'
+import TemplatePicker from '@/components/TemplatePicker.vue'
 import ContentEditor from '@/components/ContentEditor.vue'
-import ErrorPanel from '@/components/ErrorPanel.vue'
 import MessagePreview from '@/components/MessagePreview.vue'
+import ErrorPanel from '@/components/ErrorPanel.vue'
 import SegmentSummary from '@/components/SegmentSummary.vue'
 import CampaignSteps from '@/components/CampaignSteps.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import ScheduleNotice from '@/components/ScheduleNotice.vue'
 import StepNav, { type NavStep } from '@/components/StepNav.vue'
 import { notifyCampaignsChanged } from '@/campaign/recent'
+import { notify } from '@/notify/notify'
 import { stepStatuses } from '@/campaign/steps'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -42,6 +48,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 
 const props = defineProps<{ id: string }>()
+const router = inject(routerKey, null)
 
 const loading = ref(true)
 const loadError = ref<ApiError | null>(null)
@@ -87,6 +94,16 @@ const fieldsOf = (v: ContentVersion): ContentFields => ({
   email_subject: v.email_subject,
   email_body: v.email_body,
 })
+
+function applyTemplate(fields: ContentFields) {
+  if (busy.value || isApproved.value || (dirty.value && !window.confirm(UNSAVED_MESSAGE))) return
+  draft.value = { ...fields }
+  manualEntry.value = true
+  fromPartial.value = false
+  generateError.value = saveError.value = null
+  feedback.value = 'Şablon düzenleyiciye aktarıldı. Kaydetmeden onaylanamaz.'
+  notify.warning('Şablon aktarıldı, henüz kaydedilmedi', 'Kaydetmeden onaylanamaz.')
+}
 
 function adopt(version: ContentVersion | undefined) {
   saved.value = version ?? null
@@ -207,6 +224,7 @@ async function generate() {
     if (!controllers.has(controller)) return
     adopt(version)
     feedback.value = `Üretildi · sürüm ${version.content_version}`
+    notify.success('İçerik üretildi', `Sürüm ${version.content_version} kaydedildi.`)
   } catch (err) {
     if (!controllers.has(controller) || isAbortError(err)) return
     const error = toApiError(err)
@@ -215,7 +233,9 @@ async function generate() {
       // Doğrulanamayan ama çözümlenebilen metinler düzenleme için açılır.
       draft.value = { ...error.partial }
       fromPartial.value = true
+      notify.warning('İçerik doğrulanamadı', 'Metni düzeltip kaydedin veya yeniden üretin.')
     } else {
+      notify.error('İçerik üretilemedi', contentErrorTitle(error))
       // Başarısız üretim önceki kayıtlı sürümü bozmaz.
       adopt(saved.value ?? undefined)
     }
@@ -238,10 +258,12 @@ async function save() {
     adopt(version)
     generateError.value = null
     feedback.value = `Kaydedildi · sürüm ${version.content_version}`
+    notify.success('İçerik kaydedildi', `Yeni sürüm oluşturuldu: sürüm ${version.content_version}.`)
   } catch (err) {
     if (!controllers.has(controller) || isAbortError(err)) return
     const error = toApiError(err)
     saveError.value = error
+    notify.error('İçerik kaydedilemedi', contentErrorTitle(error))
     if (error.code === 'CAMPAIGN_NOT_DRAFT') void refresh()
   } finally {
     if (controllers.has(controller)) saving.value = false
@@ -249,7 +271,7 @@ async function save() {
   }
 }
 
-async function approve() {
+async function approve(scheduledAt?: string) {
   const version = saved.value
   if (!version || !canApprove.value) return
   const controller = track()
@@ -257,7 +279,12 @@ async function approve() {
   feedback.value = null
   approveError.value = null
   try {
-    const result = await approveCampaign(props.id, version.content_version, controller.signal)
+    const result = await approveCampaign(
+      props.id,
+      version.content_version,
+      controller.signal,
+      scheduledAt,
+    )
     if (!controllers.has(controller) || !detail.value) return
     approveResult.value = result
     detail.value = {
@@ -265,18 +292,39 @@ async function approve() {
       status: result.status,
       approved_content_version: result.approved_content_version,
       approved_at: result.approved_at,
+      scheduled_at: result.scheduled_at,
     }
     // Kenar çubuğundaki liste kampanyanın yeni durumunu göstersin.
     notifyCampaignsChanged()
+    notify.success(
+      'Kampanya onaylandı',
+      result.scheduled_at
+        ? `${result.queued.sms} SMS ve ${result.queued.email} e-posta mesajı kuyruğa alındı; gönderim planlanan zamanda başlayacak.`
+        : `${result.queued.sms} SMS ve ${result.queued.email} e-posta mesajı gönderim için kuyruğa alındı.`,
+    )
+    // Yalnızca bu ekrandan başarıyla tamamlanan onay yönlendirir. Daha önce onaylanmış bir
+    // kampanyayı açmak veya hata almak kullanıcıyı kendiliğinden başka sayfaya taşımaz.
+    if (router) {
+      void router.push({ name: 'campaign-delivery', params: { id: result.id } }).catch(() => {
+        notify.warning(
+          'Gönderim takibi açılamadı',
+          'Kampanyanız onaylandı. Gönderimi izle bağlantısını kullanabilirsiniz.',
+        )
+      })
+    }
   } catch (err) {
     if (!controllers.has(controller) || isAbortError(err)) return
     const error = toApiError(err)
     approveError.value = error
+    notify.error('Kampanya onaylanamadı', contentErrorTitle(error))
     // Gördüğünüz sürüm eski veya kampanya değişmiş: son durumu yükle.
     if (
-      ['STALE_CONTENT_VERSION', 'CAMPAIGN_ALREADY_APPROVED', 'NO_VALIDATED_CONTENT'].includes(
-        error.code,
-      )
+      [
+        'STALE_CONTENT_VERSION',
+        'CAMPAIGN_ALREADY_APPROVED',
+        'NO_VALIDATED_CONTENT',
+        'SCHEDULE_CONFLICT',
+      ].includes(error.code)
     ) {
       void refresh()
     }
@@ -334,13 +382,19 @@ const approvedAtText = computed(() => {
 </script>
 
 <template>
-  <main class="grid gap-6">
+  <main class="grid gap-8">
     <PageHeader
+      :icon="MegaphoneIcon"
       title="Kampanya"
       description="İçeriği üretin veya düzenleyin, kaydettiğiniz sürümü onaylayın."
     >
       <template #badge>
-        <StatusBadge v-if="detail" :status="detail.status" data-testid="campaign-state" />
+        <StatusBadge
+          v-if="detail"
+          :status="detail.status"
+          :scheduled="Boolean(detail.scheduled_at)"
+          data-testid="campaign-state"
+        />
       </template>
       <CampaignSteps v-if="detail" :statuses="steps" />
     </PageHeader>
@@ -360,7 +414,10 @@ const approvedAtText = computed(() => {
 
     <!-- Geniş ekranda iki sütun: solda brief ve geniş düzenleyici, sağda kompakt kitle ve onay
          özeti. Dar ekranda alt alta: brief, içerik, kitle, onay. -->
-    <div v-else-if="detail" class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <div
+      v-else-if="detail"
+      class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_30rem]"
+    >
       <div class="grid gap-6">
         <Card role="region" aria-labelledby="brief-title">
           <CardHeader>
@@ -385,8 +442,11 @@ const approvedAtText = computed(() => {
             </CardDescription>
           </CardHeader>
 
-          <CardContent class="grid gap-4">
-            <div v-if="!isApproved" class="flex flex-col gap-2 sm:flex-row">
+          <CardContent class="grid gap-6">
+            <!-- Üç eylem tek satırda (dar ekranda alt alta). Şablon listesi açılınca satırın altına,
+                 tam genişlikte iner (TemplatePicker kökü `contents`: düğmesi bu satırın öğesidir). -->
+            <div v-if="!isApproved" class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <TemplatePicker :disabled="busy" @select="applyTemplate" />
               <Button
                 type="button"
                 size="lg"
@@ -453,20 +513,9 @@ const approvedAtText = computed(() => {
               :problems="problems"
             />
 
-            <!-- Canlı önizleme: yazarken mesajın alıcıya nasıl görüneceğinin örneği. -->
-            <section
-              v-if="showEditor && hasText(draft)"
-              class="grid gap-2 rounded-lg border p-3"
-              aria-labelledby="preview-title"
-              data-testid="editor-preview"
-            >
-              <h3 id="preview-title" class="text-sm font-medium">Mesaj önizlemesi</h3>
-              <MessagePreview :fields="draft" />
-            </section>
-
             <div
               v-if="showEditor && !isApproved"
-              class="flex flex-col gap-2 sm:flex-row sm:items-center"
+              class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center"
             >
               <Button
                 type="button"
@@ -502,12 +551,35 @@ const approvedAtText = computed(() => {
             />
           </CardContent>
         </Card>
+        <Card v-if="saved" role="region" aria-labelledby="content-preview-title">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <EyeIcon class="text-primary size-5" aria-hidden="true" />
+              <h2 id="content-preview-title">Mesaj önizlemesi</h2>
+            </CardTitle>
+            <CardDescription>
+              Kaydedilmiş sürüm {{ saved.content_version }} gösteriliyor.
+              <template v-if="dirty"
+                >Değişikliklerinizi görmek için önce yeni sürüm olarak kaydedin.</template
+              >
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MessagePreview :fields="fieldsOf(saved)" />
+          </CardContent>
+        </Card>
       </div>
 
       <!-- Dar ekranda `contents`: kartlar üst gride katılır ve `order` ile dizilir; onay özeti
            içerikten hemen sonra gelir (ana eyleme kaydırmadan ulaşılır), kitle ve koşullar
            onun ardından. Geniş ekranda sağ sütunda yapışkan bir bölümdür. -->
       <aside class="grid gap-6 max-lg:contents lg:sticky lg:top-6" aria-label="Kitle ve onay özeti">
+        <ScheduleNotice
+          v-if="detail.scheduled_at"
+          :at="detail.scheduled_at"
+          :status="detail.status"
+          class="max-lg:order-1"
+        />
         <AudienceCounts class="max-lg:order-2" compact :audience="detail.audience" />
         <SegmentSummary class="max-lg:order-2" :segment="detail.segment" />
 
@@ -515,7 +587,6 @@ const approvedAtText = computed(() => {
           v-if="saved && !isApproved"
           class="max-lg:order-1"
           :version="saved.content_version"
-          :content="fieldsOf(saved)"
           :audience="detail.audience"
           :disabled="!canApprove"
           :pending="approving"

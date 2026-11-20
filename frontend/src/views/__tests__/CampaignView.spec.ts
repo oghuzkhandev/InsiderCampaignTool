@@ -3,6 +3,7 @@ import { defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { RouterLinkStub, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import CampaignView from '../CampaignView.vue'
+import { notify } from '@/notify/notify'
 import {
   campaignBody,
   contentBody,
@@ -92,6 +93,63 @@ const approvedBody = {
 }
 
 const feedbackText = (w: VueWrapper) => w.get('[data-testid="action-feedback"]').text()
+
+describe('onay sonrası otomatik gönderim takibi', () => {
+  async function mountRoutedCampaign() {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/campaigns/:id', name: 'campaign', component: CampaignView, props: true },
+        {
+          path: '/campaigns/:id/delivery',
+          name: 'campaign-delivery',
+          component: defineComponent({ render: () => h('div', 'Gönderim takip ekranı') }),
+        },
+      ],
+    })
+    await router.push(`/campaigns/${ID}`)
+    const w = mount(defineComponent({ render: () => h(RouterView) }), {
+      global: { plugins: [router] },
+    })
+    mounted.push(w)
+    await flushPromises()
+    return { w, router }
+  }
+
+  it('başarılı son onaydan sonra ilgili kampanyanın gönderim ekranına gider', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody() }),
+      [APPROVE]: () => jsonResponse(200, approvedBody),
+    })
+    const { w, router } = await mountRoutedCampaign()
+    await click(w, 'Onayla (sürüm 1)')
+    expect(router.currentRoute.value.path).toBe(`/campaigns/${ID}`)
+    await click(w, 'Onayla ve kuyruğa al')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe(`/campaigns/${ID}/delivery`)
+    expect(w.text()).toContain('Gönderim takip ekranı')
+    expect(callsTo(APPROVE)).toHaveLength(1)
+  })
+
+  it('onay başarısızsa kampanya ekranında kalır ve hatayı gösterir', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody() }),
+      [APPROVE]: () => errorResponse(500, 'INTERNAL'),
+    })
+    const { w, router } = await mountRoutedCampaign()
+    await confirmApproval(w, 1)
+    expect(router.currentRoute.value.path).toBe(`/campaigns/${ID}`)
+    expect(w.text()).not.toContain('Gönderim takip ekranı')
+    expect(w.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('önceden onaylanmış kampanya açılınca kendiliğinden yönlendirme yapmaz', async () => {
+    routes({ [GET]: () => detail({ ...approvedBody, content: contentBody() }) })
+    const { router } = await mountRoutedCampaign()
+    expect(router.currentRoute.value.path).toBe(`/campaigns/${ID}`)
+    expect(callsTo(APPROVE)).toHaveLength(0)
+  })
+})
 
 describe('işlem geri bildirimi', () => {
   it('üretim bitince "Üretildi · sürüm 1" der', async () => {
@@ -183,25 +241,170 @@ describe('işlem geri bildirimi', () => {
   })
 })
 
+// Her eylemin sonucu bir bildirimdir (başarı, uyarı, hata); bildirim kartı notify.* ile gösterilir.
+describe('eylem bildirimleri', () => {
+  const spies = () => ({
+    success: vi.spyOn(notify, 'success').mockReturnValue('s'),
+    warning: vi.spyOn(notify, 'warning').mockReturnValue('w'),
+    error: vi.spyOn(notify, 'error').mockReturnValue('e'),
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('üretim başarılı olunca başarı bildirimi verir', async () => {
+    const n = spies()
+    routes({
+      [GET]: () => detail(),
+      [GENERATE]: () => sseResponse([sseEvent('validated', contentBody({ content_version: 1 }))]),
+    })
+    const w = await mountView()
+
+    await click(w, 'İçerik üret')
+
+    expect(n.success).toHaveBeenCalledWith('İçerik üretildi', 'Sürüm 1 kaydedildi.')
+    expect(n.error).not.toHaveBeenCalled()
+  })
+
+  it('üretim başarısız olunca hata bildirimi verir (başarı vermez)', async () => {
+    const n = spies()
+    routes({
+      [GET]: () => detail(),
+      [GENERATE]: () => sseResponse([sseEvent('error', { code: 'LLM_TIMEOUT', message: 'm' })]),
+    })
+    const w = await mountView()
+
+    await click(w, 'İçerik üret')
+
+    expect(n.error).toHaveBeenCalledTimes(1)
+    expect(n.error.mock.calls[0]![0]).toBe('İçerik üretilemedi')
+    expect(n.error.mock.calls[0]![1]).toEqual(expect.any(String))
+    expect(n.success).not.toHaveBeenCalled()
+  })
+
+  it('üretilen metin doğrulanamayınca (düzeltilebilir) uyarı verir, hata değil', async () => {
+    const n = spies()
+    routes({
+      [GET]: () => detail(),
+      [GENERATE]: () =>
+        sseResponse([
+          sseEvent('error', {
+            code: 'CONTENT_INVALID',
+            message: 'm',
+            reasons: [{ code: 'TOO_LONG', field: 'sms_text' }],
+            partial: { sms_text: 'x'.repeat(200), email_subject: 'Konu', email_body: 'Gövde' },
+          }),
+        ]),
+    })
+    const w = await mountView()
+
+    await click(w, 'İçerik üret')
+
+    expect(n.warning).toHaveBeenCalledWith(
+      'İçerik doğrulanamadı',
+      'Metni düzeltip kaydedin veya yeniden üretin.',
+    )
+    expect(n.error).not.toHaveBeenCalled()
+  })
+
+  it('kaydedince başarı, kaydedilemeyince hata bildirimi verir', async () => {
+    const n = spies()
+    let attempt = 0
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [SAVE]: () =>
+        ++attempt === 1
+          ? jsonResponse(200, contentBody({ content_version: 2, source: 'human' }))
+          : errorResponse(422, 'CONTENT_INVALID'),
+    })
+    const w = await mountView()
+
+    await w.get('#sms_text').setValue('Birinci')
+    await click(w, 'Yeni sürüm olarak kaydet')
+    expect(n.success).toHaveBeenCalledWith('İçerik kaydedildi', 'Yeni sürüm oluşturuldu: sürüm 2.')
+
+    await w.get('#sms_text').setValue('İkinci')
+    await click(w, 'Yeni sürüm olarak kaydet')
+    expect(n.error).toHaveBeenCalledTimes(1)
+    expect(n.error.mock.calls[0]![0]).toBe('İçerik kaydedilemedi')
+  })
+
+  it('onaylayınca kuyruğa alınan sayıları başarı olarak bildirir', async () => {
+    const n = spies()
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [APPROVE]: () => jsonResponse(200, approvedBody),
+    })
+    const w = await mountView()
+
+    await confirmApproval(w, 1)
+
+    expect(n.success).toHaveBeenCalledWith(
+      'Kampanya onaylandı',
+      '133 SMS ve 150 e-posta mesajı gönderim için kuyruğa alındı.',
+    )
+  })
+
+  it('planlı onayı "planlanan zamanda başlayacak" diye bildirir', async () => {
+    const n = spies()
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [APPROVE]: () => jsonResponse(200, { ...approvedBody, scheduled_at: '2026-11-21T10:30:00Z' }),
+    })
+    const w = await mountView()
+
+    await confirmApproval(w, 1)
+
+    expect(n.success).toHaveBeenCalledTimes(1)
+    expect(n.success.mock.calls[0]![1]).toContain('planlanan zamanda başlayacak')
+  })
+
+  it('onay reddedilince hata bildirimi verir', async () => {
+    const n = spies()
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [APPROVE]: () => errorResponse(409, 'STALE_CONTENT_VERSION'),
+    })
+    const w = await mountView()
+
+    await confirmApproval(w, 1)
+
+    expect(n.error).toHaveBeenCalledTimes(1)
+    expect(n.error.mock.calls[0]![0]).toBe('Kampanya onaylanamadı')
+    expect(n.success).not.toHaveBeenCalled()
+  })
+})
+
 describe('mesaj önizlemesi', () => {
-  it('düzenleyicinin altında örnek adla canlı önizleme gösterir ve örnek olduğunu belirtir', async () => {
+  it('önizleme içerik kartından sonra bir kez görünür, onay kartında bulunmaz', async () => {
     routes({ [GET]: () => detail({ content: contentBody() }) })
     const w = await mountView()
-    const preview = w.get('[data-testid="editor-preview"]')
+
+    expect(w.findAll('[data-testid="message-preview"]')).toHaveLength(1)
+    expect(w.find('[data-testid="editor-preview"]').exists()).toBe(false)
+    expect(w.find('aside [data-testid="message-preview"]').exists()).toBe(false)
+    const editorCard = w.get('[aria-labelledby="content-title"]').element
+    const previewCard = w.get('[aria-labelledby="content-preview-title"]').element
+    expect(editorCard.nextElementSibling).toBe(previewCard)
+  })
+
+  it('içeriğin altındaki önizleme örnek adla, e-posta gövdesi tıklamadan açık gelir', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    const preview = w.get(
+      '[aria-labelledby="content-preview-title"] [data-testid="message-preview"]',
+    )
 
     expect(preview.get('[data-testid="preview-sms"]').text()).toBe(
       'Merhaba Ayşe, %30 indirim seni bekliyor!',
     )
     expect(preview.get('[data-testid="preview-note"]').text()).toContain('Örnek önizleme')
-
-    await w.get('#sms_text').setValue('Selam {{first_name}}, yeni metin')
-    expect(preview.get('[data-testid="preview-sms"]').text()).toBe('Selam Ayşe, yeni metin')
+    expect(preview.get('[data-testid="preview-body"]').text()).toContain('Merhaba Ayşe,')
+    expect(preview.find('details').exists()).toBe(false)
   })
 
   it('içerik yokken önizleme çıkmaz', async () => {
     routes({ [GET]: () => detail() })
     const w = await mountView()
-    expect(w.find('[data-testid="editor-preview"]').exists()).toBe(false)
+    expect(w.find('[data-testid="message-preview"]').exists()).toBe(false)
   })
 
   it('onay özeti kaydedilmiş sürümü gösterir (kaydedilmemiş taslağı değil)', async () => {
@@ -211,9 +414,9 @@ describe('mesaj önizlemesi', () => {
 
     const aside = w.get('aside')
     expect(aside.get('[data-testid="approve-version"]').text()).toBe('Sürüm 4 onaylanacak.')
-    expect(aside.get('[data-testid="preview-sms"]').text()).toBe(
-      'Merhaba Ayşe, %30 indirim seni bekliyor!',
-    )
+    expect(
+      w.get('[aria-labelledby="content-preview-title"] [data-testid="preview-sms"]').text(),
+    ).toBe('Merhaba Ayşe, %30 indirim seni bekliyor!')
   })
 })
 
@@ -360,6 +563,36 @@ describe('üst bölüm ve adım göstergesi', () => {
 
     expect(stepStates(w)).toEqual(['done', 'done', 'done', 'current'])
     expect(w.get('[data-testid="campaign-state"]').text()).toBe('Onaylandı, kuyrukta')
+  })
+})
+
+describe('içerik eylemleri', () => {
+  it('Şablondan doldur, İçerik üret ve İçeriği elle yaz aynı satırda yan yana durur', async () => {
+    routes({ [GET]: () => detail() })
+    const w = await mountView()
+
+    const template = button(w, 'Şablondan doldur')!.element
+    const generate = button(w, 'İçerik üret')!.element
+    const manual = button(w, 'İçeriği elle yaz')!.element
+
+    // Şablon düğmesi `display: contents` bir sarmalayıcıdadır: DOM'da bir üst, görsel olarak satırın öğesi.
+    const row = generate.parentElement!
+    expect(template.parentElement?.className).toBe('contents')
+    expect(template.parentElement?.parentElement).toBe(row)
+    expect(manual.parentElement).toBe(row)
+    expect(row.className).toContain('sm:flex-row') // geniş ekranda satır, dar ekranda alt alta
+    expect(row.className).toContain('sm:flex-wrap') // sığmazsa kırılır, taşmaz
+  })
+
+  it('onaylanmış kampanyada üç eylem de yoktur', async () => {
+    routes({
+      [GET]: () =>
+        detail({ status: 'approved', approved_content_version: 1, content: contentBody() }),
+    })
+    const w = await mountView()
+
+    expect(button(w, 'Şablondan doldur')).toBeUndefined()
+    expect(button(w, 'İçerik üret')).toBeUndefined()
   })
 })
 

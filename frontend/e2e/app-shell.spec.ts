@@ -8,13 +8,13 @@ import {
   smsField,
 } from './helpers.ts'
 
-// Uygulama kabuğu (masaüstü): üst başlıktaki "Campaign Tool" ana sayfaya döner, solda kenar
-// çubuğu "Yeni kampanya" ve "Son kampanyalar" taşır. Telefondaki çekmece davranışı
+// Uygulama kabuğu: marka genel bakışa döner, menü beş sabit sayfayı taşır.
+// Son kampanyalar genel bakış içindedir. Telefondaki çekmece davranışı
 // `mobile-layout.spec.ts` içinde sınanır.
 
 const sidebar = (page: Page) => page.locator('div[data-slot="sidebar"]')
 
-test('"Campaign Tool" başlığı her ekrandan ana sayfaya döner; sayfa başlığı (h1) tek kalır', async ({
+test('"Insider Campaign Tool" başlığı genel bakışa döner; sayfa başlığı (h1) tek kalır', async ({
   page,
 }) => {
   const id = await approvedCampaign(page)
@@ -28,24 +28,26 @@ test('"Campaign Tool" başlığı her ekrandan ana sayfaya döner; sayfa başlı
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
 
     const brand = page.getByTestId('brand-link')
-    await expect(brand).toHaveText('Campaign Tool')
-    await expect(brand).toHaveAttribute('href', '/')
+    await expect(brand).toHaveText('Insider Campaign Tool')
+    await expect(brand).toHaveAttribute('href', '/overview')
     await brand.click()
-    await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByRole('heading', { level: 1, name: 'Kampanya önizleme' })).toBeVisible()
+    await expect(page).toHaveURL(/\/overview$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Genel bakış' })).toBeVisible()
   }
 })
 
 test('kenar çubuğu masaüstünde açıktır; düğmeyle kapanıp açılır, "Yeni kampanya" brief formuna götürür', async ({
   page,
 }) => {
-  const id = await createCampaign(page)
+  await createCampaign(page)
 
   await expect(sidebar(page)).toHaveAttribute('data-state', 'expanded')
-  await expect(page.getByTestId('recent-campaigns')).toBeVisible()
-  // Açık kampanyanın satırı işaretlidir (aria-current).
-  await expect(page.getByTestId('recent-row').first()).toHaveAttribute('href', `/campaigns/${id}`)
-  await expect(page.getByTestId('recent-row').first()).toHaveAttribute('aria-current', 'page')
+  await expect(
+    sidebar(page).getByRole('navigation', { name: 'Sayfalar' }).getByRole('link'),
+  ).toHaveCount(6)
+  await expect(
+    sidebar(page).getByRole('link', { name: 'Kampanyalar', exact: true }),
+  ).toHaveAttribute('aria-current', 'page')
 
   const toggle = page.getByRole('button', { name: 'Kenar çubuğunu aç veya kapat' })
   await toggle.click()
@@ -58,17 +60,13 @@ test('kenar çubuğu masaüstünde açıktır; düğmeyle kapanıp açılır, "Y
   await expect(page.getByLabel('Brief')).toBeVisible()
 })
 
-test('kenar çubuğundaki liste kampanya durumunu onayla birlikte günceller (sayfa yenilemeden)', async ({
-  page,
-}) => {
+test('kampanya onaylanınca genel bakış listesi gönderim takibine yönlendirir', async ({ page }) => {
   await createCampaign(page)
-  const row = page.getByTestId('recent-row').first()
-  await expect(row.getByTestId('recent-status')).toHaveText('Taslak')
-
   await generateContent(page)
   await approve(page, 1)
-  await expect(page.getByTestId('approved')).toBeVisible()
-
+  await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}\/delivery$/)
+  await page.goto('/overview')
+  const row = page.getByTestId('recent-row').first()
   await expect(row.getByTestId('recent-status')).toHaveText('Onaylandı, kuyrukta')
   await expect(row).toHaveAttribute('href', /\/delivery$/)
 })
@@ -95,18 +93,12 @@ test('kaydedilmemiş değişiklik varken başlık ve kenar çubuğu bağlantıla
 
   page.once('dialog', (dialog) => void dialog.accept())
   await page.getByTestId('brand-link').click()
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/overview$/)
 })
 
-test('kenar çubuğunda kampanya brief ve durumu görünür; önizleme ekranında liste kartı yoktur', async ({
-  page,
-}) => {
+test('kenar çubuğu kampanya satırları yerine sabit menüyü gösterir', async ({ page }) => {
   await page.request.post('/api/campaigns', { data: { brief: BRIEF } })
   await page.goto('/')
-
-  await expect(page.getByRole('main').getByTestId('recent-campaigns')).toHaveCount(0)
-  await expect(sidebar(page).getByTestId('recent-campaigns')).toBeVisible()
-  await expect(
-    sidebar(page).getByRole('heading', { level: 2, name: 'Son kampanyalar' }),
-  ).toBeVisible()
+  await expect(sidebar(page).getByTestId('recent-campaigns')).toHaveCount(0)
+  await expect(sidebar(page).getByRole('link', { name: 'Kampanyalar', exact: true })).toBeVisible()
 })

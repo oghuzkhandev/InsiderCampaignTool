@@ -125,7 +125,7 @@ func Open(t testing.TB) *sql.DB {
 	if err := migrate(db); err != nil {
 		t.Fatalf("testdb: migration: %v", err)
 	}
-	if _, err := db.Exec(`TRUNCATE mock_provider_acceptances, messages, campaign_contents, campaigns, user_consents, users RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := db.Exec(`TRUNCATE content_templates, mock_provider_acceptances, messages, campaign_contents, campaigns, user_consents, users RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("testdb: temizleme: %v", err)
 	}
 	return db

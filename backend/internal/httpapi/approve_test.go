@@ -20,9 +20,15 @@ type approveCall struct {
 }
 
 type fakeApprover struct {
-	result campaign.ApprovalResult
-	err    error
-	calls  []approveCall
+	result    campaign.ApprovalResult
+	err       error
+	calls     []approveCall
+	scheduled *time.Time
+}
+
+func (f *fakeApprover) ApproveScheduled(ctx context.Context, id string, version int, now time.Time, scheduled *time.Time) (campaign.ApprovalResult, error) {
+	f.scheduled = scheduled
+	return f.Approve(ctx, id, version, now)
 }
 
 func (f *fakeApprover) Approve(_ context.Context, id string, version int, now time.Time) (campaign.ApprovalResult, error) {
@@ -31,6 +37,20 @@ func (f *fakeApprover) Approve(_ context.Context, id string, version int, now ti
 }
 
 var approvedAt = time.Date(2026, 11, 18, 11, 0, 0, 0, time.UTC)
+
+func TestApprovePassesScheduleAndReturnsIt(t *testing.T) {
+	h := newHarness(t)
+	at := time.Date(2030, 6, 15, 11, 30, 0, 0, time.UTC)
+	h.approve.result = okResult()
+	h.approve.result.ScheduledAt = &at
+	r := postApprove(h, `{"content_version":1,"scheduled_at":"2030-06-15T14:30:00+03:00"}`)
+	if r.Code != 200 || h.approve.scheduled == nil || !h.approve.scheduled.Equal(at) {
+		t.Fatalf("schedule not passed: %d %s", r.Code, r.Body)
+	}
+	if !strings.Contains(r.Body.String(), `"scheduled_at":"2030-06-15T11:30:00Z"`) {
+		t.Fatalf("schedule missing: %s", r.Body)
+	}
+}
 
 func approvePath() string { return "/api/campaigns/" + campaignID + "/approve" }
 

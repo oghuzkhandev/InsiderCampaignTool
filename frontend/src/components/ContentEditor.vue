@@ -39,6 +39,7 @@ const problemsFor = (key: string) => props.problems?.[key] ?? []
       </div>
       <Textarea
         id="sms_text"
+        placeholder="Merhaba {{first_name}}, %30 indirim seni bekliyor!"
         class="read-only:bg-muted min-h-20 wrap-anywhere"
         :model-value="fields.sms_text"
         :readonly="readonly"
@@ -69,6 +70,7 @@ const problemsFor = (key: string) => props.problems?.[key] ?? []
       <Input
         id="email_subject"
         type="text"
+        placeholder="Sepetindeki ürünler seni bekliyor"
         class="read-only:bg-muted"
         :model-value="fields.email_subject"
         :readonly="readonly"
@@ -91,6 +93,7 @@ const problemsFor = (key: string) => props.problems?.[key] ?? []
       <FieldLabel for="email_body">E-posta gövdesi</FieldLabel>
       <Textarea
         id="email_body"
+        placeholder="Merhaba {{first_name}}, sepetindeki ürünler hâlâ seni bekliyor."
         class="read-only:bg-muted min-h-40 wrap-anywhere"
         :model-value="fields.email_body"
         :readonly="readonly"

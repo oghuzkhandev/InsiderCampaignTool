@@ -87,6 +87,7 @@ func (f *fakeStore) Get(_ context.Context, id string) (campaign.Campaign, error)
 type harness struct {
 	gen     *fakeGenerator
 	counter *fakeCounter
+	members *fakeMembers
 	store   *fakeStore
 	cgen    *fakeContentGen
 	content *fakeContents
@@ -106,6 +107,7 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{
 		gen:     &fakeGenerator{seg: seg},
 		counter: &fakeCounter{counts: audience.Counts{Total: 10, SMS: 6, Email: 7}},
+		members: &fakeMembers{},
 		store:   &fakeStore{},
 		cgen:    &fakeContentGen{},
 		content: &fakeContents{},
@@ -117,6 +119,7 @@ func newHarness(t *testing.T) *harness {
 	h.handler = New(Deps{
 		Segments:              h.gen,
 		Audience:              h.counter,
+		Members:               h.members,
 		Campaigns:             h.store,
 		Content:               h.cgen,
 		Contents:              h.content,

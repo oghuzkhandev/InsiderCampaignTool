@@ -24,6 +24,12 @@ type AudienceCounter interface {
 	Count(ctx context.Context, seg segment.Segment, now time.Time) (audience.Counts, error)
 }
 
+// AudienceMemberLister, segmente uyan kişilerin sayfalı listesini okur (audience.Lister).
+// Toplam ve sayfa tek sorguda gelir (ADR-031).
+type AudienceMemberLister interface {
+	ListMembers(ctx context.Context, seg segment.Segment, now time.Time, page, limit int) (audience.MemberPage, error)
+}
+
 // CampaignStore, kampanyaları saklar ve okur (campaign.Store).
 type CampaignStore interface {
 	Create(ctx context.Context, brief string, seg segment.Segment, counts audience.Counts) (campaign.Campaign, error)
@@ -34,8 +40,10 @@ type CampaignStore interface {
 
 // Deps, API'nin bağımlılıklarıdır.
 type Deps struct {
-	Segments  SegmentGenerator
-	Audience  AudienceCounter
+	Segments SegmentGenerator
+	Audience AudienceCounter
+	// Members, kitle önizlemesindeki "segmente uyan kişiler" listesini okur.
+	Members   AudienceMemberLister
 	Campaigns CampaignStore
 	// Content ve Contents, içerik üretimi ve sürümlerinin saklanması içindir.
 	Content  ContentGenerator
@@ -44,6 +52,15 @@ type Deps struct {
 	Approver CampaignApprover
 	// Deliveries, gönderim durumunu okur (dashboard olay akışı).
 	Deliveries DeliveryReader
+	// Workspace pages use separate narrow interfaces; existing campaign flows stay unchanged.
+	CampaignPages CampaignPageReader
+	Overview      OverviewReader
+	Directory     DirectoryReader
+	Templates     TemplateStore
+	// Scheduled, gönderimi ileri bir zamana planlanmış kampanyaları okur (Zamanlanmış sayfası).
+	Scheduled ScheduledReader
+	// Recipients, kampanyanın mesaj alıcılarını okur (gönderim takibindeki "Alıcılar" çekmecesi).
+	Recipients RecipientReader
 	// DeliveryInterval, dashboard akışında iki durum görüntüsü arasındaki süredir.
 	// Değişiklik olmasa da her aralıkta görüntü yollanır. Sıfırsa 1 saniye.
 	DeliveryInterval time.Duration
@@ -79,11 +96,18 @@ func (d Deps) Validate() error {
 	}{
 		{"Segments", d.Segments == nil},
 		{"Audience", d.Audience == nil},
+		{"Members", d.Members == nil},
 		{"Campaigns", d.Campaigns == nil},
 		{"Content", d.Content == nil},
 		{"Contents", d.Contents == nil},
 		{"Approver", d.Approver == nil},
 		{"Deliveries", d.Deliveries == nil},
+		{"CampaignPages", d.CampaignPages == nil},
+		{"Overview", d.Overview == nil},
+		{"Directory", d.Directory == nil},
+		{"Templates", d.Templates == nil},
+		{"Scheduled", d.Scheduled == nil},
+		{"Recipients", d.Recipients == nil},
 	} {
 		if dep.unbound {
 			missing = append(missing, dep.name)
@@ -113,14 +137,32 @@ func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/campaigns", s.createCampaign)
 	mux.HandleFunc("GET /api/campaigns", s.listCampaigns)
+	mux.HandleFunc("GET /api/overview", s.getOverview)
+	mux.HandleFunc("/api/overview", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("GET /api/scheduled", s.listScheduled)
+	mux.HandleFunc("/api/scheduled", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("GET /api/audience", s.listDirectory)
+	mux.HandleFunc("/api/audience", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("GET /api/audience/cities", s.listDirectoryCities)
+	mux.HandleFunc("/api/audience/cities", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("GET /api/templates", s.listTemplates)
+	mux.HandleFunc("POST /api/templates", s.saveTemplate)
+	mux.HandleFunc("/api/templates", methodNotAllowed(http.MethodGet+", "+http.MethodPost))
+	mux.HandleFunc("PUT /api/templates/{id}", s.saveTemplate)
+	mux.HandleFunc("DELETE /api/templates/{id}", s.deleteTemplate)
+	mux.HandleFunc("/api/templates/{id}", methodNotAllowed(http.MethodPut+", "+http.MethodDelete))
 	mux.HandleFunc("/api/campaigns", methodNotAllowed(http.MethodGet+", "+http.MethodPost))
 	mux.HandleFunc("GET /api/campaigns/{id}", s.getCampaign)
 	mux.HandleFunc("/api/campaigns/{id}", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("GET /api/campaigns/{id}/audience", s.listAudienceMembers)
+	mux.HandleFunc("/api/campaigns/{id}/audience", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("POST /api/campaigns/{id}/content", s.generateContent)
 	mux.HandleFunc("PUT /api/campaigns/{id}/content", s.putContent)
 	mux.HandleFunc("/api/campaigns/{id}/content", methodNotAllowed(http.MethodPost+", "+http.MethodPut))
 	mux.HandleFunc("POST /api/campaigns/{id}/approve", s.approveCampaign)
 	mux.HandleFunc("/api/campaigns/{id}/approve", methodNotAllowed(http.MethodPost))
+	mux.HandleFunc("GET /api/campaigns/{id}/recipients", s.listRecipients)
+	mux.HandleFunc("/api/campaigns/{id}/recipients", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("GET /api/campaigns/{id}/events", s.deliveryEvents)
 	mux.HandleFunc("/api/campaigns/{id}/events", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {

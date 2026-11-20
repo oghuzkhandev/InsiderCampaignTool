@@ -21,6 +21,8 @@ if (DEV_PORTS.includes(new URL(baseURL).port)) {
 
 export default defineConfig({
   testDir: './e2e',
+  // Ayrı Compose projelerini eşzamanlı doğrularken artifact klasörleri de ayrılabilir.
+  outputDir: process.env.E2E_OUTPUT_DIR ?? 'test-results',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   forbidOnly: !!process.env.CI,

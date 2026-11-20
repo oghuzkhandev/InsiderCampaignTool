@@ -59,9 +59,10 @@ type channelDeliveryResponse struct {
 
 // deliverySnapshotResponse, `snapshot` olayının gövdesidir (ARCHITECTURE §5, TRK-001).
 type deliverySnapshotResponse struct {
-	Status   string                 `json:"status"`
-	Messages deliveryCountsResponse `json:"messages"`
-	Failures failureCountsResponse  `json:"failures"`
+	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+	Status      string                 `json:"status"`
+	Messages    deliveryCountsResponse `json:"messages"`
+	Failures    failureCountsResponse  `json:"failures"`
 	// Channels, Messages'ın SMS ve e-posta kırılımıdır (her durumda iki kanalın toplamı Messages'a eşit).
 	Channels channelDeliveryResponse `json:"channels"`
 	// Recovered, `sent` olan ve `attempts > 1` olan (ilk denemede tamamlanamayıp yeniden denemeyle
@@ -78,9 +79,10 @@ func toDeliveryCounts(c campaign.DeliveryCounts) deliveryCountsResponse {
 
 func toDeliveryResponse(s campaign.DeliverySnapshot) deliverySnapshotResponse {
 	return deliverySnapshotResponse{
-		Status:   s.Status,
-		Messages: toDeliveryCounts(s.Messages),
-		Failures: failureCountsResponse{Exhausted: s.Failures.Exhausted, Rejected: s.Failures.Rejected},
+		ScheduledAt: s.ScheduledAt,
+		Status:      s.Status,
+		Messages:    toDeliveryCounts(s.Messages),
+		Failures:    failureCountsResponse{Exhausted: s.Failures.Exhausted, Rejected: s.Failures.Rejected},
 		Channels: channelDeliveryResponse{
 			SMS:   toDeliveryCounts(s.Channels.SMS),
 			Email: toDeliveryCounts(s.Channels.Email),

@@ -11,6 +11,7 @@ import {
   toApiError,
 } from './campaigns'
 import { readSse } from './sse'
+import { isScheduledTimestamp } from '@/campaign/schedule'
 
 export const CAMPAIGN_STATUSES = ['draft', 'approved', 'sending', 'completed'] as const
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number]
@@ -45,6 +46,7 @@ export type ChannelDelivery = Record<ChannelKey, DeliveryCounts>
 
 /** Her saniye (ve bağlantı kurulunca ilk olarak) gelen güncel durum görüntüsü. */
 export interface DeliverySnapshot {
+  scheduled_at?: string
   status: CampaignStatus
   messages: DeliveryCounts
   failures: FailureReasonCounts
@@ -173,6 +175,10 @@ function parseSnapshot(status: number, data: unknown): DeliverySnapshot {
     throw invalidResponse(status)
   }
   const snapshot: DeliverySnapshot = { status: data.status, messages, failures }
+  if (data.scheduled_at !== undefined) {
+    if (!isScheduledTimestamp(data.scheduled_at)) throw invalidResponse(status)
+    snapshot.scheduled_at = data.scheduled_at
+  }
 
   // Kanal kırılımı ve toparlanan sayısı isteğe bağlıdır (eski sunucu yollamayabilir) ama varsa
   // tutarlı olmalıdır: kanalların toplamı toplama eşit, toparlanan gönderilenden çok olamaz.

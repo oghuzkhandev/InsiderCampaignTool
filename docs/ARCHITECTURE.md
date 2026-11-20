@@ -2,6 +2,97 @@
 
 ## 1. Genel bakış
 
+### Zamanlanmış gönderim (ADR-033, SCH-001)
+
+`POST /api/campaigns/{id}/approve` isteği `{content_version, scheduled_at?}` alır. Zaman açık
+ofsetli RFC3339 olmalı; eksik/null hemen gönderimdir. Başarı yanıtı ve kampanya GET/sayfalı
+liste/dashboard snapshot isteğe bağlı `scheduled_at` alanını UTC olarak taşır. Geçmiş zaman
+422 SCHEDULE_IN_PAST; farklı zamanla tekrar 409 SCHEDULE_CONFLICT; bozuk zaman 400.
+
+Migration 00007 kampanyaya scheduled_at ekler. Kampanya satırı kilitlenip aynı sürüm/zamanla
+replay kontrol edilir; yeni planın gelecekte olduğu DB saatiyle doğrulanır. Alıcılar onay
+anında seçilir. Kampanya onayı ve mesajların next_attempt_at zamanları tek transaction'dadır.
+Worker mevcut `next_attempt_at <= now()` sorgusunu kullanır. Restart/zaman geçmesi iş kaybına
+yol açmaz; gönderim worker'ın uygun olduğu ilk anda hız sınırlarıyla başlar. Exact-time SLA yoktur.
+İzin kontrolü gönderimde tekrar yapılır. Queue depth gelecekteki queued mesajları da sayar.
+
+DB durumuna yeni değer eklenmez. Arayüzde approved + scheduled_at Planlandı olarak gösterilir;
+zaman cihazın yerel saatine çevrilir ve saat dilimi/ofset belirtilir. Düzenleme/iptal ayrı kapsamdır.
+
+#### Planlı gönderim kuyruğu ve listeleme
+
+Mesajlar planlanan saat geldiğinde değil, insan onayı sırasında `status='queued'` ve
+`attempts=0` ile oluşturulur. Her mesajın `next_attempt_at` değeri kampanyanın `scheduled_at`
+değeridir; hemen gönderimde DB'nin `now()` değeri kullanılır. Worker yalnızca vadesi gelen
+mesajları `FOR UPDATE SKIP LOCKED` ile sahiplenir. Dolayısıyla gelecekteki işler kapasite veya
+provider hız limiti izni tüketmez ve henüz deneme sayıları artmaz. İlk claim kampanyayı
+`sending` durumuna geçirir; sonraki gönderim/retry davranışı mevcut worker akışıdır.
+
+**Sayfa:** `/scheduled` (`ScheduledView.vue`). **Salt okunur API:**
+`GET /api/scheduled?page=1&limit=10` (`httpapi.listScheduled`, `campaign.Store.ListScheduled`).
+Yalnızca `status='approved' AND scheduled_at IS NOT NULL` kampanyalar listelenir; zamanının
+gelmiş olması kaydı listeden çıkarmaz. Sıralama `scheduled_at ASC, id ASC`; varsayılan sayfa 1,
+limit 10, üst limit 20, sayfa üst sınırı 100000. Daha büyük limit 20'ye indirilir; geçersiz
+sayfa/limit 400'dür. Son sayfanın ötesinde boş `items` ve doğru `total` döner.
+
+```json
+{
+  "items": [{
+    "id": "498882b6-2221-4589-a99f-67ceb68c59c2",
+    "brief": "İstanbul'daki sepetini tamamlamayan kullanıcılara hatırlatma",
+    "scheduled_at": "2030-06-15T11:30:00Z",
+    "approved_at": "2030-06-15T10:00:00Z",
+    "queued": 7,
+    "due": false
+  }],
+  "total": 1,
+  "page": 1,
+  "limit": 10,
+  "server_time": "2030-06-15T10:30:00Z"
+}
+```
+
+Her kayıt bir kampanyadır. `queued`, o kampanyanın `status='queued'` mesaj adedidir.
+`due`, `scheduled_at <= now()` karşılaştırmasıdır: başlangıç zamanı gelmiştir fakat kampanya
+henüz `sending` olmamıştır; worker'ın aktif çalıştığını veya provider'a teslimi kanıtlamaz.
+Toplam, sayfa ve `server_time` tek SQL ifadesinden gelir. API zamanı UTC olarak döner.
+
+Frontend listeyi 30 saniyede bir sessizce yeniden okur ve elle yenilemeyi destekler. Kalan süre
+son alınan `server_time` ile istemci saati arasındaki fark kullanılarak hesaplanır; gösterim
+15 saniyede bir güncellenir. Bu sayaç yaklaşık bilgilendirmedir, worker'ı tetiklemez.
+Gönderim başlayınca kampanya bir sonraki başarılı liste yenilemesinde kaybolur; satırdaki
+bağlantı `/campaigns/{id}/delivery` üzerinden gerçek SSE takibini açar. Sayfa/sekme kapansa da
+plan PostgreSQL'de kalır. Worker geç açılırsa vadesi geçmiş işler hız sınırlarıyla işlenir.
+
+### Çalışma alanı sayfaları (ADR-032)
+
+Menü `/overview`, `/`, `/campaigns`, `/audiences`, `/templates` sayfalarına gider.
+`GET /api/overview` tek SQL anlık görüntüsünden `campaigns`, `draft`, `approved`, `sending`,
+`completed`, `users`, `sent`, `failed`, `pending`, `recovered`, `templates` sayıları döner.
+`pending`: queued + sending; `recovered`: sent ve attempts > 1. Geçmiş grafik veya okunma bilgisi değildir.
+
+`GET /api/campaigns?page=1&limit=10&status=draft` → `{campaigns, total, page, limit}`.
+Durum boşsa tümü; draft/approved/sending/completed kabul edilir. Eski limitsiz-page çağrısı
+yalnızca `{campaigns}` döndürmeye devam eder. Sıra created_at DESC, id DESC.
+
+`GET /api/audience?page=1&limit=10&search=...` → `{items,total,page,limit}`.
+Kampanya filtresi uygulanmadan tüm demo kullanıcılarını listeler; ad/şehir/e-posta/telefonda literal
+alt metin aranır (en fazla 100 karakter). Kişi alanları kampanya audience uç noktasıyla aynıdır.
+
+`GET /api/templates?page=1&limit=10` → `{items,total,page,limit}`.
+`POST /api/templates` ve `PUT /api/templates/{id}` gövdesi `{name,sms_text,email_subject,email_body}`.
+Başarı 201 + Location veya 200; yanıt aynı alanlara id/created_at/updated_at ekler. Boş/uzun ad
+422 INVALID_TEMPLATE_NAME, içerik doğrulaması 422 CONTENT_INVALID, bulunamayan kimlik 404
+TEMPLATE_NOT_FOUND. `DELETE /api/templates/{id}` başarıda 204. Gövde türü/boyut/JSON kontrolleri
+mevcut API ile aynıdır. Şablon silmek kampanyadaki metni değiştirmez.
+
+Yeni sayfalı uçlarda varsayılan sayfa 1, limit 10 (üst sınır 20'ye kırpılır), sayfa üst sınırı
+100000; geçersiz tamsayılar 400. Toplam ve sayfa tek SQL ifadesinde hesaplanır. Şablon tablosu
+migration 00006: UUID/ad/üç içerik metni/iki zaman damgası. Alanlar için temel content_text_valid
+DB koruması; tam içerik doğrulaması Go'da. Şablonlar paylaşımlıdır, geçmiş sürüm saklamaz.
+Şablon kaydındaki uzunluk kontrolü fallback adını kullanır; kampanyaya kaydederken gerçek ad
+uzunluklarına göre doğrulama tekrar yapılır. Seçim kaydetme/onay yerine geçmez.
+
 ```mermaid
 flowchart LR
   Web[Vue 3 web] -- REST / SSE --> API[Go API]
@@ -35,9 +126,9 @@ sürümde **tek worker süreci** çalışır (deployment varsayımı, bkz. ADR-0
    sürümü** (`content_version`) kaydedilir.
 3. İnsan önizler ve düzenler. Her düzenleme aynı doğrulayıcıdan geçer ve yeni
    bir sürüm olur.
-4. Onay isteği `content_version` taşır (bölüm 6). Onay ile mesaj kayıtları
-   **aynı transaction'da** yazılır.
-5. Worker mesajları kanal başına hız sınırıyla provider'a yollar. Sonuç
+4. Onay isteği `content_version` ve isteğe bağlı `scheduled_at` taşır (bölüm 6).
+   Onay, planlanan zaman ve mesaj kayıtları **aynı transaction'da** yazılır.
+5. Worker yalnızca `next_attempt_at <= now()` olan mesajları kanal başına hız sınırıyla provider'a yollar. Sonuç
    yalnızca claim token eşleşirse yazılır.
 6. Bütün mesajlar terminal duruma ulaşınca kampanya `completed` olur.
 7. Dashboard her saniye durum snapshot'ını SSE ile alır.
@@ -48,7 +139,8 @@ sürümde **tek worker süreci** çalışır (deployment varsayımı, bkz. ADR-0
 
 `draft → approved → sending → completed`
 
-- `approved`: Onay transaction'ı tamamlandı, mesajlar `queued`.
+- `approved`: Onay transaction'ı tamamlandı, mesajlar `queued`. `scheduled_at` doluysa
+  planlanan zamana kadar bu durumda bekler; arayüzde **Planlandı** gösterilir.
 - `sending`: Worker ilk mesajı sahiplendi.
 - `completed`: Hiç `queued` veya `sending` mesaj kalmadı.
 - **Kampanya düzeyinde `failed` yoktur.** Onay transaction'ı başarısız olursa

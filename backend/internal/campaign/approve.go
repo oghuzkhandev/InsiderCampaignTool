@@ -23,7 +23,9 @@ var (
 	// ErrUnfilteredSegment: segment koşul içermiyor; filtresiz kitle onaylanmaz. (422)
 	ErrUnfilteredSegment = errors.New("campaign: segment filtresiz")
 	// ErrNoRecipients: hiçbir kanalda uygun alıcı yok. (422)
-	ErrNoRecipients = errors.New("campaign: uygun alıcı yok")
+	ErrNoRecipients     = errors.New("campaign: uygun alıcı yok")
+	ErrSchedulePast     = errors.New("campaign: gönderim zamanı gelecekte olmalı")
+	ErrScheduleConflict = errors.New("campaign: kampanya farklı gönderim zamanı ile onaylı")
 )
 
 // FieldOverflow, bir alanın alıcıya özel render sonrası sınırı aştığı alıcıları
@@ -59,6 +61,7 @@ type ApprovalResult struct {
 	Status         string
 	ContentVersion int
 	ApprovedAt     time.Time
+	ScheduledAt    *time.Time
 	// Queued, bu kampanya için oluşturulmuş (queued) mesaj sayılarıdır.
 	Queued ChannelCounts
 	// Replayed, kampanya bu sürümle zaten onaylıydı ve mevcut sonuç döndü.
@@ -94,6 +97,16 @@ func NewApprover(db ContentDB) *Approver { return &Approver{db: db} }
 // önizlemeyle uyuşur (aradaki fark yalnızca önizleme ile onay arasındaki
 // veri/zaman değişimidir).
 func (a *Approver) Approve(ctx context.Context, campaignID string, version int, now time.Time) (ApprovalResult, error) {
+	return a.ApproveScheduled(ctx, campaignID, version, now, nil)
+}
+
+// ApproveScheduled freezes the schedule with the approved version and recipient set.
+// A replay is checked before the future-time rule, so a lost response can be retried later.
+func (a *Approver) ApproveScheduled(ctx context.Context, campaignID string, version int, now time.Time, scheduled *time.Time) (ApprovalResult, error) {
+	if scheduled != nil {
+		at := scheduled.UTC().Truncate(time.Microsecond)
+		scheduled = &at
+	}
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ApprovalResult{}, fmt.Errorf("campaign: transaction açılamadı: %w", err)
@@ -104,12 +117,13 @@ func (a *Approver) Approve(ctx context.Context, campaignID string, version int, 
 		status          string
 		approvedVersion sql.NullInt32
 		approvedAt      sql.NullTime
+		scheduledAt     sql.NullTime
 		rawSegment      []byte
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT status, approved_content_version, approved_at, segment FROM campaigns WHERE id = $1 FOR UPDATE`,
+		`SELECT status, approved_content_version, approved_at, segment, scheduled_at FROM campaigns WHERE id = $1 FOR UPDATE`,
 		campaignID,
-	).Scan(&status, &approvedVersion, &approvedAt, &rawSegment)
+	).Scan(&status, &approvedVersion, &approvedAt, &rawSegment, &scheduledAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows) || isInvalidUUID(err):
 		return ApprovalResult{}, ErrNotFound
@@ -122,14 +136,26 @@ func (a *Approver) Approve(ctx context.Context, campaignID string, version int, 
 		if !approvedVersion.Valid || int(approvedVersion.Int32) != version {
 			return ApprovalResult{}, ErrApprovedWithOtherVersion
 		}
+		if scheduledAt.Valid != (scheduled != nil) || (scheduled != nil && !scheduledAt.Time.Equal(*scheduled)) {
+			return ApprovalResult{}, ErrScheduleConflict
+		}
 		queued, err := queuedCounts(ctx, tx, campaignID)
 		if err != nil {
 			return ApprovalResult{}, err
 		}
 		return ApprovalResult{
 			CampaignID: campaignID, Status: status, ContentVersion: version,
-			ApprovedAt: approvedAt.Time.UTC(), Queued: queued, Replayed: true,
+			ApprovedAt: approvedAt.Time.UTC(), ScheduledAt: scheduled, Queued: queued, Replayed: true,
 		}, nil
+	}
+	if scheduled != nil {
+		var dbNow time.Time
+		if err := tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&dbNow); err != nil {
+			return ApprovalResult{}, fmt.Errorf("campaign: veritabanı saati okunamadı: %w", err)
+		}
+		if !scheduled.After(dbNow) {
+			return ApprovalResult{}, ErrSchedulePast
+		}
 	}
 
 	var latest sql.NullInt32
@@ -198,9 +224,9 @@ func (a *Approver) Approve(ctx context.Context, campaignID string, version int, 
 
 	var approvedTime time.Time
 	if err := tx.QueryRowContext(ctx,
-		`UPDATE campaigns SET status = 'approved', approved_content_version = $2, approved_at = now()
+		`UPDATE campaigns SET status = 'approved', approved_content_version = $2, approved_at = now(), scheduled_at = $3
 		 WHERE id = $1 AND status = 'draft' RETURNING approved_at`,
-		campaignID, version,
+		campaignID, version, scheduled,
 	).Scan(&approvedTime); err != nil {
 		return ApprovalResult{}, fmt.Errorf("campaign: kampanya onaylanamadı: %w", err)
 	}
@@ -222,8 +248,9 @@ func (a *Approver) Approve(ctx context.Context, campaignID string, version int, 
 	}
 	return ApprovalResult{
 		CampaignID: campaignID, Status: "approved", ContentVersion: version,
-		ApprovedAt: approvedTime.UTC(),
-		Queued:     ChannelCounts{SMS: sms.len(), Email: email.len()},
+		ApprovedAt:  approvedTime.UTC(),
+		ScheduledAt: scheduled,
+		Queued:      ChannelCounts{SMS: sms.len(), Email: email.len()},
 	}, nil
 }
 
@@ -258,8 +285,9 @@ func (o *FieldOverflow) note(example string) {
 // ON CONFLICT DO NOTHING ile tekilleştirilir (draft kampanyada beklenmez).
 func insertMessages(ctx context.Context, tx *sql.Tx, campaignID, channel string, b recipientBatch) error {
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, idempotency_key)
-		 SELECT $1, t.user_id, $2::text, t.recipient, t.first_name, $5::text || ':' || t.user_id::text || ':' || $2::text
+		`INSERT INTO messages (campaign_id, user_id, channel, recipient, first_name, idempotency_key, next_attempt_at)
+		 SELECT $1, t.user_id, $2::text, t.recipient, t.first_name, $5::text || ':' || t.user_id::text || ':' || $2::text,
+		 COALESCE((SELECT scheduled_at FROM campaigns WHERE id=$1), now())
 		 FROM unnest($3::bigint[], $4::text[], $6::text[]) AS t(user_id, recipient, first_name)
 		 ON CONFLICT DO NOTHING`,
 		campaignID, channel, b.userIDs, b.recipients, campaignID, b.firstNames,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // StatusCompleted, bütün mesajların işi bitmiş kampanyanın durumudur (başarısız
@@ -62,9 +63,10 @@ func (d *DeliveryCounts) add(c DeliveryCounts) {
 // DeliverySnapshot, kampanyanın gönderim durumunun o anki görüntüsüdür. Tek bir
 // sorguyla okunur, bu yüzden sayılar birbiriyle tutarlıdır.
 type DeliverySnapshot struct {
-	Status   string
-	Messages DeliveryCounts
-	Failures FailureCounts
+	ScheduledAt *time.Time
+	Status      string
+	Messages    DeliveryCounts
+	Failures    FailureCounts
 	// Channels, Messages'ın kanal (sms, email) kırılımıdır; her durum için iki kanalın toplamı
 	// Messages'a eşittir.
 	Channels ChannelDelivery
@@ -87,7 +89,7 @@ type DeliverySnapshot struct {
 // Sayımlar tek sorguda, kanala göre gruplanarak yapılır; toplamlar kanalların toplamıdır.
 func (s *Store) DeliverySnapshot(ctx context.Context, id string) (DeliverySnapshot, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT c.status, m.channel,
+		`SELECT c.status, m.channel, c.scheduled_at,
 		        count(*) FILTER (WHERE m.status = 'queued' AND m.attempts = 0),
 		        count(*) FILTER (WHERE m.status = 'queued' AND m.attempts > 0),
 		        count(*) FILTER (WHERE m.status = 'sending'),
@@ -100,7 +102,7 @@ func (s *Store) DeliverySnapshot(ctx context.Context, id string) (DeliverySnapsh
 		 FROM campaigns c
 		 LEFT JOIN messages m ON m.campaign_id = c.id
 		 WHERE c.id = $1
-		 GROUP BY c.status, m.channel`,
+		 GROUP BY c.status, m.channel, c.scheduled_at`,
 		id, failureExhausted, failureRejected)
 	if err != nil {
 		return DeliverySnapshot{}, deliveryReadError(err)
@@ -113,17 +115,22 @@ func (s *Store) DeliverySnapshot(ctx context.Context, id string) (DeliverySnapsh
 	)
 	for rows.Next() {
 		var (
-			channel sql.NullString // mesajı olmayan kampanyada NULL
-			c       DeliveryCounts
-			f       FailureCounts
-			rec     int
+			scheduled sql.NullTime
+			channel   sql.NullString // mesajı olmayan kampanyada NULL
+			c         DeliveryCounts
+			f         FailureCounts
+			rec       int
 		)
-		if err := rows.Scan(&snap.Status, &channel,
+		if err := rows.Scan(&snap.Status, &channel, &scheduled,
 			&c.Queued, &c.Retrying, &c.Sending, &c.Sent, &c.Failed, &c.Skipped,
 			&f.Exhausted, &f.Rejected, &rec); err != nil {
 			return DeliverySnapshot{}, deliveryReadError(err)
 		}
 		found = true
+		if scheduled.Valid {
+			at := scheduled.Time.UTC()
+			snap.ScheduledAt = &at
+		}
 		snap.Messages.add(c)
 		snap.Failures.Exhausted += f.Exhausted
 		snap.Failures.Rejected += f.Rejected

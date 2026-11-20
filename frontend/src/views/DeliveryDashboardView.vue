@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { CircleAlertIcon, CircleCheckBigIcon, FileTextIcon, InfoIcon } from '@lucide/vue'
+import {
+  CircleAlertIcon,
+  CircleCheckBigIcon,
+  FileTextIcon,
+  InfoIcon,
+  MessageSquareTextIcon,
+  SendIcon,
+} from '@lucide/vue'
 import { ApiError, isAbortError } from '@/api/campaigns'
 import { getCampaign, type CampaignDetail } from '@/api/content'
 import { contentErrorTitle } from '@/content/messages'
@@ -9,14 +16,18 @@ import { useDeliveryStream } from '@/delivery/useDeliveryStream'
 import DeliveryConnectionStatus from '@/components/DeliveryConnectionStatus.vue'
 import DeliveryCounts from '@/components/DeliveryCounts.vue'
 import CampaignSteps from '@/components/CampaignSteps.vue'
+import MessagePreview from '@/components/MessagePreview.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import RecipientsCard from '@/components/RecipientsCard.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import ScheduleNotice from '@/components/ScheduleNotice.vue'
 import StepNav, { type NavStep } from '@/components/StepNav.vue'
 import { notifyCampaignsChanged } from '@/campaign/recent'
 import { stepStatuses } from '@/campaign/steps'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const props = defineProps<{ id: string }>()
@@ -90,10 +101,19 @@ const streamErrorTitle = computed(() => (error.value ? deliveryErrorTitle(error.
 </script>
 
 <template>
-  <main class="mx-auto grid w-full max-w-3xl gap-6">
-    <PageHeader title="Gönderim takibi" description="Mesajların durumu canlı güncellenir.">
+  <main class="grid w-full gap-8">
+    <PageHeader
+      :icon="SendIcon"
+      title="Gönderim takibi"
+      description="Mesajların durumu canlı güncellenir."
+    >
       <template #badge>
-        <StatusBadge v-if="detail" :status="status" data-testid="campaign-status" />
+        <StatusBadge
+          v-if="detail"
+          :status="status"
+          :scheduled="Boolean(detail.scheduled_at)"
+          data-testid="campaign-status"
+        />
       </template>
       <CampaignSteps v-if="detail && !isDraft" :statuses="steps" />
     </PageHeader>
@@ -114,34 +134,15 @@ const streamErrorTitle = computed(() => (error.value ? deliveryErrorTitle(error.
       </AlertDescription>
     </Alert>
 
-    <template v-else-if="detail">
-      <Card role="region" aria-labelledby="campaign-title">
-        <CardHeader>
-          <CardTitle class="flex items-center gap-2">
-            <FileTextIcon class="text-primary size-5" aria-hidden="true" />
-            <h2 id="campaign-title">Kampanya</h2>
-          </CardTitle>
-        </CardHeader>
-        <CardContent class="grid gap-3">
-          <p class="text-sm wrap-anywhere whitespace-pre-wrap">
-            {{ detail.brief }}
-          </p>
-          <p v-if="approvedAtText" class="text-muted-foreground text-sm">
-            Onay: {{ approvedAtText }}
-          </p>
-        </CardContent>
-      </Card>
-
-      <Alert v-if="isDraft" data-testid="not-approved">
-        <InfoIcon aria-hidden="true" />
-        <AlertTitle>Bu kampanya henüz onaylanmadı.</AlertTitle>
-        <AlertDescription>
-          Gönderim, kampanya onaylandıktan sonra başlar. İçeriği hazırlayıp onaylamak için
-          kampanyaya dönün.
-        </AlertDescription>
-      </Alert>
-
-      <template v-else>
+    <!-- İki sütun: solda canlı gönderim durumu, sağda kampanya, alıcılar ve gönderilen içerik.
+         Dar ekranda tek sütun (önce durum, sonra yan bilgiler). -->
+    <div
+      v-else-if="detail"
+      class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]"
+      data-testid="delivery-layout"
+    >
+      <div v-if="!isDraft" class="grid gap-4 lg:col-span-2" data-testid="delivery-stream-status">
+        <ScheduleNotice v-if="detail.scheduled_at" :at="detail.scheduled_at" :status="status" />
         <DeliveryConnectionStatus
           :connection="connection"
           :failures="failures"
@@ -149,43 +150,114 @@ const streamErrorTitle = computed(() => (error.value ? deliveryErrorTitle(error.
           :error-title="streamErrorTitle"
           @retry="retry"
         />
-
-        <DeliveryCounts v-if="snapshot" :snapshot="snapshot" />
-        <div
-          v-else-if="connection !== 'failed'"
-          class="grid gap-3"
-          data-testid="waiting-first-snapshot"
-        >
-          <Skeleton class="h-40 w-full" />
-        </div>
-
-        <Alert v-if="connection === 'completed'" data-testid="completed-note">
-          <CircleCheckBigIcon aria-hidden="true" />
-          <AlertTitle>Gönderim tamamlandı.</AlertTitle>
+      </div>
+      <div class="grid min-w-0 gap-6" data-testid="delivery-main">
+        <Alert v-if="isDraft" data-testid="not-approved">
+          <InfoIcon aria-hidden="true" />
+          <AlertTitle>Bu kampanya henüz onaylanmadı.</AlertTitle>
           <AlertDescription>
-            <template v-if="snapshot">
-              <p data-testid="completion-headline">{{ completionHeadline(snapshot.messages) }}</p>
-              <ul class="grid list-disc gap-1 pl-5" data-testid="completion-lines">
-                <li v-for="line in completionLines(snapshot)" :key="line.key">
-                  <strong class="text-foreground">{{ line.label }}: {{ line.count }}</strong>
-                  — {{ line.text }}
-                  <div v-if="line.advice.length > 0" class="mt-1" data-testid="completion-advice">
-                    <p class="text-foreground text-xs font-medium">Ne yapabilirsiniz?</p>
-                    <ul class="grid list-[circle] gap-1 pl-5 text-xs">
-                      <li v-for="(item, i) in line.advice" :key="i">{{ item }}</li>
-                    </ul>
-                  </div>
-                </li>
-              </ul>
-            </template>
-            <p>
-              Bütün mesajların işi bitti. Başarısız veya atlanan mesajlar olması kampanyanın
-              tamamlanmasını engellemez; yukarıdaki sayılar gerçek dağılımı gösterir.
-            </p>
+            Gönderim, kampanya onaylandıktan sonra başlar. İçeriği hazırlayıp onaylamak için
+            kampanyaya dönün.
           </AlertDescription>
         </Alert>
-      </template>
-    </template>
+
+        <template v-else>
+          <DeliveryCounts v-if="snapshot" :snapshot="snapshot" />
+          <div
+            v-else-if="connection !== 'failed'"
+            class="grid gap-3"
+            data-testid="waiting-first-snapshot"
+          >
+            <Skeleton class="h-40 w-full" />
+          </div>
+
+          <Alert v-if="connection === 'completed'" data-testid="completed-note">
+            <CircleCheckBigIcon aria-hidden="true" />
+            <AlertTitle>Gönderim tamamlandı.</AlertTitle>
+            <AlertDescription class="grid gap-3">
+              <template v-if="snapshot">
+                <p data-testid="completion-headline">
+                  {{ completionHeadline(snapshot.messages) }}
+                </p>
+                <ul class="grid list-disc gap-1 pl-5" data-testid="completion-lines">
+                  <li v-for="line in completionLines(snapshot)" :key="line.key">
+                    <strong class="text-foreground">{{ line.label }}: {{ line.count }}</strong>
+                    — {{ line.text }}
+                    <div v-if="line.advice.length > 0" class="mt-1" data-testid="completion-advice">
+                      <p class="text-foreground text-xs font-medium">Ne yapabilirsiniz?</p>
+                      <ul class="grid list-[circle] gap-1 pl-5 text-xs">
+                        <li v-for="(item, i) in line.advice" :key="i">{{ item }}</li>
+                      </ul>
+                    </div>
+                  </li>
+                </ul>
+              </template>
+              <p>
+                Bütün mesajların işi bitti. Başarısız veya atlanan mesajlar olması kampanyanın
+                tamamlanmasını engellemez; yukarıdaki sayılar gerçek dağılımı gösterir.
+              </p>
+            </AlertDescription>
+          </Alert>
+        </template>
+      </div>
+
+      <aside
+        class="grid min-w-0 gap-6"
+        aria-label="Kampanya bilgileri"
+        data-testid="delivery-aside"
+      >
+        <Card role="region" aria-labelledby="campaign-title">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <FileTextIcon class="text-primary size-5" aria-hidden="true" />
+              <h2 id="campaign-title">Kampanya</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="grid gap-3">
+            <p class="text-sm wrap-anywhere whitespace-pre-wrap">
+              {{ detail.brief }}
+            </p>
+            <Separator v-if="approvedAtText" />
+            <p v-if="approvedAtText" class="text-muted-foreground text-sm">
+              Onay: {{ approvedAtText }}
+            </p>
+          </CardContent>
+        </Card>
+
+        <RecipientsCard
+          v-if="!isDraft"
+          :campaign-id="id"
+          :snapshot="snapshot"
+          :live="connection === 'live' || connection === 'reconnecting'"
+        />
+
+        <!-- Gönderilen içerik: alıcıların gerçekte ne okuduğu. Onaylanan sürüm değişmez; SMS ve
+             e-posta (konu ve gövde) birlikte görünür. -->
+        <Card
+          v-if="detail.content"
+          role="region"
+          aria-labelledby="sent-content-title"
+          data-testid="sent-content"
+        >
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <MessageSquareTextIcon class="text-primary size-5" aria-hidden="true" />
+              <h2 id="sent-content-title">{{ isDraft ? 'İçerik' : 'Gönderilen içerik' }}</h2>
+            </CardTitle>
+            <CardDescription>
+              {{
+                isDraft
+                  ? 'Kampanyanın son kaydedilen içeriği.'
+                  : 'Alıcılara giden SMS ve e-posta metni.'
+              }}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MessagePreview :fields="detail.content" />
+          </CardContent>
+        </Card>
+      </aside>
+    </div>
 
     <StepNav :back="backStep" :next="nextStep" />
   </main>

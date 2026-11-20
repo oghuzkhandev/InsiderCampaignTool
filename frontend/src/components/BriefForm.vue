@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { LightbulbIcon, UsersIcon } from '@lucide/vue'
+import { EraserIcon, LightbulbIcon, UsersIcon } from '@lucide/vue'
 import { MAX_BRIEF_LENGTH } from '@/api/campaigns'
 import { EXAMPLE_BRIEFS } from '@/exampleBrief'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
 import { Textarea } from '@/components/ui/textarea'
+import { Separator } from '@/components/ui/separator'
 
 const brief = defineModel<string>({ required: true })
 defineProps<{ loading: boolean }>()
@@ -39,74 +41,125 @@ function useExample(text: string) {
   // Seçilen örnek hemen düzenlenebilsin diye odak alana verilir.
   document.getElementById('brief')?.focus()
 }
+
+function clearBrief() {
+  brief.value = ''
+  showEmptyError.value = false
+  document.getElementById('brief')?.focus()
+}
 </script>
 
 <template>
-  <form class="grid gap-4" novalidate @submit.prevent="onSubmit">
-    <Field>
-      <FieldLabel for="brief">Brief</FieldLabel>
-      <FieldDescription id="brief-hint">
-        Kampanyanın kime gideceğini doğal dilde yazın. Örnek: şehir, son sepet ve satın alma
-        tarihleri, sipariş sayısı.
-      </FieldDescription>
-      <Textarea
-        id="brief"
-        v-model="brief"
-        class="min-h-32 wrap-anywhere"
-        aria-describedby="brief-hint brief-count"
-        :aria-invalid="showEmptyError || tooLong"
-        @keydown.ctrl.enter.prevent="onSubmit"
-        @keydown.meta.enter.prevent="onSubmit"
-      />
-      <div class="flex items-center justify-between gap-2 text-sm">
-        <span
-          id="brief-count"
-          class="text-muted-foreground tabular-nums"
-          :class="{ 'text-destructive font-semibold': tooLong }"
-        >
-          {{ length }} / {{ MAX_BRIEF_LENGTH }}
-        </span>
-      </div>
-      <FieldError v-if="showEmptyError">Brief boş olamaz.</FieldError>
-      <FieldError v-else-if="tooLong">
-        Brief en fazla {{ MAX_BRIEF_LENGTH }} karakter olabilir.
-      </FieldError>
-    </Field>
-
-    <div v-if="showExamples" class="grid gap-2" data-testid="examples">
-      <p id="examples-label" class="text-muted-foreground flex items-start gap-2 text-sm">
-        <LightbulbIcon
-          class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300"
-          aria-hidden="true"
-        />
-        Nereden başlayacağınızı bilmiyorsanız bir örnek seçin, sonra istediğiniz gibi düzenleyin:
-      </p>
-      <ul class="grid gap-2" aria-labelledby="examples-label">
-        <li v-for="example in EXAMPLE_BRIEFS" :key="example.id">
-          <Button
-            type="button"
-            variant="outline"
-            class="h-auto w-full flex-col items-start gap-0.5 py-2 text-left whitespace-normal"
-            data-testid="example-brief"
-            @click="useExample(example.brief)"
-          >
-            <span class="font-medium">{{ example.title }}</span>
-            <span class="text-muted-foreground line-clamp-2 text-xs font-normal wrap-anywhere">
-              {{ example.brief }}
+  <form class="grid gap-8" novalidate @submit.prevent="onSubmit">
+    <Card>
+      <CardHeader class="gap-2">
+        <CardTitle><h2>Kampanyanızı tanımlayın</h2></CardTitle>
+        <CardDescription>
+          Kimlere ulaşmak istediğinizi yazın. Ardından eşleşen kişileri ve kanal sayılarını
+          hesaplayın.
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="grid gap-6">
+        <Separator />
+        <Field>
+          <FieldLabel for="brief">Brief</FieldLabel>
+          <FieldDescription id="brief-hint">
+            Kampanyanın kime gideceğini doğal dilde yazın. Örnek: şehir, son sepet ve satın alma
+            tarihleri, sipariş sayısı.
+          </FieldDescription>
+          <Textarea
+            id="brief"
+            v-model="brief"
+            class="min-h-32 wrap-anywhere"
+            aria-describedby="brief-hint brief-count"
+            :aria-invalid="showEmptyError || tooLong"
+            @keydown.ctrl.enter.prevent="onSubmit"
+            @keydown.meta.enter.prevent="onSubmit"
+          />
+          <div class="flex items-center justify-between gap-2 text-sm">
+            <span
+              id="brief-count"
+              class="text-muted-foreground tabular-nums"
+              :class="{ 'text-destructive font-semibold': tooLong }"
+            >
+              {{ length }} / {{ MAX_BRIEF_LENGTH }}
             </span>
-          </Button>
-        </li>
-      </ul>
-    </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              :disabled="loading || brief.length === 0"
+              data-testid="clear-brief"
+              @click="clearBrief"
+            >
+              <EraserIcon aria-hidden="true" />
+              Temizle
+            </Button>
+          </div>
+          <FieldError v-if="showEmptyError">Brief boş olamaz.</FieldError>
+          <FieldError v-else-if="tooLong">
+            Brief en fazla {{ MAX_BRIEF_LENGTH }} karakter olabilir.
+          </FieldError>
+        </Field>
 
-    <Button
-      type="submit"
-      size="lg"
-      class="w-full sm:w-auto sm:justify-self-start"
-      :disabled="loading || tooLong"
-    >
-      <UsersIcon aria-hidden="true" />
-      {{ loading ? 'Hesaplanıyor…' : 'Kitleyi hesapla' }}
-    </Button>
+        <Separator />
+        <Button
+          type="submit"
+          size="lg"
+          class="w-full sm:w-auto sm:justify-self-start"
+          :disabled="loading || tooLong"
+        >
+          <UsersIcon aria-hidden="true" />
+          {{ loading ? 'Hesaplanıyor…' : 'Kitleyi hesapla' }}
+        </Button>
+      </CardContent>
+    </Card>
+
+    <Card v-if="showExamples" data-testid="examples">
+      <CardHeader class="gap-2">
+        <CardTitle class="flex items-center gap-2">
+          <LightbulbIcon
+            class="size-5 shrink-0 text-amber-600 dark:text-amber-300"
+            aria-hidden="true"
+          />
+          <h2 id="examples-label">Örneklerle başlayın</h2>
+        </CardTitle>
+        <CardDescription>
+          Aşağıdaki örneklerden birini seçerek brief alanını doldurabilirsiniz. Metni kendi
+          kampanyanıza göre düzenleyip kitleyi hesaplayın.
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="grid gap-5">
+        <Separator />
+        <ul class="grid gap-4" aria-labelledby="examples-label">
+          <li v-for="example in EXAMPLE_BRIEFS" :key="example.id">
+            <Button
+              type="button"
+              variant="outline"
+              class="h-auto w-full flex-col items-start gap-3 px-4 py-4 text-left whitespace-normal"
+              data-testid="example-brief"
+              @click="useExample(example.brief)"
+            >
+              <span class="grid gap-1">
+                <span class="text-muted-foreground text-xs font-normal">Örnek kampanya</span>
+                <span class="font-semibold wrap-anywhere">{{ example.title }}</span>
+              </span>
+              <span class="bg-border h-px w-full" aria-hidden="true" />
+              <span class="grid gap-1.5">
+                <span class="text-muted-foreground text-xs font-medium">Brief metni</span>
+                <span
+                  class="text-muted-foreground text-sm leading-relaxed font-normal wrap-anywhere"
+                >
+                  {{ example.brief }}
+                </span>
+              </span>
+              <span class="text-primary pt-1 text-xs font-medium">
+                Bu örneği brief alanına aktar
+              </span>
+            </Button>
+          </li>
+        </ul>
+      </CardContent>
+    </Card>
   </form>
 </template>

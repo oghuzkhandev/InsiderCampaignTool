@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 
 // Kampanya durumu: ikon + metin + yumuşak renk. Anlam yalnızca renkle değil, ikon ve metinle de
 // verilir. Renkler hem açık hem koyu temada metin kontrastı 4,5'in üzerindedir (e2e'de ölçülür).
-const props = defineProps<{ status: string }>()
+const props = defineProps<{ status: string; scheduled?: boolean }>()
 
 const look = computed(() => {
   switch (props.status) {
@@ -48,6 +48,6 @@ const look = computed(() => {
 <template>
   <Badge variant="outline" :class="['border-transparent', look.tone]" :data-status="status">
     <component :is="look.icon" aria-hidden="true" />
-    {{ campaignStatusLabel(status) }}
+    {{ status === 'approved' && scheduled ? 'Planlandı' : campaignStatusLabel(status) }}
   </Badge>
 </template>

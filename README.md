@@ -42,13 +42,63 @@ hepsi hazır olunca döner. Hazır olunca:
    görebilirsiniz. Servis sağlığı ve metrikler için aşağıdaki
    [Gözlemlenebilirlik](#gözlemlenebilirlik) bölümüne bakın.
 
-Her ekranda solda bir kenar çubuğu bulunur: **"Yeni kampanya"** ve **"Son kampanyalar"**
-(en yeni 10; taslak kampanya içeriğe, onaylı kampanya gönderim takibine açılır). Üstteki
-**"Campaign Tool"** başlığı ana sayfaya döner. Telefonda kenar çubuğu bir çekmecedir.
+Menüde **Genel bakış**, **Yeni kampanya**, **Kampanyalar**, **Zamanlanmış**, **Kitleler** ve
+**İçerik şablonları** sayfaları vardır. Kampanyalar listesi durum filtresi ve sayfalama
+sunar; Kitleler sahte demo kullanıcılarını arar. İçerik şablonları sayfasında kaydedilen
+SMS/e-posta metinleri kampanya düzenleyicisindeki **Şablondan doldur** ile kullanılabilir.
+Şablon seçtikten sonra ayrıca yeni sürüm kaydedilir ve onaylanır. Şablonu silmek daha önce
+kaydedilmiş kampanyaları değiştirmez. Üstteki **Insider Campaign Tool** başlığı genel
+bakışı açar. Telefonda menü çekmece olarak açılır.
+
+Mevcut kurulumu bu sürüme yükseltirken `docker compose up migrate` ile `00006` şablon
+migration'ını uygulayın, ardından `docker compose up -d --build api web` çalıştırın.
+Temiz kurulumda migration otomatik uygulanır. `00006` Down şablonları siler.
 
 Mock provider'ın davranışı ortam değişkenleriyle değişir
 ([`.env.example`](.env.example)): gecikme, 429/500 oranı ve yanıt kaybı modları
 (`accept_then_drop`, `drop_all_responses`).
+
+## Zamanlanmış gönderim
+
+İçeriği kaydettikten sonra onay kartında **Hemen gönder** veya **Tarih ve saat seç** seçilir.
+Tarih/saat cihazın saat dilimindedir; onay özetinde saat dilimi ve UTC ofseti gösterilir.
+Gelecekteki saat seçilip onaylanınca kampanya **Planlandı** görünür. Plan ve mesajlar
+PostgreSQL'de saklanır; sayfayı kapatmak gönderimi iptal etmez.
+
+### Kuyrukta bekleyen planlı gönderimleri görme
+
+Menüdeki **Zamanlanmış** (`/scheduled`) sayfası, onaylanmış fakat gönderimi henüz başlamamış
+planlı kampanyaları en yakın gönderim zamanı başta olacak şekilde listeler. Her satırda brief,
+planlanan başlangıç saati, kuyrukta bekleyen mesaj adedi ve kalan süre görünür. **Gönderimi aç**
+bağlantısı ilgili kampanyanın canlı gönderim takibine gider.
+
+Örneğin yarın 14.30 için onayladığınız kampanyanın mesajları şimdiden PostgreSQL kuyruğuna
+yazılır ve o saate kadar bekler. Bu bekleme sırasında gönderim denemesi yapılmaz. Sayfayı
+yenilemek veya kapatmak planı silmez. Planlanan saat gelmiş ama worker henüz başlamamışsa
+kayıt listede kalır; worker mesajları sahiplenince sonraki liste yenilemesinde listeden çıkar.
+
+Liste 30 saniyede bir otomatik yenilenir; **Yenile** düğmesiyle de güncellenebilir ve sayfalıdır.
+Kalan süre sunucunun bildirdiği saate göre hesaplanan bir tahmindir; ekran 15 saniyede bir
+güncellenir. Planlanan saat, cihazın yerel saat dilimi ve UTC ofsetiyle gösterilir.
+Prometheus'taki `queue_depth` değeri de zamanı henüz gelmemiş bu mesajları kapsar.
+
+Mesajlar seçilen saatten önce worker tarafından alınmaz. Worker kapalıysa yeniden açılınca
+zamanı gelmiş işleri işler. Gönderim hız sınırlarıyla ilerler; seçilen saatte tüm mesajların
+bitmesi garanti edilmez. Alıcılar onay anında belirlenir, gönderim öncesinde kanal izni tekrar
+kontrol edilir. Onay sonrası zaman değiştirme/iptal bu sürümde yoktur.
+
+Mevcut geliştirme kurulumunda önce `docker compose up migrate` ile `00007` uygulanır, ardından
+`docker compose up -d --build api web` çalıştırılır. Worker'ın kuyruk kodu değişmedi.
+Migration yalnızca ek alan/koruma ekler; eski kampanyalar hemen gönderim davranışını korur.
+Down, devam eden planlı kampanya varsa reddedilir; diğer durumlarda plan geçmişini kaldırır.
+
+Yeni API alanı: `POST /api/campaigns/{id}/approve` →
+`{"content_version":1,"scheduled_at":"2030-06-15T11:30:00Z"}`.
+Alan eksik/null ise hemen gönderim. Geçmiş zaman 422; aynı sürüm/farklı zamanla tekrar 409.
+
+Gerçek zamanlayıcı e2e testleri `make e2e-delivery` ile izole ortamda çalışır; CI'ın `@real`
+adımına dahildir. Testler tarayıcı saatini hızlandırmaz: gerçek dakika sınırı beklendiğinden
+zamanlayıcı akışı yaklaşık 30–90 saniyelik bekleme içerir. Geliştirme veritabanını kullanmaz.
 
 ## Gözlemlenebilirlik
 
@@ -72,7 +122,7 @@ docker compose exec web wget -qO- http://worker:9090/metrics
 
 | Metrik | Kimde | Anlamı |
 | --- | --- | --- |
-| `queue_depth{channel}` | API | Kanal başına `queued` mesaj sayısı (yeniden denenecekler dahil). Bellekte tutulmaz, her okunuşta veritabanından hesaplanır; böylece worker durduğunda da birikim görünür. Okunamazsa `/metrics` `503` döner (sessiz `0` yok). |
+| `queue_depth{channel}` | API | Kanal başına `queued` mesaj sayısı (yeniden denenecekler ve planlanan saati henüz gelmemiş mesajlar dahil). Bellekte tutulmaz, her okunuşta veritabanından hesaplanır; böylece worker durduğunda da birikim görünür. Okunamazsa `/metrics` `503` döner (sessiz `0` yok). |
 | `llm_validation_failures_total` | API | Doğrulamadan geçemeyen model çıktısı (segment ve içerik üretimi). Kullanıcının elle düzenlemesi sayılmaz. |
 | `messages_sent_total` | worker | Provider'ın kabul ettiği ve `sent` yazılan mesaj sayısı. |
 | `send_attempts_total{outcome}` | worker | Provider çağrılarının sonucu: `accepted`, `rate_limited` (429), `server_error` (5xx), `network_error`, `rejected` (429 dışı 4xx), `invalid_response`. |

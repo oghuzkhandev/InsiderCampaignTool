@@ -45,12 +45,53 @@ describe('MessagePreview', () => {
     expect(text(w, 'preview-body')).toBe('—')
   })
 
-  it('kompakt görünümde gövde açılır bölümdedir, normalde doğrudan görünür', () => {
-    expect(mountPreview().find('details').exists()).toBe(false)
-    const compact = mountPreview({ compact: true })
-    expect(compact.find('details').exists()).toBe(true)
-    expect(compact.get('details summary').text()).toBe('E-posta gövdesini göster')
-    expect(compact.find('details [data-testid="preview-body"]').exists()).toBe(true)
+  it('e-posta gövdesi her zaman açıktır: açılır bölüm ve tıklama gerekmez', () => {
+    const w = mountPreview()
+
+    expect(w.find('details').exists()).toBe(false)
+    expect(w.find('summary').exists()).toBe(false)
+    expect(w.get('[data-testid="preview-body"]').isVisible()).toBe(true)
+    expect(w.text()).not.toContain('gövdesini göster')
+  })
+
+  it('SMS ve e-posta aynı satır düzeninde yan yana durabilir (kapsayıcı genişse iki sütun)', () => {
+    const w = mountPreview()
+
+    const columns = w.get('section[aria-label="SMS önizlemesi"]').element.parentElement!
+    expect(columns.contains(w.get('section[aria-label="E-posta önizlemesi"]').element)).toBe(true)
+    expect(columns.className).toContain('@[26rem]:grid-cols-2') // dar kapsayıcıda alt alta
+    expect(w.classes()).toContain('@container')
+  })
+
+  it('e-posta konusu ve gövdesi aynı kartta, ince bir ayraçla ayrılır', () => {
+    const w = mountPreview()
+
+    const card = w.get('section[aria-label="E-posta önizlemesi"]').element
+    const subject = w.get('[data-testid="preview-subject"]').element
+    const body = w.get('[data-testid="preview-body"]').element
+    const separator = card.querySelector('[role="separator"]')
+    expect(separator).not.toBeNull()
+    // Sıra: konu, ayraç, gövde.
+    expect(
+      subject.compareDocumentPosition(separator!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(separator!.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("alanlar etiketlidir: e-postada Konu ve Gövde, SMS'te Gövde", () => {
+    const w = mountPreview()
+
+    expect(w.get('[data-testid="preview-subject-label"]').text()).toBe('Konu')
+    expect(w.get('[data-testid="preview-body-label"]').text()).toBe('Gövde')
+    expect(w.get('[data-testid="preview-sms-label"]').text()).toBe('Gövde')
+  })
+
+  it('etiketler metnin içine karışmaz (içerik metinleri değişmez)', () => {
+    const w = mountPreview()
+
+    expect(text(w, 'preview-sms')).not.toContain('Gövde')
+    expect(text(w, 'preview-subject')).not.toContain('Konu')
+    expect(text(w, 'preview-body')).not.toContain('Gövde')
   })
 
   it('SMS ve e-posta bölümlerine ad verir', () => {

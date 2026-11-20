@@ -32,7 +32,9 @@ test('iki sekme: eski sürümü görüp onaylamak reddedilir, son sürüm yükle
 
   // Sekme B hâlâ sürüm 1'i görürken onaylamayı dener: reddedilir.
   await approve(pageB, 1)
-  await expect(pageB.getByText('içerik sürümü güncel değil')).toBeVisible()
+  await expect(
+    pageB.getByTestId('error-panel').getByText('içerik sürümü güncel değil'),
+  ).toBeVisible()
 
   // Son sürüm yüklenir ve kendiliğinden onaylanmaz.
   await expect(pageB.getByTestId('version')).toHaveText('Sürüm 2 · Elle düzenlendi')
@@ -44,8 +46,6 @@ test('iki sekme: eski sürümü görüp onaylamak reddedilir, son sürüm yükle
 
   // Güncel sürümü görüp onaylamak çalışır (kullanıcı kaldığı yerden devam eder).
   await approve(pageB, 2)
-  await expect(pageB.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 2')
-  await expect(pageB.getByTestId('queued')).toContainText(
-    `${EXPECTED.sms} SMS ve ${EXPECTED.email} e-posta mesajı`,
-  )
+  await expect(pageB).toHaveURL(new RegExp(`/campaigns/${id}/delivery$`))
+  await expect(pageB.getByTestId('count-queued')).toHaveText(String(EXPECTED.sms + EXPECTED.email))
 })

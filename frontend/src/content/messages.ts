@@ -23,6 +23,10 @@ function limitOf(field: string | undefined): number | undefined {
 /** Hata için kullanıcıya gösterilen başlık. */
 export function contentErrorTitle(error: ApiError): string {
   switch (error.code) {
+    case 'SCHEDULE_IN_PAST':
+      return 'Seçilen gönderim zamanı geçti. Gelecekte bir saat seçip yeniden onaylayın.'
+    case 'SCHEDULE_CONFLICT':
+      return 'Kampanya farklı bir gönderim zamanı ile zaten onaylandı. Güncel planı kontrol edin.'
     case 'CONTENT_INVALID':
       return 'İçerik doğrulanamadı.'
     case 'LLM_TIMEOUT':

@@ -184,3 +184,26 @@ body {
     @apply font-sans;
   }
 }
+
+/*
+ * Özet kartları için 3B hover: kart yumuşakça yukarı kalkar, hafifçe öne eğilir ve gölgesi
+ * derinleşir (350 ms, ease-out). Yalnızca fareyle üzerine gelinebilen cihazlarda ve hareketi
+ * azaltma tercihi KAPALIYKEN çalışır; dokunmatik ekranda ve tercihte kart yerinde kalır.
+ * Form ve düzenleyici kartlarına uygulanmaz (yazarken kayması rahatsız eder, tıklama hedefini oynatır).
+ */
+@utility card-3d {
+  transition:
+    transform 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 350ms ease-out;
+  transform-origin: center bottom;
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    &:hover {
+      transform: perspective(900px) translateY(-6px) rotateX(2.5deg);
+      box-shadow:
+        0 18px 32px -14px color-mix(in oklab, var(--primary) 38%, transparent),
+        0 6px 12px -6px color-mix(in oklab, var(--foreground) 14%, transparent);
+      border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
+    }
+  }
+}

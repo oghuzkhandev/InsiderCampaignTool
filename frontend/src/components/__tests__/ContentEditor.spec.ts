@@ -23,6 +23,21 @@ describe('ContentEditor', () => {
     expect((w.get('#email_body').element as HTMLTextAreaElement).value).toBe('Gövde')
   })
 
+  it('üç alanın da kısa bir örnek placeholder metni vardır (şablon formunda ve kampanyada)', () => {
+    const w = mountEditor({}, { sms_text: '', email_subject: '', email_body: '' })
+
+    const placeholders = ['sms_text', 'email_subject', 'email_body'].map(
+      (id) => w.get(`#${id}`).attributes('placeholder') ?? '',
+    )
+
+    expect(placeholders.every((p) => p.length > 0)).toBe(true)
+    expect(new Set(placeholders).size).toBe(3)
+    // Örnekler geçerli içeriktir: yalnızca izinli {{first_name}} değişkenini kullanır ve sınırlara sığar.
+    expect(placeholders[0]!.length).toBeLessThanOrEqual(160)
+    expect(placeholders[1]!.length).toBeLessThanOrEqual(80)
+    for (const p of placeholders) expect(p.replace('{{first_name}}', '')).not.toContain('{{')
+  })
+
   it('sayaçta {{first_name}} yerine fallback uzunluğunu varsayar, kod noktası sayar', async () => {
     const w = mountEditor()
     // "Merhaba !" 9 + "Değerli müşterimiz" 18

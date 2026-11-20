@@ -85,6 +85,21 @@ describe('BriefForm', () => {
     expect(button.text()).toBe('Hesaplanıyor…')
   })
 
+  it('Temizle brief ve sayacı sıfırlar, örnekleri geri getirir ve istek göndermez', async () => {
+    const w = mountForm('Kendi brief metnim')
+    await w.get('[data-testid="clear-brief"]').trigger('click')
+    expect(w.get('textarea').element).toHaveProperty('value', '')
+    expect(w.get('#brief-count').text()).toBe('0 / 1000')
+    expect(w.find('[data-testid="examples"]').exists()).toBe(true)
+    expect(submitEvents(w)).toHaveLength(0)
+    expect(w.get('[data-testid="clear-brief"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('hesaplama sürerken temizleme kapalıdır', () => {
+    const w = mountForm('İstanbul', true)
+    expect(w.get('[data-testid="clear-brief"]').attributes('disabled')).toBeDefined()
+  })
+
   describe('örnek brief önerileri', () => {
     const buttons = (w: ReturnType<typeof mountForm>) => w.findAll('[data-testid="example-brief"]')
 
