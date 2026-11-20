@@ -39,11 +39,56 @@ hepsi hazır olunca döner. Hazır olunca:
    başarısız ve atlanan mesajları canlı gösterir. Mock provider kasıtlı olarak
    zaman zaman 429 ve 500 üretir; yeniden denemeleri worker loglarında
    (`docker compose logs -f worker`) ve dashboard'daki "Yeniden denenecek" sayısında
-   görebilirsiniz.
+   görebilirsiniz. Servis sağlığı ve metrikler için aşağıdaki
+   [Gözlemlenebilirlik](#gözlemlenebilirlik) bölümüne bakın.
+
+Her ekranda solda bir kenar çubuğu bulunur: **"Yeni kampanya"** ve **"Son kampanyalar"**
+(en yeni 10; taslak kampanya içeriğe, onaylı kampanya gönderim takibine açılır). Üstteki
+**"Campaign Tool"** başlığı ana sayfaya döner. Telefonda kenar çubuğu bir çekmecedir.
 
 Mock provider'ın davranışı ortam değişkenleriyle değişir
 ([`.env.example`](.env.example)): gecikme, 429/500 oranı ve yanıt kaybı modları
 (`accept_then_drop`, `drop_all_responses`).
+
+## Gözlemlenebilirlik
+
+Canlı durum dashboard'dadır (SSE). Servislerin sağlığı ve temel metrikleri ayrı uçlardan
+okunur (TRK-001, ADR-016, ADR-027, ADR-028):
+
+| Uç | Nerede | Ne verir |
+| --- | --- | --- |
+| `GET /healthz` | API, <http://localhost:8081/healthz> | Süreç çalışıyorsa `200`. Veritabanına bakmaz (veritabanı kesintisinde süreç yeniden başlatılmaz). |
+| `GET /readyz` | API, <http://localhost:8081/readyz> | Veritabanına erişilebiliyorsa `200`, değilse `503` (gövde ayrıntı vermez). Compose sağlık kontrolü bunu kullanır. |
+| `GET /metrics` | API ve worker, **yalnızca Docker iç ağında** (`api:9090`, `worker:9090`) | Prometheus metin biçimi. Host'a yayımlanmaz; API'nin ana portu `/metrics` sunmaz. |
+
+İç ağdaki metrikleri host'tan okumak için:
+
+```sh
+docker compose exec web wget -qO- http://api:9090/metrics
+docker compose exec web wget -qO- http://worker:9090/metrics
+```
+
+### Metrikler
+
+| Metrik | Kimde | Anlamı |
+| --- | --- | --- |
+| `queue_depth{channel}` | API | Kanal başına `queued` mesaj sayısı (yeniden denenecekler dahil). Bellekte tutulmaz, her okunuşta veritabanından hesaplanır; böylece worker durduğunda da birikim görünür. Okunamazsa `/metrics` `503` döner (sessiz `0` yok). |
+| `llm_validation_failures_total` | API | Doğrulamadan geçemeyen model çıktısı (segment ve içerik üretimi). Kullanıcının elle düzenlemesi sayılmaz. |
+| `messages_sent_total` | worker | Provider'ın kabul ettiği ve `sent` yazılan mesaj sayısı. |
+| `send_attempts_total{outcome}` | worker | Provider çağrılarının sonucu: `accepted`, `rate_limited` (429), `server_error` (5xx), `network_error`, `rejected` (429 dışı 4xx), `invalid_response`. |
+| `ratelimit_wait_seconds` | worker | Bir denemenin provider çağrısından önce kanal hız sınırı yüzünden beklediği süre (histogram, 1 ms – 10 sn). |
+| `stale_result_total` | worker | Eski sahiplik jetonu yüzünden yok sayılan sonuç sayısı. |
+| `reaper_requeued_total` | worker | Lease'i dolduğu için yeniden kuyruğa alınan mesaj sayısı. |
+
+Worker sayaçları süreç belleğindedir; worker yeniden başlarsa sıfırlanır. Mock provider metrik
+sunmaz. Çıktı `promtool check metrics` ile doğrulanır (`make metrics-lint`, CI'da `E2E` işi).
+
+**Loglar:** API ve worker yapılandırılmış (`slog`) log yazar; ayrı bir log toplama aracı
+yoktur (ADR-028):
+
+```sh
+docker compose logs -f api worker
+```
 
 ### İsteğe bağlı: Prometheus
 
@@ -52,8 +97,10 @@ docker compose --profile observability up -d
 ```
 
 Prometheus arayüzü yalnızca <http://127.0.0.1:9091> adresinde açılır; API ve worker
-`/metrics` uçlarını Docker iç ağından okur (bu uçlar host'a yayımlanmaz). Veri 2 gün
-veya 256 MB ile sınırlıdır. Normal `docker compose up` Prometheus'u başlatmaz.
+`/metrics` uçlarını Docker iç ağından 10 sn aralıkla okur (bu uçlar host'a yayımlanmaz).
+`up{job="api"}` ve `up{job="worker"}` hedeflerin erişilebilirliğini, `queue_depth` birikimi
+gösterir. Veri 2 gün veya 256 MB ile sınırlıdır. Normal `docker compose up` Prometheus'u
+başlatmaz. Grafana ve uyarı kuralı yoktur (aşağıdaki sınırlamalara bakın).
 
 ## Test
 
