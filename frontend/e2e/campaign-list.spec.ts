@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { approvedCampaign, BRIEF, createCampaign, expectAudience } from './helpers.ts'
+import { approvedCampaign, BRIEF, createCampaign } from './helpers.ts'
 
 // CMP-001: ana sayfada "Son kampanyalar". Her test kendi kampanyasını ayırt edici bir brief ile
 // oluşturur (brief'in sonuna eklenen ek kitle koşullarını değiştirmez), böylece ortamda başka
@@ -17,7 +17,7 @@ test('yeni kampanya listenin başında: brief, durum ve tarih görünür; taslak
   const brief = uniqueBrief('taslak')
   const id = await createCampaign(page, brief)
 
-  await page.goto('/')
+  await page.goto('/overview')
   const first = rows(page).first()
   await expect(first.getByTestId('recent-brief')).toHaveText(brief)
   await expect(first.getByTestId('recent-status')).toHaveText('Taslak')
@@ -38,7 +38,7 @@ test('onaylanmış kampanya gönderim takibine açılır', async ({ page }) => {
   const brief = uniqueBrief('onaylı')
   const id = await approvedCampaign(page, brief)
 
-  await page.goto('/')
+  await page.goto('/overview')
   const first = rows(page).first()
   await expect(first.getByTestId('recent-brief')).toHaveText(brief)
   await expect(first.getByTestId('recent-status')).toHaveText('Onaylandı, kuyrukta')
@@ -58,23 +58,16 @@ test('en yeni kampanya başta: iki kampanya oluşturma sırasının tersiyle lis
   await createCampaign(page, older)
   await createCampaign(page, newer)
 
-  await page.goto('/')
+  await page.goto('/overview')
 
   await expect(rows(page).nth(0).getByTestId('recent-brief')).toHaveText(newer)
   await expect(rows(page).nth(1).getByTestId('recent-brief')).toHaveText(older)
 })
 
-test('aynı sayfada yeni kampanya oluşunca liste yenilenir ve yeni kampanya en üstte görünür', async ({
-  page,
-}) => {
-  await page.goto('/')
-  await expect(recent(page)).toBeVisible()
-  const brief = uniqueBrief('canlı')
-
-  await page.getByLabel('Brief').fill(brief)
-  await page.getByRole('button', { name: 'Kitleyi hesapla' }).click()
-  await expectAudience(page)
-
+test('yeni kampanya genel bakışa dönülünce listenin başında görünür', async ({ page }) => {
+  const brief = uniqueBrief('yeni')
+  await createCampaign(page, brief)
+  await page.goto('/overview')
   await expect(rows(page).first().getByTestId('recent-brief')).toHaveText(brief)
 })
 
@@ -82,7 +75,7 @@ test('liste satırı sayfa yenilenince de aynı yerdedir (sunucudan gelir)', asy
   const brief = uniqueBrief('kalıcı')
   await createCampaign(page, brief)
 
-  await page.goto('/')
+  await page.goto('/overview')
   await page.reload()
 
   await expect(rows(page).first().getByTestId('recent-brief')).toHaveText(brief)

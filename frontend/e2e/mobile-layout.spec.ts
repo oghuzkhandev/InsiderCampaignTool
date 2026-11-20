@@ -51,6 +51,16 @@ async function expectNoHorizontalOverflow(page: Page, screen: string, scope = 'm
       Array.from(document.querySelectorAll(selector))
         .filter((el) => el.getClientRects().length > 0 && !el.closest('.sr-only'))
         .filter((el) => {
+          // Duyarlı sr-only sınıfı etkin olduğunda alt öğeler de görsel olarak kırpılır.
+          // Sınıf adına değil, tarayıcının uyguladığı gerçek kırpmaya bak.
+          for (let parent: Element | null = el; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)')
+              return false
+          }
+          return true
+        })
+        .filter((el) => {
           const r = el.getBoundingClientRect()
           return r.right > window.innerWidth + 0.5 || r.left < -0.5
         })
@@ -90,41 +100,27 @@ test('telefonda uzun brief ve hata metinleri taşmaz', async ({ page }, info) =>
   await expectNoHorizontalOverflow(page, 'kampanya (uzun brief)')
   await page.screenshot({ path: info.outputPath('mobile-long-brief.png'), fullPage: true })
 
-  // Aynı uzun brief kenar çubuğundaki "Son kampanyalar" listesinde de taşmaz; satır dokunmaya
-  // yetecek büyüklükte. Çekmece kapalıyken liste yoktur; bir bağlantıya gidilince kapanır.
+  // Çekmecede kampanya satırları yerine sabit sayfa bağlantıları bulunur.
   await page.goto('/')
-  await expect(page.getByTestId('recent-row')).toHaveCount(0)
-  await expectTouchTarget(
-    page.getByRole('button', { name: 'Kenar çubuğunu aç veya kapat' }),
-    'kenar çubuğu düğmesi',
-  )
   await openSidebar(page)
-  const row = page.getByTestId('recent-row').first()
-  await expect(row.getByTestId('recent-brief')).toContainText('sepetaaaa')
-  await expectNoHorizontalOverflow(
-    page,
-    'çekmece (son kampanyalar, uzun brief)',
-    '[data-slot="sidebar"]',
-  )
-  await expectTouchTarget(row, 'son kampanya satırı')
-  await expectTouchTarget(page.getByTestId('sidebar-new-campaign'), 'kenar çubuğu: Yeni kampanya')
-  await page.screenshot({ path: info.outputPath('mobile-recent.png'), fullPage: true })
-
-  await row.click()
-  await page.waitForURL(/\/campaigns\/[0-9a-f-]{36}$/)
-  await expect(page.getByTestId('recent-row')).toHaveCount(0) // çekmece kendiliğinden kapandı
+  await expectNoHorizontalOverflow(page, 'çekmece', '[data-slot="sidebar"]')
+  await expectTouchTarget(page.getByTestId('sidebar-new-campaign'), 'Yeni kampanya')
+  await page.getByRole('link', { name: 'Kampanyalar', exact: true }).click()
+  await page.waitForURL((url) => url.pathname === '/campaigns')
+  await expect(page.locator('[data-slot="sidebar"][data-mobile="true"]')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page, 'kampanya listesi')
 })
 
-test('telefonda üst başlık taşmaz; "Campaign Tool" ana sayfaya döner', async ({ page }) => {
+test('telefonda üst başlık taşmaz; "Insider Campaign Tool" ana sayfaya döner', async ({ page }) => {
   await createCampaign(page)
   await expectNoHorizontalOverflow(page, 'üst başlık', 'header')
 
   const brand = page.getByTestId('brand-link')
-  await expect(brand).toHaveText('Campaign Tool')
+  await expect(brand).toHaveText('Insider Campaign Tool')
   await expectTouchTarget(brand, 'Campaign Tool başlığı')
   await brand.click()
-  await page.waitForURL((url) => url.pathname === '/')
-  await expect(page.getByRole('heading', { level: 1, name: 'Kampanya önizleme' })).toBeVisible()
+  await page.waitForURL((url) => url.pathname === '/overview')
+  await expect(page.getByRole('heading', { level: 1, name: 'Genel bakış' })).toBeVisible()
 })
 
 test('telefonda önizleme ve kampanya ekranları taşmaz, ana eylemler büyüktür', async ({

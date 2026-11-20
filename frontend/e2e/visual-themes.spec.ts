@@ -138,9 +138,8 @@ for (const scheme of ['light', 'dark'] as const) {
       expect((await page.request.post('/api/campaigns', { data: { brief: BRIEF } })).status()).toBe(
         201,
       )
-      await page.goto('/')
+      await page.goto('/overview')
       await expectReadable(page.getByRole('heading', { level: 1 }), 'başlık')
-      await expectReadable(page.getByLabel('Brief'), 'brief alanı')
       const recentRow = page.getByTestId('recent-row').first()
       await expectReadable(
         page.getByRole('heading', { level: 2, name: 'Son kampanyalar' }),
@@ -149,6 +148,8 @@ for (const scheme of ['light', 'dark'] as const) {
       await expectReadable(recentRow.getByTestId('recent-brief'), 'liste: brief')
       await expectReadable(recentRow.getByTestId('recent-status'), 'liste: durum')
       await expectReadable(recentRow.locator('time'), 'liste: tarih')
+      await page.goto('/')
+      await expectReadable(page.getByLabel('Brief'), 'brief alanı')
       await expectReadable(page.getByTestId('brand-link'), 'marka başlığı (Campaign Tool)')
       await expectReadable(page.getByTestId('sidebar-new-campaign'), 'kenar çubuğu: Yeni kampanya')
       await expectReadable(page.getByTestId('example-brief').first(), 'örnek brief düğmesi')
