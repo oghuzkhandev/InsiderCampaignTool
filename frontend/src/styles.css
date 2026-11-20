@@ -12,16 +12,13 @@
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 :root {
-  --app-bg: #f6f7f9;
+  /* Yumuşak, hafif mavi-gri zemin; beyaz kartlar; pastel indigo vurgu. */
+  --app-bg: #f4f6fc;
   --app-surface: #ffffff;
-  --app-border: #d5d9e0;
-  --app-text: #1c2330;
-  --app-muted: #5b6575;
-  --app-accent: #2a5bd7;
-  --app-on-accent: #ffffff;
+  --app-border: #d9dfee;
+  --app-text: #1d2433;
+  --app-muted: #566178;
   --app-danger: #b3261e;
-  --app-danger-bg: #fdecea;
-  --app-warning-bg: #fff4d6;
   color-scheme: light dark;
   /*
    * Zemin, yüzey, metin ve kenarlık uygulamanın --app-* paletinden gelir (iki
@@ -34,74 +31,70 @@
   --card-foreground: var(--app-text);
   --popover: var(--app-surface);
   --popover-foreground: var(--app-text);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
+  --primary: #4f56c9;
+  --primary-foreground: #ffffff;
+  --secondary: #eaedfb;
+  --secondary-foreground: #2c3280;
+  --muted: #eef1f9;
   --muted-foreground: var(--app-muted);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --accent: #e6e9fa;
+  --accent-foreground: #2c3280;
   /* shadcn'ın varsayılan kırmızısı açık zeminde AA kontrastın altında kalıyordu (4,45). */
   --destructive: var(--app-danger);
   --border: var(--app-border);
   --input: var(--app-border);
-  --ring: oklch(0.708 0 0);
+  --ring: #8f95e6;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #eceffa;
+  --sidebar-foreground: #1d2433;
+  --sidebar-primary: #4f56c9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dfe4f8;
+  --sidebar-accent-foreground: #2c3280;
+  --sidebar-border: #d3d9ee;
+  --sidebar-ring: #8f95e6;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --app-bg: #14171c;
-    --app-surface: #1c2027;
-    --app-border: #353c48;
-    --app-text: #e6e9ee;
-    --app-muted: #9aa4b2;
-    --app-accent: #7aa2ff;
-    --app-on-accent: #0c1220;
+    --app-bg: #12151e;
+    --app-surface: #1a1e2a;
+    --app-border: #323950;
+    --app-text: #e8ebf4;
+    --app-muted: #9ba5bc;
     --app-danger: #ff8a80;
-    --app-danger-bg: #3a1f1d;
-    --app-warning-bg: #3a3118;
 
     /*
      * shadcn koyu token'ları (varsayılan neutral koyu tema). Zemin, yüzey, metin ve
      * kenarlık yukarıdaki --app-* değerlerinden gelir; burada yalnızca kalanlar var.
      */
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --primary: #a3a9f5;
+    --primary-foreground: #15183a;
+    --secondary: #262c44;
+    --secondary-foreground: #e8ebf4;
+    --muted: #232840;
+    --accent: #2a3154;
+    --accent-foreground: #e8ebf4;
     --destructive: oklch(0.704 0.191 22.216);
-    --ring: oklch(0.556 0 0);
+    --ring: #6f76c9;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar: #161a26;
+    --sidebar-foreground: #e8ebf4;
+    --sidebar-primary: #a3a9f5;
+    --sidebar-primary-foreground: #15183a;
+    --sidebar-accent: #252b44;
+    --sidebar-accent-foreground: #e8ebf4;
+    --sidebar-border: #2a3148;
+    --sidebar-ring: #6f76c9;
   }
 }
 

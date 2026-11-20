@@ -5,9 +5,33 @@ import {
   emptyFields,
   estimatedLength,
   hasText,
+  renderPreview,
   runeLength,
   sameFields,
+  SAMPLE_NAME,
 } from '../draft'
+
+describe('renderPreview', () => {
+  it('{{first_name}} yerine örnek adı koyar (her geçtiği yerde)', () => {
+    expect(renderPreview('Merhaba {{first_name}}!')).toBe(`Merhaba ${SAMPLE_NAME}!`)
+    expect(renderPreview('{{first_name}}, {{first_name}}')).toBe(`${SAMPLE_NAME}, ${SAMPLE_NAME}`)
+  })
+
+  it('verilen adı kullanır; değişkensiz ve başka süslü parantezli metne dokunmaz', () => {
+    expect(renderPreview('Selam {{first_name}}', 'Mehmet')).toBe('Selam Mehmet')
+    expect(renderPreview('değişkensiz')).toBe('değişkensiz')
+    expect(renderPreview('{{other}} {first_name}')).toBe('{{other}} {first_name}')
+  })
+
+  it('adın içindeki süslü parantezleri yeniden yorumlamaz (tek geçiş)', () => {
+    expect(renderPreview('{{first_name}}', '{{first_name}}')).toBe('{{first_name}}')
+  })
+
+  it('örnek ad gerçek bir kişi adı gibi sabit bir değerdir', () => {
+    expect(SAMPLE_NAME.length).toBeGreaterThan(0)
+    expect(SAMPLE_NAME).not.toContain('{')
+  })
+})
 
 describe('runeLength', () => {
   it('UTF-16 uzunluğu değil Unicode kod noktası sayar', () => {

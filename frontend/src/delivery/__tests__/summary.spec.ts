@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeliveryCounts } from '@/api/delivery'
-import { finishedMessages, finishedPercent, totalMessages } from '../summary'
+import { finishedMessages, finishedPercent, totalMessages, unfinishedMessages } from '../summary'
 
 const counts = (overrides: Partial<DeliveryCounts> = {}): DeliveryCounts => ({
   queued: 0,
@@ -23,6 +23,21 @@ describe('totalMessages', () => {
 
   it('mesaj yoksa 0', () => {
     expect(totalMessages(counts())).toBe(0)
+  })
+})
+
+describe('unfinishedMessages', () => {
+  it('kuyrukta, yeniden denenecek ve gönderilen mesajları toplar; terminal durumları saymaz', () => {
+    expect(
+      unfinishedMessages(
+        counts({ queued: 3, retrying: 1, sending: 2, sent: 40, failed: 2, skipped: 1 }),
+      ),
+    ).toBe(6)
+  })
+
+  it('tamamlanmamış ile işi bitmiş mesajlar birlikte toplamı verir', () => {
+    const c = counts({ queued: 3, retrying: 1, sending: 2, sent: 40, failed: 2, skipped: 1 })
+    expect(unfinishedMessages(c) + finishedMessages(c)).toBe(totalMessages(c))
   })
 })
 

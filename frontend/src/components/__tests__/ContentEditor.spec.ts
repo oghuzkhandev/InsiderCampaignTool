@@ -31,7 +31,7 @@ describe('ContentEditor', () => {
 
     await w.setProps({ modelValue: { ...fields, sms_text: '😀'.repeat(160) } })
     expect(counter(w, 'sms-count').text()).toBe('160 / 160')
-    expect(counter(w, 'sms-count').classes()).not.toContain('over')
+    expect(counter(w, 'sms-count').classes()).not.toContain('text-destructive')
   })
 
   it('sınır aşılınca sayacı uyarı olarak işaretler ama yazmayı engellemez', async () => {
@@ -39,8 +39,8 @@ describe('ContentEditor', () => {
     await w.setProps({
       modelValue: { ...fields, sms_text: 'a'.repeat(161), email_subject: 'b'.repeat(81) },
     })
-    expect(counter(w, 'sms-count').classes()).toContain('over')
-    expect(counter(w, 'subject-count').classes()).toContain('over')
+    expect(counter(w, 'sms-count').classes()).toContain('text-destructive')
+    expect(counter(w, 'subject-count').classes()).toContain('text-destructive')
     expect(w.get('#sms_text').attributes('aria-invalid')).toBe('true')
     expect(w.get('#sms_text').attributes('readonly')).toBeUndefined()
   })

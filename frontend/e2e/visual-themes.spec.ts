@@ -1,5 +1,12 @@
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
-import { approveButton, approvedCampaign, createCampaign, generateContent } from './helpers.ts'
+import {
+  BRIEF,
+  approveButton,
+  approvedCampaign,
+  createCampaign,
+  expectAudience,
+  generateContent,
+} from './helpers.ts'
 
 // Açık ve koyu tema (işletim sistemi ayarı) ile ana ekranlar:
 //  * okunabilirlik: metin ile gerçek arka planı arasındaki WCAG kontrastı,
@@ -100,10 +107,17 @@ async function shot(page: Page, info: TestInfo, name: string) {
 }
 
 function fulfillSnapshot(status: string, exhausted: number) {
+  const zero = { queued: 0, retrying: 0, sending: 0, sent: 0, failed: 0, skipped: 0 }
   const body = {
     status,
     messages: { queued: 0, retrying: 0, sending: 0, sent: 5, failed: exhausted, skipped: 1 },
     failures: { exhausted, rejected: 0 },
+    // Kanal kırılımı (sms + e-posta = toplam) ve toparlanan; okunabilirlik testi bunları da görür.
+    channels: {
+      sms: { ...zero, sent: 3, skipped: 1 },
+      email: { ...zero, sent: 2, failed: exhausted },
+    },
+    recovered: 2,
   }
   return {
     status: 200,
@@ -117,6 +131,46 @@ for (const scheme of ['light', 'dark'] as const) {
   test.describe(`${scheme} tema`, () => {
     test.use({ colorScheme: scheme })
 
+    test('önizleme ekranı: okunabilir ve tıklanabilir her şey el imleci taşır', async ({
+      page,
+    }, info) => {
+      // Listede en az bir kampanya olsun (okunabilirlik kontrolü için).
+      expect((await page.request.post('/api/campaigns', { data: { brief: BRIEF } })).status()).toBe(
+        201,
+      )
+      await page.goto('/')
+      await expectReadable(page.getByRole('heading', { level: 1 }), 'başlık')
+      await expectReadable(page.getByLabel('Brief'), 'brief alanı')
+      const recentRow = page.getByTestId('recent-row').first()
+      await expectReadable(
+        page.getByRole('heading', { level: 2, name: 'Son kampanyalar' }),
+        'liste başlığı',
+      )
+      await expectReadable(recentRow.getByTestId('recent-brief'), 'liste: brief')
+      await expectReadable(recentRow.getByTestId('recent-status'), 'liste: durum')
+      await expectReadable(recentRow.locator('time'), 'liste: tarih')
+      await expectReadable(page.getByTestId('brand-link'), 'marka başlığı (Campaign Tool)')
+      await expectReadable(page.getByTestId('sidebar-new-campaign'), 'kenar çubuğu: Yeni kampanya')
+      await expectReadable(page.getByTestId('example-brief').first(), 'örnek brief düğmesi')
+      await expectReadable(page.getByTestId('examples').locator('p').first(), 'örnek yönergesi')
+      await expectPointerEverywhere(page, 'önizleme (boş form)')
+
+      // Boş gönderim: alan altındaki hata mesajı okunabilir olmalı.
+      await page.getByRole('button', { name: 'Kitleyi hesapla' }).click()
+      await expect(page.getByRole('alert')).toHaveText('Brief boş olamaz.')
+      await expectReadable(page.getByText('Brief boş olamaz.'), 'brief hata mesajı')
+      await shot(page, info, `${scheme}-preview-empty-error`)
+
+      await page.getByLabel('Brief').fill(BRIEF)
+      await page.getByRole('button', { name: 'Kitleyi hesapla' }).click()
+      await expectAudience(page)
+      await expectReadable(page.getByTestId('total'), 'toplam eşleşen kişi')
+      await expectReadable(page.getByTestId('audience-note'), 'kanal sayıları notu')
+      await expectReadable(page.getByRole('link', { name: 'İçeriği hazırla' }), 'İçeriği hazırla')
+      await expectPointerEverywhere(page, 'önizleme (sonuç)')
+      await shot(page, info, `${scheme}-preview-result`)
+    })
+
     test('kampanya ekranı: okunabilir ve tıklanabilir her şey el imleci taşır', async ({
       page,
     }, info) => {
@@ -125,6 +179,30 @@ for (const scheme of ['light', 'dark'] as const) {
 
       await generateContent(page)
       await expectReadable(page.getByRole('heading', { level: 1 }), 'başlık')
+      await expectReadable(page.getByTestId('page-description'), 'kısa açıklama')
+      await expectReadable(page.getByTestId('campaign-state'), 'durum rozeti')
+      // Adım göstergesi: biten, şu anki ve bekleyen adım okunabilir olmalı.
+      const steps = page.getByTestId('campaign-steps')
+      await expectReadable(
+        steps.locator('li[data-status="done"] > span:nth-child(2)'),
+        'biten adım',
+      )
+      await expectReadable(
+        steps.locator('li[data-status="current"] > span:nth-child(2)'),
+        'şu anki adım',
+      )
+      await expectReadable(
+        steps.locator('li[data-status="upcoming"] > span:nth-child(2)'),
+        'bekleyen adım',
+      )
+      await expectReadable(
+        page.getByTestId('audience-compact').locator('dt').first(),
+        'kitle etiketi',
+      )
+      await expectReadable(page.getByTestId('preview-sms').first(), 'SMS önizlemesi')
+      await expectReadable(page.getByTestId('preview-note').first(), 'önizleme örnek notu')
+      await expectReadable(page.getByTestId('approve-sms'), 'tahmini SMS alıcısı')
+      await expectReadable(page.getByTestId('nav-back'), 'Geri bağlantısı')
       await expectReadable(approveButton(page, 1), 'Onayla düğmesi')
       await expectReadable(
         page.getByRole('button', { name: 'Yeniden üret' }),
@@ -161,7 +239,7 @@ for (const scheme of ['light', 'dark'] as const) {
           }),
         }),
       )
-      await page.getByRole('link', { name: 'Gönderimi izle' }).click()
+      await page.getByRole('link', { name: 'İleri: Gönderimi izle' }).click()
       await page.waitForURL(new RegExp(`/campaigns/${id}/delivery$`))
       const failed = page.getByTestId('connection-failed')
       await expect(failed).toBeVisible()
@@ -181,10 +259,27 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.reload()
       await expect(page.getByTestId('campaign-status')).toHaveText('Tamamlandı')
       await expectReadable(page.getByTestId('campaign-status'), 'durum rozeti')
+      await expectReadable(page.getByTestId('summary-sent'), 'özet: gönderildi')
+      await expectReadable(page.getByTestId('summary-failed'), 'özet: başarısız')
+      await expectReadable(page.getByTestId('summary-unfinished'), 'özet: tamamlanmamış')
+      await expectReadable(page.getByTestId('page-description'), 'kısa açıklama')
       await expectReadable(page.getByTestId('total-messages'), 'toplam mesaj')
       await expectReadable(page.getByTestId('count-sent'), 'gönderilen sayısı')
       await expectReadable(page.getByTestId('note-exhausted'), 'başarısızlık notu')
       await expectReadable(page.getByTestId('completed-note'), 'tamamlandı notu')
+      await expectReadable(page.getByTestId('completion-lines'), 'sonuç özeti')
+      await expectReadable(page.getByTestId('completion-advice').first(), 'sonuç önerisi')
+      await expectReadable(
+        page.getByTestId('channel-split').locator('h3'),
+        'kanal dağılımı başlığı',
+      )
+      await expectReadable(page.getByTestId('channel-sms-total'), 'SMS toplamı')
+      await expectReadable(page.getByTestId('channel-sms-sent'), 'SMS gönderilen')
+      await expectReadable(page.getByTestId('channel-email-failed'), 'e-posta başarısız')
+      await expectReadable(page.getByTestId('channel-sms-skipped'), 'SMS atlanan') // fixture: atlanan SMS'te
+      await expectReadable(page.getByTestId('recovered-note'), 'toparlanan notu')
+      await expectReadable(page.getByTestId('nav-next'), 'İleri bağlantısı')
+      await expectReadable(page.getByTestId('nav-back'), 'Geri bağlantısı')
       await expectReadable(page.getByTestId('connection-status'), 'bağlantı durumu')
       await expectPointerEverywhere(page, 'dashboard (tamamlandı)')
       await shot(page, info, `${scheme}-dashboard-completed`)

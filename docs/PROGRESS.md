@@ -1,6 +1,6 @@
 # Proje İlerlemesi
 
-Son güncelleme: 2026-11-19
+Son güncelleme: 2026-11-20
 
 ## Tamamlanan hazırlık
 
@@ -456,14 +456,18 @@ gördüğü sürümü onaylayabiliyor. Geçersiz onay kuyruk işi oluşturmuyor.
 ## Sonraki adımlar
 
 Her aşama güncel `main`'den açılan ayrı bir branch'te ilerler. Branch
-adları öneridir. Sıradaki aşama 1. Worker, mock provider ve dashboard'dur
-(`feat/worker-dashboard`). Yukarıdaki "Açık kalanlar" (SSE keepalive, `llm_calls`,
-`httpapi.New` doğrulaması, maliyet sınırları vb.) bu aşamadan önce veya içinde
-ele alınabilir.
+adları öneridir. 1. Worker, mock provider ve dashboard aşaması tamamlandı ve
+`main`'e alındı. Şu an çalışılan aşama "Frontend iyileştirmeleri" (aşağıda,
+`feat/frontend-modernization`). Yukarıdaki "Açık kalanlar" ve aşağıdaki "Açık konular"
+bölümündeki işler (SSE keepalive, `llm_calls`, maliyet sınırları vb.) ayrı bir
+kararla ele alınır.
 
-### 1. Worker, mock provider ve dashboard
+### 1. Worker, mock provider ve dashboard (tamamlandı)
 
-**Branch:** `feat/worker-dashboard` (devam ediyor)
+**Branch:** `feat/worker-dashboard`: PR #7 ile `main`'e squash merge edildi
+(`fffdded`, 2026-11-19 20:43 UTC). PR #7'de **Backend, Frontend, Compose ve E2E**
+işlerinin hepsi `SUCCESS` (`gh pr view 7` ile doğrulandı); merge sonrası `main` push
+CI'ı da `success`. Aşağıdaki maddeler aşamanın o günkü kaydıdır.
 
 **Specler:** [SND-001](specs/SND-001-message-delivery.md),
 [TRK-001](specs/TRK-001-live-delivery-tracking.md). **Kararlar:** ADR-002, 005 ve
@@ -668,34 +672,46 @@ dışındaki `4xx` `rejected`'tır.
   rozeti ve notu, kısa mimari (mermaid), kapsam ve bilinen sınırlamalar (gerçek Claude
   adaptörü yok dahil).
 
-**Bu aşamada kalan işler (takip listesi, 2026-11-19):**
+**Bu aşamada kalan işler (takip listesi, 2026-11-20 itibarıyla doğrulandı):**
 
-- [ ] **Dev ortamı:** migration `00003` ve `00004`'ün dev veritabanında uygulandığını
-  Oğuzhan teyit eder (**API ve worker kapalıyken**, ADR-026 komut sırası). Dev yığını
-  yeni kodla yeniden başlatılmış görünüyor (Prometheus ve metrics portları açık).
-  Claude dev veritabanına yazmaz.
-- [ ] **PR ve CI:** Oğuzhan PR açar; **gerçek GitHub Actions sonucunu PR üzerinden
-  ayrıca doğrulayıp bildirecek**, sonra squash merge eder. Yerelde tüm CI kontrolleri
-  koştu ve Oğuzhan bağımsız olarak da doğruladı; GitHub Actions'ın kendisi
-  doğrulanamadı. Yeni
-  adımlar (`e2e-delivery-up`, `e2e-metrics-internal`, `@real`, görsel testler,
-  nginx, `e2e-observability` ve `promtool` imajının çekilmesi) ilk kez orada çalışacak;
-  E2E işinin süresi 25 dk sınırına yaklaşabilir.
-- [ ] **Onay bekleyen taslak ADR'ler:** ADR-013 (Compose başlatma sırası; sıra artık
-  uygulandı, nota bakın), ADR-010 (30 günlük kural yorumu).
-- [ ] **`ai-sessions/`:** Oturum 1-3 var; dizin tablosu (`ai-sessions/README.md`) 1-5.
-  oturumu listeler. 4. oturumun `/export`'u Oğuzhan tarafından eklenir
-  (`Session-04-Worker-MockProvider-Dashboard.txt`), 5. oturum sonunda 5. oturum;
-  paylaşımdan önce anahtar ve kişisel verilerin temizlenmesi gerekir.
+- [x] **Dev ortamı:** migration `00003` ve `00004` dev veritabanında uygulandı (Oğuzhan
+  bildirdi, 2026-11-20). Claude dev veritabanına bağlanmadığı için bu, Oğuzhan'ın
+  bildirimine dayanır.
+- [x] **PR ve CI:** PR #7 açıldı ve `main`'e squash merge edildi (`fffdded`). PR'daki
+  Backend, Frontend, Compose ve E2E işleri `SUCCESS`; `main` push CI'ı `success`
+  (`gh pr view 7` ve `gh run list` ile 2026-11-20'de doğrulandı). Yeni adımlar
+  (`e2e-delivery-up`, `e2e-metrics-internal`, `@real`, görsel testler, nginx,
+  `e2e-observability` ve `promtool` imajı) gerçek runner'da geçti.
+- [ ] **Onay bekleyen taslak ADR'ler:** `DECISIONS.md`'de durumu hâlâ "Taslak" olanlar
+  ADR-001, ADR-003 (güncellemesi onaylı), ADR-004, ADR-007, ADR-008, ADR-010 ve ADR-013
+  (servis listesi ve portlar onaylı, başlatma sırası uygulandı ama onay bekliyor).
+  Durumları yalnızca Oğuzhan'ın kararıyla değişir.
+- [ ] **`ai-sessions/`:** Oturum 1-4 export dosyaları dizinde (`Session-01-ProjectSetup.txt`,
+  `Session-02-DB-Seed-Migration.txt`, `Session-03-Brief-Kitle-Düzenleme-Onay.txt`,
+  `Session-04-Worker-MockProvider-Queue.txt`). Oğuzhan bildirdi: 4. oturum dosyası önceden
+  bash çıktıları yüzünden 10.000 satırı aşıp ortadan başlıyordu; düzeltildi ve dosyalar
+  baştan sona eksiksiz (Claude içeriklerini tek tek doğrulamadı, yalnızca dosyaların
+  varlığını ve satır sayılarını gördü). `ai-sessions/README.md` bu aşamada değiştirilmedi.
+  5. oturumun export'u oturum sonunda eklenir; paylaşımdan önce anahtar ve kişisel
+  verilerin temizlenmesi gerekir.
 - [ ] **Teslim doğrulaması (aşağıdaki liste):** temiz kopyada kuruldu ve demo çalıştı;
   `make test` temiz kopyada değil çalışma ağacında koştu (aynı Compose postgres'i).
-  Gerçek bir `git clone` (commit sonrası) ile son kez denenmeli.
+  Gerçek bir `git clone` ile (artık `main`'de merge sonrası) son kez denenmeli; henüz
+  yapılmadı.
 
 **Sonra yapılacaklar (karar bekliyor, şimdilik yapılmıyor):**
 
-- [ ] **Gerçek Claude adaptörü:** `LLM_PROVIDER` yalnızca `mock`; Anthropic'e bağlanan
-  adaptör yok. Case'te LLM entegrasyonu en yüksek ağırlıklı kriterdir (%25); bu
-  **teslimin en büyük eksiğidir** (`PROGRESS` "2. Gerçek Claude entegrasyonu").
+- [ ] **Gerçek Claude adaptörü (isteğe bağlı; şimdilik yapılmıyor):** `LLM_PROVIDER` yalnızca
+  `mock`; Anthropic'e bağlanan adaptör yok. Oğuzhan'ın kararı (2026-11-20): şu an Claude API
+  anahtarı yok, adaptör yazılmayacak. CASE.md bunu zorunlu tutmuyor: "Geliştirme sırasında
+  mock bir LLM ile çalışabilir, gerçek modelle **denemek istersen** ... API key'ini alabilirsin"
+  ve "Testler gerçek API key olmadan, mock bir LLM ile çalışmalı" (satır 49 ve 53). LLM
+  entegrasyonu kriterinin (%25) vurguladığı şey "Claude'u çağırmak yeterli değil; çıktısını
+  güvenilir hale getirmek"tir (satır 46): JSON doğrulama, tek düzeltme denemesi, akış ve MockLLM
+  testleri yapıldı. **Kalan küçük boşluk:** CASE.md satır 53 uygulamanın anahtarı
+  `ANTHROPIC_API_KEY`'den "okumasını" ister. `.env.example` ve `compose.yaml` bu değişkeni
+  taşır, ama kod onu okumaz (`LLM_PROVIDER` yalnızca `mock` kabul eder). Anahtar sağlanırsa
+  adaptör (`PROGRESS` "2. Gerçek Claude entegrasyonu") bu boşluğu da kapatır.
 - [ ] **`client_golang`'a geçiş** (Oğuzhan sonra karar verecek): bugün kendi küçük
   yazıcımız (`internal/metrics`, ADR-027). Geçişte `Collector` ile `queue_depth` için
   "okunamayan değer 0 gibi görünmez" davranışı korunmalı; Go çalışma zamanı
@@ -708,9 +724,9 @@ dışındaki `4xx` `rejected`'tır.
   `nginx`'te içerik akışının aralıklı gelişini gösteren (yavaş LLM'li) test.
 
 **Çıkış koşulu:** İlk HTTP yanıtı kaybolduğunda retry yapılır, provider
-yalnızca bir kabul kaydeder ve dashboard sonucu gösterir. **Kısmen sağlandı:**
-retry ve tek kabul kanıtlandı (aşağıda); dashboard sonucu gösterimi
-yapılmadı, aşama bitmedi.
+yalnızca bir kabul kaydeder ve dashboard sonucu gösterir. **Sağlandı:** retry ve tek
+kabul kanıtlandı (aşağıda); dashboard (`/campaigns/:id/delivery`) gerçek worker, mock
+provider ve SSE ile sonucu gösteriyor (`@real` e2e). PR #7'de CI yeşil, `main`'e alındı.
 
 #### Bu aşamada yapılanlar ve doğrulama (şu ana kadar)
 
@@ -835,8 +851,8 @@ yapılmadı, aşama bitmedi.
     JS paketi 120 → 178 kB (shadcn `Progress`/`Alert` ve bağımlılıkları).
     (shadcn kartlarının koyu temada beyaz kalması sorunu aşağıdaki "Görsel düzeltmeler"
     maddesinde çözüldü.)
-- **Dev veritabanı:** migration `00003` ve `00004` dev veritabanına **uygulanmadı**.
-  Oğuzhan uygulayacak. `00004` için **API ve worker kapalıyken** uygulanır ve ikisi
+- **Dev veritabanı:** migration `00003` ve `00004` merge öncesi dev veritabanına
+  uygulanmamıştı; Oğuzhan sonradan uyguladı (2026-11-20 bildirimi). `00004` için **API ve worker kapalıyken** uygulanır ve ikisi
   güncel kodla başlatılır; komut sırası ve riskli mesaj durumunda ne yapılacağı
   [ADR-026](../DECISIONS.md#adr-026--alıcı-adı-onayda-mesaja-kopyalanır-worker-retry-dahil-bu-adı-kullanır)
   içinde. `queued`/`sending` ve `attempts > 0` mesaj varsa migration hiçbir veri
@@ -845,16 +861,223 @@ yapılmadı, aşama bitmedi.
 
 ### Frontend iyileştirmeleri: tasarım ve bileşenleri modernleştirme
 
-**Branch:** ayrı bir feature branch, güncel `main`'den açılır (CLAUDE.md: her aşama için
-yeni branch). Önerilen ad `feat/frontend-modernization`; ad Oğuzhan ile netleşir ve
-branch ancak `feat/worker-dashboard` PR'ı `main`'e merge edildikten sonra açılır.
-**Durum:** planlandı, başlanmadı. Oturumun başında Oğuzhan 4. oturumdaki işin gerçek
-GitHub Actions (CI) sonucunu bildirecek; `feat/worker-dashboard` üzerinde kırmızı
-çıkan bir şey varsa önce o branch'te düzeltilir, frontend işi ondan sonra yeni
-branch'te başlar.
+**Branch:** `feat/frontend-modernization` (güncel `main`'den Oğuzhan açtı; 5. oturumda
+`git branch --show-current` ile doğrulandı, çalışma ağacı başlangıçta temizdi).
+**Durum:** **aşama kapatıldı** (5. oturum sonu, 2026-11-20): kod, testler ve dokümanlar tamam,
+yerelde doğrulandı; PR henüz açılmadı, **gerçek GitHub Actions sonucu PR üzerinden Oğuzhan
+tarafından doğrulanacak**. Kapsam başlangıçtaki "frontend modernizasyonu"ndan genişledi
+(Oğuzhan'ın kararlarıyla): akış iyileştirmeleri, son kampanyalar listesi ve endpoint'i
+(CMP-001, ADR-029), `created_at` indeksi (migration `00005`) ve dashboard snapshot'ına kanal
+dağılımı ve `recovered` (ADR-030).
+`feat/worker-dashboard` PR #7 merge edildi ve CI yeşil (yukarıya bakın), önceki aşamadan
+taşınan kırmızı bir iş yok. Oğuzhan birincil düğme için nötr shadcn `default` varyantını
+onayladı; ek düzenleme isteği (üst başlık, adım göstergesi, iki sütun, dashboard özeti)
+aynı gün eklendi. Kararlar [ADR-021](../DECISIONS.md) notunda.
 
-**Kapsam (Oğuzhan'ın tanımı):** frontend'in tasarım kısmı ve bileşenlerin
-modernleştirilmesi. Ayrıntılı kapsam ve öncelik oturumda Oğuzhan ile belirlenir.
+**Yapılanlar:**
+
+- [x] **Tek bileşen sistemi:** `ErrorPanel`, `BriefForm`, `ContentEditor`, `ApprovePanel`,
+  `AudienceCounts`, `SegmentSummary`, `CampaignPreviewView` ve `CampaignView` shadcn
+  bileşenlerine (`Button`, `Card`, `Field`/`Label`, `Input`, `Textarea`, `Alert`, `Badge`,
+  `Spinner`, `Skeleton`) taşındı. Uygulamada scoped CSS kalmadı; kullanılmayan dört
+  `--app-*` token'ı silindi. Yeni bağımlılık yok. `id`, rol, `aria-*` ve
+  `data-testid` güvenceleri korundu; yalnızca sınıf adına bağlı test seçicileri
+  (`.error-panel`, `.retry`, `.warning`, `.note`, `button.primary` vb.) `data-testid`'ye
+  çevrildi.
+- [x] **Ortak düzen:** `PageHeader` (`h1`, durum rozeti, bir satır açıklama) ve `CampaignSteps` (Kitle → İçerik → Onay → Gönderim; tıklanamaz,
+  `aria-current="step"`, tik ve ekran okuyucu metni). Adım durumu `campaign/steps.ts`
+  saf fonksiyonundan türetilir. Kampanya ekranı `lg` ve üstünde iki sütun (düzenleyici
+  solda, kompakt kitle, koşullar ve onay sağda), telefonda alt alta. Ana eylemler
+  `size="lg"` (40 px).
+- [x] **Dashboard:** üstte Gönderildi, Başarısız ve Tamamlanmamış (bekleyen + yeniden
+  denenecek + gönderiliyor) özet sayıları, altında ilerleme çubuğu ve ayrıntı (altı
+  sayı, etiketler eskisi gibi). Durum rozeti üst başlığa taşındı.
+- [x] **Kanal dağılımı ve yeniden denemeyle toparlanan sayısı (ADR-030):** önce kapsam dışı
+  bırakılmıştı (snapshot'ta yoktu); Oğuzhan sonradan istedi (2026-11-20), sözleşme değişti.
+  - **Backend:** SSE `snapshot`'a **`channels`** (`sms` ve `email`, `messages` ile aynı altı
+    durum) ve **`recovered`** (`sent` ve `attempts > 1`) eklendi. Değişmez kural: her durum için
+    `sms + email = toplam`; `recovered ≤ sent`. Tek sorgu, `GROUP BY channel`; `messages` kanal
+    satırlarının toplamıdır (tutarsızlık oluşmaz; bu, `messages.channel` üzerindeki
+    `CHECK (sms, email)` kısıtına dayanır). Alanlar her görüntüde yollanır (sıfır dahil).
+    Migration yok. `campaign.DeliverySnapshot`, `httpapi.deliverySnapshotResponse`;
+    ARCHITECTURE §5 ve TRK-001 güncellendi.
+  - **`recovered` neyi sayar (kesin tanım):** `status = 'sent'` ve `attempts > 1` mesajlar.
+    `attempts` her claim'de artar, yani `> 1` mesajın `sent` olmadan önce **birden fazla kez
+    işlenmeye alındığı** demektir: geçici provider hatası sonrası backoff, kayıp yanıt (provider
+    ilk isteği kabul etmiş olabilir, aynı `Idempotency-Key` ile yeniden deneme kayıtlı sonucu
+    alır) veya lease dolması / worker çökmesi sonrası reaper (önceki deneme provider'a hiç
+    ulaşmamış olabilir). Anlamı "ilk denemede tamamlanamadı, sonraki denemede gönderildi olarak
+    kaydedildi"dir; **"ilk istek başarısız oldu" demek değildir**, nedeni ayırmaz ve provider
+    çağrı sayısı değildir. Idempotency nedeniyle bu mesajlar da en çok bir kez teslim edilmiştir.
+    Arayüz metni buna göre yazıldı (ilk sürümde "ilk denemede gönderilemedi" diyordu; kayıp
+    yanıtta yanlış olduğu için "ilk denemede tamamlanamadı, yeniden denemeyle gönderildi"
+    yapıldı ve testle sabitlendi).
+  - **Arayüz:** dashboard'da "Kanal dağılımı" (SMS ve e-posta ayrı: toplam, ilerleme çubuğu,
+    gönderilen / başarısız / tamamlanmamış, atlanan varsa; mesajı olmayan kanal "Bu kanalda
+    mesaj yok"), "Yeniden denemeyle toparlanan: N mesaj" notu ve gönderim sonu özetinin
+    gönderilen satırında ("N mesaj ilk denemede tamamlanamadı, yeniden denemeyle gönderildi").
+    İstemci alanlar yoksa (eski sunucu) çalışmaya devam eder, varsa doğrular (toplamı tutmayan
+    görüntü geçersiz).
+  - **Testler:** entegrasyon (gerçek PostgreSQL; her durum iki kanala dağıtılmış sabit veri,
+    kanalların toplamı = toplam, tek kanallı kampanya, kampanyalar arası karışmama, `recovered`
+    yalnızca `sent` ve `attempts > 1`, canlı akışta değişimin yansıması) ve **gerçek worker +
+    provider** ile (yanıt kaybı → ikinci denemede gönderim: `recovered = 2`; tüm yanıtlar kayıp
+    → `recovered = 0`, SMS'te 1 başarısız); `@real` e2e'de 3 SMS + 4 e-posta ve hepsi toparlanan
+    (7) kesin doğrulanır. Mutasyonlar yakalandı: `attempts > 1` → `>= 1` ve SMS/e-posta
+    eşlemesini ters çevirmek.
+- [x] **`campaigns` için indeks (migration `00005`, Oğuzhan'ın isteği):** `campaigns_recent_idx
+  (created_at DESC, id DESC)`, liste sorgusuyla (CMP-001) birebir aynı sıralama.
+  - **Ne sağlar:** planlayıcı seçerse sorgu indeksi sırayla gezip ilk n kayıtta durur: tam tarama
+    ve `Sort` adımı yok, kabaca O(log N + n). **Ne sağlamaz:** `brief` ve `status` indekste
+    olmadığı için n satır tablodan okunur (index-only değil); planlayıcı maliyete göre karar
+    verir, çok küçük tabloda (demo ölçeği) tarama + sıralama seçip indeksi kullanmayabilir.
+    Yalnızca hızlandırır, sonucu değiştirmez. **Maliyet:** her eklemede bir indeks girişi.
+    **Kilit:** düz `CREATE INDEX` `SHARE` kilidi alır (okumalar sürer, yazmalar oluşturma
+    bitene kadar bekler); `CONCURRENTLY` goose transaction'ında kullanılamaz, tablo küçük.
+  - **Testler:** indeks tanımı; **sıralı tarama kapatılınca** planın indeksi kullandığı ve
+    `Sort` adımı olmadığı (indeksin bu sorgu için kullanılabilir olduğunu gösterir, planlayıcının
+    her ölçekte seçtiğini değil); Down yalnızca indeksi kaldırır (veri korunur) ve Up aynı
+    tanımla geri getirir; indeksli ve indekssiz liste aynı sonucu verir.
+  - Mevcut iki migration testi 00005'ten etkilendi ve kapsamlarına göre düzeltildi (00004
+    testleri `UpTo(4)` ve `DownTo(4)` ile başlıyor). **Dev veritabanına uygulamayı Oğuzhan
+    yapar** (Claude yazmaz); `docker compose up` temiz kurulumda otomatik uygular.
+- [x] **Mobil:** `e2e/mobile-layout.spec.ts` (360 px): belge taşması ve kartlarca kırpılan
+  taşma (görünür her öğe viewport içinde), ana düğmelerin yüksekliği ≥ 40 px.
+  `visual-themes.spec.ts` önizleme ekranını, adım göstergesini ve dashboard özet
+  sayılarını da kapsıyor (açık ve koyu tema, WCAG kontrastı, imleç).
+
+- [x] **Akışı kolaylaştıran eklemeler (Oğuzhan'ın isteği, 2026-11-20; yeni ekran, endpoint
+  veya bağımlılık yok):**
+  - **Örnek brief önerileri:** boş ekranda 3 örnek (`exampleBriefs.json`, tek kaynak);
+    yazmaya başlayınca kaybolur, seçince alanı doldurur (göndermez). Backend testi
+    (`tests/integration/example-briefs_test.go`, `campaigns_test` + tam demo verisi) her
+    örneğin MockLLM ile geçerli segment ürettiğini ve alıcı bulduğunu doğrular (191 / 73 /
+    14 kişi); örnek bozulunca kırıldığı görüldü.
+  - **Kaydedilmemiş değişiklik uyarısı:** `useUnsavedChangesGuard`: sekmeyi kapatma ve
+    yenileme için tarayıcı uyarısı, uygulama içi gezinme (Geri bağlantısı, başka kampanya)
+    için onay penceresi; vazgeçilirse metin korunur. Gerçek tarayıcıda doğrulandı
+    (`beforeunload` ve `confirm` diyalogları).
+  - **İşlem geri bildirimi:** "Üretildi · sürüm N" / "Kaydedildi · sürüm N" (durum bölgesi,
+    metin değişince kaybolur); işlem sürerken düğmeler kapalı ve "Üretiliyor…",
+    "Kaydediliyor…", "Onaylanıyor…"; çift tıklama tek istek (testli).
+  - **Onay özeti:** `ApprovePanel` aynı kartta: hangi sürüm, tahmini SMS/e-posta alıcıları
+    (≈, tahmin olduğu yazılı) ve SMS ile e-posta önizlemesi.
+  - **Kişiselleştirme önizlemesi:** `MessagePreview`: `{{first_name}}` yerine örnek ad
+    "Ayşe"; "Örnek önizleme" notu gerçek mesajların alıcının kendi adıyla gittiğini söyler.
+    Düzenleyicide canlı taslak, onay özetinde kaydedilmiş sürüm için gösterilir.
+  - **Gönderim sonu özeti:** tamamlanınca tek cümlelik sonuç ("7 mesajın 5'i gönderildi,
+    1'i başarısız, 1'i atlandı."; `delivery/turkish.ts` sayının okunuşuna göre iyelik eki
+    seçer: 5'i, 7'si, 3'ü, 1.234'ü; hepsi tek sonuçsa "tamamı") ve gönderilen / başarısız /
+    atlanan satırları kısa açıklama, nedenler ve **"Ne yapabilirsiniz?"** önerileriyle
+    (sonucu doğrulanamayan: teslim edilmiş olabilir, sağlayıcıdan kontrol edin; reddedilen:
+    adresleri kontrol edin; atlanan: izin yok, yapılacak bir şey yok; başarısız varken:
+    kampanya yeniden gönderilemez, yeni kampanya brief'e uyan herkese gider). Gönderilen
+    satırı yeniden denemeyle toparlanan sayısını da söyler (aşağıda, ADR-030).
+  - **Geri / İleri (`StepNav`, Türkçe):** "İleri" hedef açılana kadar kapalı ve nedeni yazılı
+    (kitle hesaplanana, içerik onaylanana kadar). Kampanya ekranındaki sol düğme önceki
+    aşamaya dönmez, yeni kampanya başlatır (önizleme ekranı var olan kampanyayı yüklemez):
+    bu yüzden "Geri" değil **"+ Yeni kampanya"** diye anılır. Dashboard'da "Geri" kampanyaya
+    döner, "İleri: Yeni kampanya" **gönderimin bitmesine bağlı değildir**; gönderim sürerken
+    "Gönderim arka planda devam eder." notu görünür (gönderimi worker yürütür, sayfadan
+    ayrılmak onu durdurmaz). Kaydedilmemiş değişiklik uyarısı korunur (kampanya ekranından
+    her ayrılışta). Eski üst bağlantılar ve onay kartındaki "Gönderimi izle" düğmesi
+    kaldırıldı (yinelenen bağlantı kalmasın diye).
+  - **Mobil:** kampanya ekranında onay kartı dar ekranda içerikten hemen sonra gelir ve
+    Geri/İleri çubuğu alta yapışır; düğme metinleri sarılır. Boşluksuz uzun brief ve hata
+    metni taşmaz. Bu iş sırasında testlerin yakaladığı iki gerçek hata düzeltildi: `StepNav`
+    düğmeleri 360 px'te taşıyordu (41–46 px), uzun metin yapıştırılınca brief textarea'sı
+    formu genişletiyordu (`wrap-anywhere`); `ErrorPanel` da uzun metni kırmıyordu.
+
+- [x] **Son kampanyalar listesi (CMP-001, ADR-029):** Oğuzhan bu aşamaya dahil etti
+  (2026-11-20; CLAUDE.md'deki "aşama dışı iş eklenmez" kuralının istisnası olarak, kararı o
+  verdi). "Son kampanyalar" (sonradan ana sayfadaki karttan kenar çubuğuna taşındı, aşağıya
+  bakın): en yeni başta, satırda **brief, durum ve tarih**
+  (kitle sayısı bilerek yok). **Taslak** kampanya kampanya ekranına, **`approved`, `sending`
+  ve `completed`** olanlar gönderim takibine açılır; satır nereye gittiğini yazar. Yeni
+  kampanya oluşunca liste aynı sayfada yenilenir; liste yüklenemese de brief formu çalışır.
+  - **Backend:** `GET /api/campaigns?limit=N`: **varsayılan 10, en fazla 20** (20'den büyük
+    değer 20'ye indirilir; tam sayı olmayan veya < 1 `400 INVALID_REQUEST`, veritabanı
+    okunmaz). Sıralama `created_at DESC, id DESC` (kararlı), satırda yalnızca `id`, `brief`,
+    `status`, `created_at`; boş liste `[]`. Sıralamayı destekleyen `created_at` indeksi
+    migration `00005`'tedir (ADR-029). `campaign.Store.List`, `httpapi.listCampaigns`; `/api/campaigns`
+    yolunda `Allow: GET, POST`.
+  - **Testler:** birim `internal/httpapi/campaign-list_test.go` (9 grup: sıra, alanlar, `[]`,
+    sınırlar, 7 geçersiz değer, sızıntı yok, başka bağımlılık çağrılmaz);
+    entegrasyon `tests/integration/campaign-list_test.go` (gerçek PostgreSQL: 25 kampanyayla
+    sıra ve sınırlar, eşit zamanda kararlı sıra, boş liste, dört durumun gerçek onay akışıyla
+    listelenmesi ve ayrıntı endpoint'iyle tutarlılık, 1000 karakterlik brief, depo sınırları);
+    arayüz birim testleri (API istemcisi, bağlantı hedefleri, `RecentCampaigns`, ekrana bağlama)
+    ve e2e `campaign-list.spec.ts` (6 test: taslak ve onaylı satırın hedefi, sıra, aynı sayfada
+    yenileme, kalıcılık, **21 kampanyayla varsayılan 10 ve üst sınır 20 kesin**, geçersiz sınır
+    400). Mutasyonlar yakalandı: sıralamayı tersine çevirmek ve eşit zamanda kimlik ayrımını
+    kaldırmak. `visual-themes` ve `mobile-layout` liste okunabilirliğini ve boşluksuz uzun
+    brief'in taşmadığını da sınar.
+
+- [x] **Uygulama kabuğu, simgeler ve pastel palet (ADR-021 notu; export öncesi son istek,
+  2026-11-20):** "campaign list vs çok dağınık" diye Oğuzhan istedi. Yeni ekran, endpoint veya
+  bağımlılık yok (mevcut shadcn `Sidebar`, `@lucide/vue`).
+  - **Kenar çubuğu (`AppSidebar`):** "Yeni kampanya" ve "Son kampanyalar" (ana sayfadaki karttan
+    taşındı). Masaüstünde açık, düğmeyle kapanır; telefonda çekmece (bağlantıya gidilince
+    kapanır). Liste sayfa değişince ve ekranlar `campaign/recent.ts` ile haber verince (oluşturma,
+    onay, dashboard'da durum değişimi) yenilenir.
+  - **Üst başlık:** kenar çubuğu düğmesi ve ana sayfaya dönen **"Campaign Tool"**. **Sapma
+    (Oğuzhan'a not):** istekteki "main h1" yerine başlık bir bağlantıdır; her sayfada tek `h1`
+    (sayfa başlığı) kalır, aksi halde ekran okuyucu gezintisi, `PageHeader` ve testler bozulurdu.
+    İstenirse başlık `h1`, sayfa başlıkları `h2` yapılabilir (ayrı, daha geniş bir değişiklik).
+  - **Simgeler:** kart başlıkları, düğmeler (`StepNav` okları artık simge; erişilebilir ad
+    "Geri: …" / "İleri: …" aynı), kitle ve kanal satırları, özet kutuları, hata ve bilgi
+    uyarıları. Hepsi `aria-hidden`. `StatusBadge`: simge + metin + ton (durum yalnızca renkle
+    anlatılmaz).
+  - **Pastel palet:** yumuşak mavi-gri zemin, beyaz kartlar, pastel indigo birincil renk, durum
+    tonları; açık ve koyu tema. Önceki "nötr birincil" kararının yerine geçer (ADR-021 notu).
+  - **Testler:** `App.spec.ts` yeniden yazıldı (başlık, kenar çubuğu, liste yenileme),
+    `StatusBadge.spec.ts` yeni, `RecentCampaigns`/`CampaignPreviewView`/`StepNav`/`DeliveryConnectionStatus`
+    spec'leri güncellendi; e2e: `app-shell.spec.ts` yeni, `mobile-layout` (çekmece, üst başlık),
+    `visual-themes` (başlık ve düğme kontrastı) genişletildi; kenar çubuğundaki satırlarla
+    çakışan konumlayıcılar (`Gönderimi izle`, `getByRole('button')`, `/Geri/`) daraltıldı.
+    `campaignStatusVariant` kullanılmadığı için silindi.
+
+**Doğrulama (yerelde, Node 24, 2026-11-20):** `vitest run` 31 dosya, **543 test** geçti
+(aşama başı 314); `oxlint`, `eslint`, `npm run build` (tip kontrolü dahil),
+`type-check:e2e` temiz; dokunulan dosyalar prettier'a uygun (`styles.css` ve shadcn
+`components/ui/` dosyaları HEAD'de de prettier'a uymuyor, üretim çıktısı, biçimlendirilmedi).
+Son kabuk/simge/palet değişikliğinden sonra yeniden koşuldu: `make e2e-standard` Playwright
+**37/37** (aşama başı 17) ve `make e2e-delivery` `@real` **1/1**, çıkış kodu 0. Prometheus
+döngüsü (`e2e-observability`) bu son değişiklikten sonra **yeniden koşulmadı** (backend ve
+metrikler değişmedi); önceki tam `make e2e` koşusunda scrape ve `promtool` temizdi (o koşuda
+iki görsel test kırmızıydı: fixture'da atlanan mesaj SMS'te,
+test e-postada arıyordu; test düzeltildi, uygulama hatası değildi). Backend: `gofmt`, `go vet`,
+`go mod tidy -diff` temiz, `make test` yeşil (örnek-brief, kampanya listesi, indeks ve
+kanal/toparlanan testleri dahil; `cmd/api`, `httpapi`, `tests/e2e`, `tests/integration` yeniden
+koştu; hepsi yalnızca `campaigns_test` üzerinde, dev veritabanına yazılmadı). Mutasyonlar yakalandı: ana düğmeyi küçültmek ve
+taşan sabit genişlik (mobil test; ilk sürüm kırpılan taşmayı yakalamadı, çünkü kart
+`overflow-hidden`, test güçlendirildi), desteklenmeyen örnek brief (backend testi),
+`unfinishedMessages`'dan `sending`'i çıkarmak ve adım göstergesinde kaydedilmemiş
+değişikliği yok saymak (birim testleri). Ekran görüntüleri açık/koyu tema ve 360 px için
+gözle kontrol edildi (son akış eklemelerinden önceki sürümde; sonrası Oğuzhan'ın görsel
+kontrolüne bırakıldı). 5. oturumda Ubuntu bağlantısı koptu; yarım kalan e2e ortamı
+(`campaign-e2e`) temizlenip her şey baştan doğrulandı.
+
+**Sınırlar:** GitHub Actions doğrulanamadı (yeni testler `E2E` işinde ilk kez koşacak; CI'ın
+Backend işi yeni entegrasyon testlerini `make test` ile zaten çalıştırır, yeni araç yok).
+Liste için `created_at` indeksi migration `00005` ile eklendi (ADR-029); geliştirme
+veritabanına Oğuzhan uyguladı.
+Dashboard ayrıntısında Gönderildi ve Başarısız özetle tekrar ediyor (testler ve
+`count-*` kimlikleri korunsun diye); sadeleştirmek istenirse ayrı küçük iş. Gerçek
+tarayıcı yalnızca Chromium. Tarayıcıların kaydedilmemiş değişiklik uyarı metni kendi
+belirledikleridir (sayfa özel metin gösteremez); özel metin yalnızca uygulama içi gezinmede
+çıkar.
+
+**Başlangıç baz çizgisi (aşama başında, 2026-11-20, Node 24):** `vitest run` 21 dosya, **314 test**
+geçti; `playwright test --list` **18 test** listeledi (17 standart + 1 `@real`; e2e
+koşturulmadı, yalnızca listelendi). Bu sayılar tasarım işi sırasında korunur veya
+gerekçeli güncellenir.
+
+**Kapsam (Oğuzhan'ın tanımı, 2026-11-20):** yalnızca eski bileşenleri shadcn'a taşımak
+değil, genel görsel düzeni de tutarlı hale getirmek. Mevcut shadcn bileşenleri
+kullanılır; tasarım sade, okunabilir ve mobil uyumlu olur. Başlıklar, boşluklar, form
+alanları, kartlar ve ana işlemler tutarlı olur. **Yeni özellik, endpoint veya bağımlılık
+eklenmez**; mevcut iş akışları ve erişilebilirlik korunur.
 
 **Girdi olarak bilinenler (karar değil, 4. oturumda gözlenenler; onay bekler):**
 
@@ -873,9 +1096,9 @@ modernleştirilmesi. Ayrıntılı kapsam ve öncelik oturumda Oğuzhan ile belir
   Oğuzhan'a sorulur (CLAUDE.md, ADR-021); `any`, `as` ve `!` yok; dış veri `unknown`
   olarak alınıp api katmanında doğrulanır.
 
-**Çıkış koşulu (öneri, oturumda netleşir):** seçilen ekranlar tek bir bileşen sistemiyle
-tutarlı, iki temada okunabilir ve mobilde sorunsuz; birim, e2e ve görsel testler geçer;
-tasarım kararları ADR-021'e veya yeni bir ADR'ye yazılır.
+**Çıkış koşulu:** seçilen ekranlar tek bir bileşen sistemiyle tutarlı, iki temada okunabilir
+ve mobilde sorunsuz; birim, e2e ve görsel testler geçer; tasarım kararları ADR-021'e ve yeni
+ADR'lere (029, 030) yazılır. **Sağlandı** (yerelde; CI PR üzerinde doğrulanacak).
 
 ### 2. Gerçek Claude entegrasyonu (isteğe bağlı, ayrı iş)
 
@@ -909,9 +1132,10 @@ devam ediyor.
 - [x] `README.md` kurulum, kısa mimari özeti, CI rozeti ve notu ve bilinen
   sınırlamaları içeriyor.
 - [x] `DECISIONS.md` kabul edilen kararları ve gerekçelerini içeriyor (ADR-001...028).
-- [ ] Case için yapılan Claude oturumları `ai-sessions/` altında. Oturum 1-3 var;
-  güncel oturum Oğuzhan'ın `/export`'unu bekliyor. Paylaşım öncesi gerçek API
-  anahtarları ve kişisel bilgiler temizlenmeli.
+- [ ] Case için yapılan Claude oturumları `ai-sessions/` altında. Oturum 1-4 export
+  dosyaları var (eksiksiz olduğunu Oğuzhan bildirdi); 5. oturumun export'u oturum
+  sonunda eklenecek. Paylaşım öncesi gerçek API anahtarları ve kişisel bilgiler
+  temizlenmeli.
 
 ## Açık konular
 
@@ -937,14 +1161,15 @@ devam ediyor.
 - `failure_reason` değerleri (`exhausted`, `rejected`) şimdilik veritabanında
   `CHECK` ile zorlanmıyor; yalnızca worker yazıyor. Zorlamak şema değişikliğidir
   ve Oğuzhan onayı ister.
-- Retry'dan sonra `last_error` başarıda temizlenmiyor (son hatayı gösterir).
-  Dashboard bunu nasıl göstereceği TRK-001 aşamasında belirlenecek.
+- Retry'dan sonra `last_error` başarıda temizlenmiyor (`sent` yazımı yalnızca `status` ve
+  `sent_at` günceller; son hatayı gösterir). Dashboard bunu göstermiyor: yalnızca
+  mesaj sayıları ve `failure_reason` nedenleri (`exhausted`, `rejected`) arayüze çıkar.
 - `make test` önce yalnızca `postgres` servisini başlatır (`make test-db`),
   sonra `go test ./...` çalıştırır. Entegrasyon testleri `campaigns_test`
   veritabanını kullanır (ADR-015).
 - `SEG-001`, `CNT-001`, `SND-001` ve `TRK-001` spec dosyaları PR #2 ile
-  `main`'e alındı ([specs/README.md](specs/README.md)). `SEG-001` uygulandı;
-  diğerleri ilgili aşamalarda uygulanacak.
+  `main`'e alındı ([specs/README.md](specs/README.md)) ve dördü de uygulandı
+  (segment önizleme, içerik ve onay, gönderim, canlı takip).
 - 30 günlük kuralın yorumu (ADR-010) hâlâ taslak ve onay bekliyor. Uygulama
   ve testler önerilen yorumu kullanıyor (son 30 günde sepete ekleme ve aynı
   dönemde satın alma yok). Önizleme ile onay arasında kitlenin kayması da
@@ -956,16 +1181,16 @@ devam ediyor.
 - E-posta gövdesi için uzunluk sınırı CASE.md'de (yalnızca SMS 160 ve konu 80) ve
   CNT-001'de tanımlı değil; şu an yalnızca
   boş olmama ve değişken kuralları var. Gerekirse ayrıca karar verilir.
-- `llm_calls` tablosu ve `llm_validation_failures_total` metriği içerik
-  aşamasında yazılmadı; kapsamı ve zamanı Oğuzhan'la netleştirilecek
-  (ARCHITECTURE §4 ve §12).
+- `llm_calls` tablosu hâlâ yok (hiçbir migration'da geçmiyor); kapsamı ve zamanı
+  Oğuzhan'la netleştirilecek (ARCHITECTURE §4). `llm_validation_failures_total`
+  metriği ise API'de uygulandı (ADR-027, ARCHITECTURE §12).
 - Doğrulayıcıdaki kod noktası sayımı birleşik karakterleri (ör. `e` +
   birleştirici aksan) iki sayar; spec kod noktası istiyor (ADR-022).
 - Markdown çitli (` ```json `) model çıktısı `MALFORMED_OUTPUT` sayılır ve
   düzeltme denemesine gider. Gerçek Claude adaptöründe JSON modu veya prefill
   değerlendirilecek.
-- `queue_depth` yalnızca `queued` mesajları sayacak. `ratelimit_wait_seconds`
-  türü belirlenmedi.
+- `queue_depth` yalnızca `queued` mesajları sayar ve `ratelimit_wait_seconds` bir
+  histogramdır (ADR-027, uygulandı). Kova sınırları sabit.
 - CI'da ek Go lint aracı (`golangci-lint` gibi) yok. CI `gofmt` ve
   `go vet` ile başlıyor. Yeni araç bağımlılık kararıdır ve önce Oğuzhan'a
   sorulur.
@@ -975,8 +1200,8 @@ devam ediyor.
 - Frontend lint komutları CI'da workflow içinde doğrudan çağrılıyor,
   `package.json` ve `Makefile` ile paylaşılmıyor. Yerelde `npm run lint`
   `--fix` ile dosya değiştirir.
-- CI'ın Compose işi yalnızca `docker compose config --quiet` (geliştirme ve e2e
-  yapılandırması) çalıştırır. İmajlar ve servis sağlığı (`/healthz`) dolaylı olarak
+- CI'ın Compose işi `docker compose config --quiet` (geliştirme, e2e ve observability
+  profili yapılandırması) çalıştırır. İmajlar ve servis sağlığı (`/healthz`) dolaylı olarak
   `E2E` işinde sınanır (`make e2e-up` imajları derler ve api/web sağlık
   kontrollerini bekler); geliştirme ortamının kendisi (`docker compose up`) CI'da
   doğrudan koşmaz.
@@ -984,16 +1209,14 @@ devam ediyor.
 - ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
   kuyruk aynı kuralı kullanır.
 
-- ADR-023 onaylandı (B): kanala uygunluk açık izin ve adres ister; önizleme ve
-  kuyruk aynı kuralı kullanır.
-
 ## Son doğrulama
 
-### Güncel aşama: `feat/worker-dashboard` (2026-11-19)
+### Son tamamlanan aşama: `feat/worker-dashboard` (2026-11-19, `main`'e alındı)
 
-**Durum:** Aşamanın kodu, testleri ve dokümanları tamam. PR henüz açılmadı; **gerçek
-GitHub Actions sonucu PR üzerinden Oğuzhan tarafından ayrıca doğrulanacak** ve
-bildirilecek. Hata bulunmadı.
+**Durum:** Aşama tamamlandı. PR #7 `main`'e squash merge edildi (`fffdded`); PR'da
+Backend, Frontend, Compose ve E2E işleri `SUCCESS`, merge sonrası `main` push CI'ı
+`success` (2026-11-20'de `gh` ile doğrulandı). Hata bulunmadı. Aşağıdaki doğrulama
+kaydı merge öncesi yerel çalıştırmalara aittir.
 
 - **Claude'un yerelde koşturdukları:** `gofmt -l`, `go vet ./...` ve `go mod tidy -diff`
   temiz. `make test` ve `go test -count=1 ./...` (unit, entegrasyon ve backend e2e)
@@ -1030,16 +1253,21 @@ bildirilecek. Hata bulunmadı.
   gerek görmüyor: loglar yapılandırılmış `slog` çıktısıyla `docker compose logs`
   üzerinden okunuyor ve metrikler Prometheus'ta. Loki eklenmeyecek.
 - **Doğrulanamayan / bekleyen:**
-  - GitHub Actions'ın kendisi (PR üzerinden Oğuzhan doğrulayacak; yeni adımlar ilk kez
-    orada koşacak: nginx build, `promtool` imajı, `e2e-observability`, görsel testler).
-  - Gerçek `git clone` ile (commit sonrası) kurulum denemesi.
-  - Gerçek Claude adaptörü yok (`LLM_PROVIDER` yalnızca `mock`): teslimin en büyük eksiği.
-  - `ai-sessions/`: bu oturumun `/export`'u eklenecek.
-- **Sıradaki iş:** PR aç, CI sonucunu doğrula (sonuç **5. oturumda** bildirilecek);
-  **5. oturum: frontend tasarım ve bileşen modernleştirme** (yukarıdaki "Frontend
-  iyileştirmeleri" bölümü, **ayrı yeni branch'te**); ardından gerçek Claude adaptörü (karar: SDK mı düz HTTP mi, anahtar
-  yönetimi); `ai-sessions/` export'ları (4. oturum Oğuzhan tarafından eklenecek); kalan
-  işler "Bu aşamada kalan işler" ve "Sonra yapılacaklar" listelerinde.
+  - ~~GitHub Actions'ın kendisi~~ **Doğrulandı** (PR #7 ve `main` push: tüm işler yeşil).
+  - Gerçek `git clone` ile kurulum denemesi (artık `main`'de yapılabilir; henüz yapılmadı).
+  - ~~Dev veritabanında migration `00003` ve `00004`~~ Oğuzhan uyguladığını bildirdi
+    (Claude doğrulayamaz).
+  - Gerçek Claude adaptörü yok (`LLM_PROVIDER` yalnızca `mock`); API anahtarı olmadığı için
+    Oğuzhan'ın kararıyla yapılmıyor. CASE.md zorunlu tutmaz, bilinçli sınırlama olarak
+    README'de yazılı (bkz. "Sonra yapılacaklar").
+  - `ai-sessions/`: 5. oturumun `/export`'u oturum sonunda eklenecek.
+- **Sıradaki iş:** `feat/frontend-modernization` için PR açılması, CI sonucunun doğrulanması ve
+  squash merge (Oğuzhan; dev veritabanına migration `00005`'i de o uygular: `docker compose up
+  migrate`, ardından `docker compose up -d --build api web`). Dev veritabanına `00005`'i
+  uyguladığını Oğuzhan bildirdi (2026-11-20; Claude doğrulayamaz). Gerçek Claude adaptörü
+  (`feat/claude-adapter`) isteğe bağlıdır ve API anahtarı olmadığı için yapılmıyor; kalan işler
+  "Sonra yapılacaklar" ve "Açık konular" listelerinde. 5. oturumun `/export`'u `ai-sessions/`'a
+  Oğuzhan tarafından eklenir.
 
 ### Önceki aşama: `feat/content-approval`
 

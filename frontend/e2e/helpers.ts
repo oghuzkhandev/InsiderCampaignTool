@@ -21,12 +21,14 @@ export async function expectAudience(page: Page) {
 /**
  * Bir kullanıcı gibi yeni bir kampanya oluşturur: brief yaz, kitleyi hesapla,
  * içerik ekranına geç. Her test kendi kampanyasını oluşturur; testler birbirinin
- * kampanyasına bağımlı değildir. Kampanya kimliğini döndürür.
+ * kampanyasına bağımlı değildir. Kampanya kimliğini döndürür. `brief` verilmezse CASE.md'deki
+ * örnek brief kullanılır; verilen brief de aynı koşulları içermelidir (kesin kitle sayıları
+ * bunlara bağlıdır), yalnızca sonuna ayırt edici bir ek konabilir.
  */
-export async function createCampaign(page: Page): Promise<string> {
+export async function createCampaign(page: Page, brief: string = BRIEF): Promise<string> {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Kampanya önizleme' })).toBeVisible()
-  await page.getByLabel('Brief').fill(BRIEF)
+  await page.getByLabel('Brief').fill(brief)
   await page.getByRole('button', { name: 'Kitleyi hesapla' }).click()
   await expectAudience(page)
 
@@ -46,8 +48,8 @@ export async function generateContent(page: Page) {
  * Bir kullanıcı gibi kampanyayı oluşturur, içerik üretir ve onaylar; onayın
  * kuyruğa aldığı mesaj sayısını doğrular. Kampanya kimliğini döndürür.
  */
-export async function approvedCampaign(page: Page): Promise<string> {
-  const id = await createCampaign(page)
+export async function approvedCampaign(page: Page, brief: string = BRIEF): Promise<string> {
+  const id = await createCampaign(page, brief)
   await generateContent(page)
   await approve(page, 1)
   await expect(page.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 1')

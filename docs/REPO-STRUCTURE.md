@@ -18,7 +18,8 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
       kodları). İş kuralı ve SQL içermez.
     - `database` — PostgreSQL bağlantısı ve migration çalıştırma.
     - `seed` — Demo kullanıcıları ve kanal izinleri.
-    - `campaign` — Draft kampanyayı kaydetme ve kimliğiyle okuma; doğrulanmış
+    - `campaign` — Draft kampanyayı kaydetme, kimliğiyle okuma ve son kampanyaları
+      listeleme (`Store.List`, CMP-001); doğrulanmış
       içerik sürümlerini kilit altında kaydetme, son sürümü ve en uzun adı
       okuma (`ContentStore`); onay (`Approver`): kilit altında sürüm ve
       alıcı doğrulaması, onay ve `queued` mesajların tek transaction'da yazımı.
@@ -65,19 +66,47 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
   - frontend/src/segment/ — Segmentin okunur özeti ve sebep kodlarının Türkçe
     açıklamaları.
   - frontend/src/content/ — İçerik taslağı yardımcıları (sınırlar, uzunluk,
-    akış parçalarının uygulanması) ve içerik/onay hata metinleri.
+    akış parçalarının uygulanması, örnek adla önizleme metni) ve içerik/onay hata metinleri.
+    `useUnsavedChangesGuard` kaydedilmemiş metin varken sayfadan ayrılırken uyarır
+    (sekmeyi kapatma/yenileme için tarayıcı uyarısı, uygulama içi gezinme için onay).
   - frontend/src/delivery/ — Gönderim takibi (TRK-001) mantığı: mesaj sayılarından
     özetler (`summary.ts`), Türkçe metinler (`messages.ts`) ve canlı takip
     bağlantısının yaşam döngüsü (`useDeliveryStream.ts`: yeniden bağlanma, takılan
     bağlantıyı fark etme, kampanya değişince eski akışı kapatma).
+  - frontend/src/campaign/ — Kampanya akışının dört adımı (Kitle, İçerik, Onay, Gönderim)
+    ve bir kampanyanın hangi adımda olduğunu durumdan türeten saf mantık (`steps.ts`).
   - frontend/src/components/ ve views/ — Bileşenler ve ekranlar:
     `CampaignPreviewView` (`/`, brief ve kitle önizleme), `CampaignView`
-    (`/campaigns/:id`, içerik üretimi, düzenleme ve onay) ve
+    (`/campaigns/:id`, içerik üretimi, düzenleme ve onay; geniş ekranda iki sütun) ve
     `DeliveryDashboardView` (`/campaigns/:id/delivery`, canlı gönderim takibi;
-    `DeliveryConnectionStatus` ve `DeliveryCounts` bileşenleriyle, shadcn
-    bileşenleri kullanılarak). Testler yanındaki `__tests__` klasöründedir.
+    `DeliveryConnectionStatus` ve `DeliveryCounts` bileşenleriyle). Hepsi shadcn
+    bileşenleriyle yazılır, scoped CSS yoktur (ADR-021). Üç ekranın ortak parçaları:
+    `PageHeader` (başlık, durum rozeti, açıklama), `CampaignSteps` (adım göstergesi) ve
+    `StepNav` (her aşamada Türkçe "Geri" / "İleri"; hedef açılamıyorsa kapalı düğme ve
+    nedeni; kampanya ekranında dar ekranda alta yapışır). `MessagePreview` mesajın örnek
+    adla ({{first_name}} yerine "Ayşe") nasıl görüneceğini gösterir ve düzenleyicide ile
+    onay özetinde (`ApprovePanel`: sürüm, tahmini alıcılar, önizleme) kullanılır.
+    Uygulama kabuğu `App.vue`'dadır: üst başlık (kenar çubuğu düğmesi ve ana sayfaya dönen
+    "Campaign Tool" bağlantısı) ve `AppSidebar` (shadcn `Sidebar`: "Yeni kampanya" ve
+    `RecentCampaigns`). `RecentCampaigns` "Son kampanyalar" listesidir (CMP-001; taslak
+    kampanya kampanya ekranına, onaylı olan gönderim takibine açılır; hedefler
+    `campaign/links.ts`'te). Liste, ekranların `campaign/recent.ts` üzerinden verdiği haberle
+    ve sayfa değişince yenilenir. `StatusBadge` kampanya durumunu simge, metin ve tonla
+    gösterir. `ErrorPanel` hata gösteren ortak `Alert`'tir. Testler yanındaki `__tests__`
+    klasöründedir.
+  - frontend/src/exampleBrief.ts ve `exampleBriefs.json` — Boş ekranda önerilen 2-3 örnek
+    brief. Liste tek kaynaktır: backend entegrasyon testi
+    (`backend/tests/integration/example-briefs_test.go`) aynı JSON dosyasını okuyup her
+    örneğin desteklendiğini ve demo verisinde alıcı bulduğunu doğrular.
   - frontend/e2e/ — Playwright uçtan uca testleri ve yardımcıları. Her test kendi
     kampanyasını oluşturur. `make e2e` ile izole ortama karşı koşar (ADR-024).
+    `visual-themes.spec.ts` ana ekranların açık ve koyu temada kontrastını ve imleç
+    kuralını, `mobile-layout.spec.ts` 360 px'te yatay taşma olmadığını ve ana eylemlerin
+    dokunma hedefi boyutunu (≥ 40 px) ve uzun brief/hata metinlerinin taşmadığını,
+    `flow-navigation.spec.ts` örnek brief önerilerini, Geri/İleri gezintisini ve
+    kaydedilmemiş değişiklik uyarısını, `campaign-list.spec.ts` "Son kampanyalar" listesini
+    ve `GET /api/campaigns` sınırlarını, `app-shell.spec.ts` üst başlığı ("Campaign Tool"
+    ana sayfaya döner) ve kenar çubuğunu (açma/kapama, liste güncellenmesi, uyarı) sınar.
     `delivery-dashboard.spec.ts` gönderim takibinin hata, yeniden bağlanma ve mobil
     senaryolarını sınar: yalnızca olay akışı taklit edilir, kampanya ve onay
     gerçektir. `delivery-real.spec.ts` (`@real`) hiçbir şeyi taklit etmez: gerçek

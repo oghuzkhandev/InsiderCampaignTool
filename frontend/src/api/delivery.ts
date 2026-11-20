@@ -37,11 +37,28 @@ export interface FailureReasonCounts {
   rejected: number
 }
 
+export const CHANNEL_KEYS = ['sms', 'email'] as const
+export type ChannelKey = (typeof CHANNEL_KEYS)[number]
+
+/** Durum sayılarının kanal kırılımı; her durum için iki kanalın toplamı `messages`'a eşittir. */
+export type ChannelDelivery = Record<ChannelKey, DeliveryCounts>
+
 /** Her saniye (ve bağlantı kurulunca ilk olarak) gelen güncel durum görüntüsü. */
 export interface DeliverySnapshot {
   status: CampaignStatus
   messages: DeliveryCounts
   failures: FailureReasonCounts
+  /**
+   * SMS ve e-posta kırılımı. Sunucu her görüntüde yollar; alan eksikse (eski bir sunucu) arayüz
+   * kanal bölümünü göstermez.
+   */
+  channels?: ChannelDelivery
+  /**
+   * Yeniden denemeyle toparlanan mesajlar: `sent` olan ve ikinci veya sonraki denemede
+   * (`attempts > 1`) sonuçlananlar. İlk denemenin neden tamamlanamadığını ayırmaz (geçici hata,
+   * kayıp yanıt veya reaper olabilir). `sent`'i aşamaz. Alan eksikse gösterilmez.
+   */
+  recovered?: number
 }
 
 const eventsUrl = (id: string) => `/api/campaigns/${encodeURIComponent(id)}/events`
@@ -133,6 +150,20 @@ function parseFailures(data: unknown): FailureReasonCounts | undefined {
   return { exhausted, rejected }
 }
 
+function parseChannels(data: unknown): ChannelDelivery | undefined {
+  if (!isRecord(data)) return undefined
+  const sms = parseCounts(data.sms)
+  const email = parseCounts(data.email)
+  return sms && email ? { sms, email } : undefined
+}
+
+const COUNT_KEYS = ['queued', 'retrying', 'sending', 'sent', 'failed', 'skipped'] as const
+
+/** Her durum için iki kanalın toplamı kampanyanın toplamına eşit mi? */
+function channelsMatchTotals(channels: ChannelDelivery, totals: DeliveryCounts): boolean {
+  return COUNT_KEYS.every((key) => channels.sms[key] + channels.email[key] === totals[key])
+}
+
 function parseSnapshot(status: number, data: unknown): DeliverySnapshot {
   if (!isRecord(data) || !isCampaignStatus(data.status)) throw invalidResponse(status)
   const messages = parseCounts(data.messages)
@@ -141,7 +172,20 @@ function parseSnapshot(status: number, data: unknown): DeliverySnapshot {
   if (!messages || !failures || failures.exhausted + failures.rejected > messages.failed) {
     throw invalidResponse(status)
   }
-  return { status: data.status, messages, failures }
+  const snapshot: DeliverySnapshot = { status: data.status, messages, failures }
+
+  // Kanal kırılımı ve toparlanan sayısı isteğe bağlıdır (eski sunucu yollamayabilir) ama varsa
+  // tutarlı olmalıdır: kanalların toplamı toplama eşit, toparlanan gönderilenden çok olamaz.
+  if (data.channels !== undefined) {
+    const channels = parseChannels(data.channels)
+    if (!channels || !channelsMatchTotals(channels, messages)) throw invalidResponse(status)
+    snapshot.channels = channels
+  }
+  if (data.recovered !== undefined) {
+    if (!isCount(data.recovered) || data.recovered > messages.sent) throw invalidResponse(status)
+    snapshot.recovered = data.recovered
+  }
+  return snapshot
 }
 
 /** SSE `error` olayını ApiError'a çevirir (toApiError ile aynı hata biçimi). */

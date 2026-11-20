@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { CheckIcon, ShieldCheckIcon, XIcon } from '@lucide/vue'
 import type { Audience } from '@/api/campaigns'
+import type { ContentFields } from '@/api/content'
+import MessagePreview from '@/components/MessagePreview.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 const props = defineProps<{
   /** Onaylanacak içerik sürümü. */
   version: number
+  /** Onaylanacak (kaydedilmiş) sürümün metinleri; önizleme bunlardan üretilir. */
+  content: ContentFields
   /** Önizlemedeki kitle sayıları; kesin sayı onay anında belirlenir. */
   audience: Audience
   /** Onay şu an yapılamaz (kaydedilmemiş değişiklik, işlem sürüyor). */
@@ -13,6 +21,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ approve: [] }>()
 
+const nf = new Intl.NumberFormat('tr-TR')
 const confirming = ref(false)
 
 // Sürüm değişirse (yeni kayıt) önceki sürüm için açılmış onay isteği geçersizdir.
@@ -36,89 +45,91 @@ function confirm() {
 </script>
 
 <template>
-  <section class="approve" aria-labelledby="approve-title">
-    <h2 id="approve-title">Onay</h2>
-    <button
-      v-if="!confirming"
-      type="button"
-      class="primary"
-      :disabled="disabled || pending"
-      @click="confirming = true"
-    >
-      Onayla (sürüm {{ version }})
-    </button>
-    <div v-else class="confirm" role="alertdialog" aria-labelledby="confirm-text">
-      <p id="confirm-text">
-        Sürüm {{ version }} onaylanacak ve izinli alıcılar için gönderim işleri kuyruğa alınacak
-        (önizleme: yaklaşık {{ audience.sms }} SMS, {{ audience.email }} e-posta; kesin sayı onay
-        anındaki izin ve adres durumuna göre belirlenir). Onaydan sonra içerik değiştirilemez.
-      </p>
-      <div class="actions">
-        <button type="button" class="primary" :disabled="pending" @click="confirm">
-          Onayla ve kuyruğa al
-        </button>
-        <button type="button" class="secondary" :disabled="pending" @click="confirming = false">
-          Vazgeç
-        </button>
-      </div>
-    </div>
-    <p v-if="disabled && !pending" class="hint">
-      Onaylamak için önce değişiklikleri kaydedin; yalnızca kaydedilmiş son sürüm onaylanabilir.
-    </p>
-  </section>
-</template>
+  <Card role="region" aria-labelledby="approve-title">
+    <CardHeader>
+      <CardTitle class="flex items-center gap-2">
+        <ShieldCheckIcon class="text-primary size-5" aria-hidden="true" />
+        <h2 id="approve-title">Onay</h2>
+      </CardTitle>
+      <CardDescription data-testid="approve-version">
+        Sürüm {{ version }} onaylanacak.
+      </CardDescription>
+    </CardHeader>
 
-<style scoped>
-.approve {
-  display: grid;
-  gap: 0.75rem;
-}
-h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-}
-.confirm {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem;
-  background: var(--app-warning-bg);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-}
-.confirm p {
-  margin: 0;
-}
-.actions {
-  display: flex;
-  gap: 0.6rem;
-}
-.primary,
-.secondary {
-  padding: 0.6rem 1.2rem;
-  font: inherit;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.primary {
-  justify-self: start;
-  color: var(--app-on-accent);
-  background: var(--app-accent);
-  border: none;
-}
-.secondary {
-  color: inherit;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-}
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.hint {
-  margin: 0;
-  color: var(--app-muted);
-  font-size: 0.9rem;
-}
-</style>
+    <CardContent class="grid gap-4">
+      <!-- Onaydan önce görülmesi gerekenler aynı yerde: hangi sürüm, kimlere ve ne gidecek. -->
+      <dl class="grid gap-1 text-sm" data-testid="approve-recipients">
+        <div class="flex items-baseline justify-between gap-3">
+          <dt class="text-muted-foreground">Tahmini SMS alıcısı</dt>
+          <dd class="font-bold tabular-nums" data-testid="approve-sms">
+            ≈ {{ nf.format(audience.sms) }}
+          </dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-3">
+          <dt class="text-muted-foreground">Tahmini e-posta alıcısı</dt>
+          <dd class="font-bold tabular-nums" data-testid="approve-email">
+            ≈ {{ nf.format(audience.email) }}
+          </dd>
+        </div>
+      </dl>
+      <p class="text-muted-foreground -mt-2 text-xs">
+        Sayılar önizlemeye göredir; kesin sayı onay anındaki izin ve adres durumuna göre belirlenir.
+      </p>
+
+      <MessagePreview compact :fields="content" />
+
+      <Button
+        v-if="!confirming"
+        type="button"
+        size="lg"
+        class="w-full"
+        data-testid="approve-open"
+        :disabled="disabled || pending"
+        @click="confirming = true"
+      >
+        <ShieldCheckIcon aria-hidden="true" />
+        {{ pending ? 'Onaylanıyor…' : `Onayla (sürüm ${version})` }}
+      </Button>
+
+      <!-- Alert kendiliğinden role="alert" taşır; bu bir onay iletişimi olduğu için
+           alertdialog rolüyle değiştirilir. -->
+      <Alert v-else role="alertdialog" aria-labelledby="confirm-text">
+        <AlertDescription class="text-foreground grid gap-4">
+          <p id="confirm-text">
+            Sürüm {{ version }} onaylanacak ve izinli alıcılar için gönderim işleri kuyruğa alınacak
+            (önizleme: yaklaşık {{ audience.sms }} SMS, {{ audience.email }} e-posta; kesin sayı
+            onay anındaki izin ve adres durumuna göre belirlenir). Onaydan sonra içerik
+            değiştirilemez.
+          </p>
+          <div class="flex flex-col gap-2">
+            <Button
+              type="button"
+              size="lg"
+              data-testid="approve-confirm"
+              :disabled="pending"
+              @click="confirm"
+            >
+              <CheckIcon aria-hidden="true" />
+              Onayla ve kuyruğa al
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              data-testid="approve-cancel"
+              :disabled="pending"
+              @click="confirming = false"
+            >
+              <XIcon aria-hidden="true" />
+              Vazgeç
+            </Button>
+          </div>
+        </AlertDescription>
+      </Alert>
+
+      <p v-if="disabled && !pending" class="text-muted-foreground text-sm">
+        Onaylamak için önce değişiklikleri kaydedin; yalnızca kaydedilmiş son sürüm onaylanabilir.
+      </p>
+    </CardContent>
+  </Card>
+</template>

@@ -22,6 +22,24 @@ temel metrikleri health ve metrics endpoint'lerinden okunabilir.
   Bu işler bekleyen sayıya ikinci kez dahil edilmez.
 - Diğer sayılar sırasıyla `sending`, `sent`, `failed` ve `skipped`
   durumundaki mesaj kayıtlarından hesaplanır.
+- Snapshot sayıları kanal bazında da verilir (`channels.sms`, `channels.email`): aynı altı
+  durum, her durum için iki kanalın toplamı kampanya toplamına eşittir. Mesajı olmayan kanal
+  sıfırlarla gelir. Dashboard SMS ve e-postayı ayrı gösterir (toplam, ilerleme, gönderilen,
+  başarısız, tamamlanmamış; atlanan varsa); mesajı olmayan kanal için "Bu kanalda mesaj yok"
+  der.
+- Snapshot, yeniden denemeyle toparlanan mesaj sayısını da taşır (`recovered`): `status = sent`
+  ve `attempts > 1` olan işler, yani `sent` olmadan önce birden fazla kez işlenmeye alınanlar
+  (`attempts` her claim'de artar). İkinci claim geçici provider hatası, kayıp yanıt veya
+  lease dolması / worker çökmesi sonrası olur. Sayı "ilk denemede tamamlanamadı, sonraki
+  denemede gönderildi olarak kaydedildi" demektir; **"ilk istek başarısız oldu" demek değildir**
+  (kayıp yanıtta provider ilk isteği kabul etmiş olabilir), nedeni ayırmaz ve provider çağrı
+  sayısı değildir. Idempotency nedeniyle bu mesajlar da en çok bir kez teslim edilmiştir.
+  Gönderilen sayıya ikinci kez eklenmez, gönderilenden çok olamaz. Dashboard sıfırdan büyükse
+  "Yeniden denemeyle toparlanan: N mesaj (ilk denemede tamamlanamadı, yeniden denemeyle
+  gönderildi)" der; gönderim sonu özeti de gönderilen satırında söyler ve ilk denemenin
+  "başarısız" olduğunu iddia etmez. Sıfır, "alan yok"tan farklıdır; sunucu alanı her görüntüde yollar.
+- Kanalların toplamı toplama eşit değilse veya toparlanan gönderilenden fazlaysa görüntü
+  arayüzce geçersiz sayılır. Alanlar yoksa (eski sunucu) dashboard bu bölümleri göstermeden çalışır.
 - Bağlantı koptuğunda yeniden kurulur. Yeni bağlantı güncel snapshot ile
   başlar; arada kaçırılan olayların birikmesi gerekmez.
 - Sayfa yenilendiğinde kampanya ve son doğrulanmış içerik
@@ -58,6 +76,16 @@ temel metrikleri health ve metrics endpoint'lerinden okunabilir.
   doğrula. Yeniden denenecek işlerin bekleyen sayıya dahil edilmediğini test et.
 - İlk bağlantının güncel snapshot döndürdüğünü ve sonraki snapshot'ların
   önceki değerleri değiştirdiğini doğrula.
+- İki kanala dağılmış, her durumdan mesaj içeren sabit bir veri setiyle kanal kırılımını ve
+  her durum için kanalların toplamının kampanya toplamına eşit olduğunu doğrula
+  (`tests/integration/delivery-snapshot_test.go`). Yalnızca bir kanalda mesaj olan kampanyada
+  diğer kanalın sıfır olduğunu ve başka kampanyanın mesajlarının karışmadığını doğrula.
+- `recovered` yalnızca `sent` ve `attempts > 1` mesajları saydığını (ilk denemede gönderilen,
+  başarısız, bekleyen ve atlanan `attempts > 1` mesajlar sayılmaz) ve gönderilenden çok
+  olamadığını doğrula. Yanıt kaybı senaryosunda (`accept_then_drop`) her mesajın toparlanan
+  sayıldığını gerçek worker ve provider ile doğrula; bu senaryoda provider ilk isteği kabul
+  etmiştir, yani sayının "ilk istek başarısız oldu" anlamına gelmediği de görülür, arayüz metni
+  bunu iddia etmez (`tests/integration/delivery_test.go`, `e2e/delivery-real.spec.ts`).
 - SSE bağlantısını kesip yeniden kur; güncel sayıların geldiğini ve önceki
   sayıların ikinci kez eklenmediğini doğrula.
 - Sayfayı yenile; kampanya ve son doğrulanmış içeriğin geri geldiğini doğrula.

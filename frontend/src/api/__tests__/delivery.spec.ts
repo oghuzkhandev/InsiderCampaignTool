@@ -180,6 +180,85 @@ describe('durum görüntüleri', () => {
   })
 })
 
+describe('kanal kırılımı ve toparlanan sayısı', () => {
+  const sms = { queued: 1, retrying: 1, sending: 1, sent: 25, failed: 1, skipped: 0 }
+  const email = { queued: 2, retrying: 0, sending: 1, sent: 15, failed: 1, skipped: 1 }
+  // sms + email = messages (body() içindeki sayılar)
+  const channels = { sms, email }
+
+  it('kanal kırılımını ve toparlanan sayısını doğrulanmış tiplerle verir', async () => {
+    fetchMock.mockResolvedValue(sseResponse([snapshot(body({ channels, recovered: 12 }))]))
+    const { received } = await collect()
+
+    expect(received[0]?.channels).toEqual(channels)
+    expect(received[0]?.recovered).toBe(12)
+  })
+
+  it('alanlar yoksa (eski sunucu) görüntüyü yine kabul eder; alanlar tanımsız kalır', async () => {
+    fetchMock.mockResolvedValue(sseResponse([snapshot(body())]))
+    const { received, error } = await collect()
+
+    expect(received).toHaveLength(1)
+    expect(received[0]?.channels).toBeUndefined()
+    expect(received[0]?.recovered).toBeUndefined()
+    expect((error as ApiError).code).toBe('STREAM_INTERRUPTED')
+  })
+
+  it('toparlanan sıfır geçerlidir (sıfır, "alan yok"tan ayrıdır)', async () => {
+    fetchMock.mockResolvedValue(sseResponse([snapshot(body({ channels, recovered: 0 }))]))
+    const { received } = await collect()
+    expect(received[0]?.recovered).toBe(0)
+  })
+
+  it('toparlanan gönderilene eşitse kabul eder (hepsi yeniden denemeyle toparlandı)', async () => {
+    fetchMock.mockResolvedValue(sseResponse([snapshot(body({ channels, recovered: 40 }))]))
+    const { received } = await collect()
+    expect(received[0]?.recovered).toBe(40)
+  })
+
+  it.each([
+    ['toparlanan gönderilenden fazla', { channels, recovered: 41 }],
+    ['toparlanan negatif', { channels, recovered: -1 }],
+    ['toparlanan tam sayı değil', { channels, recovered: 1.5 }],
+    ['toparlanan sayı değil', { channels, recovered: '3' }],
+    [
+      'kanallar toplama eşit değil (SMS gönderilen 1 fazla)',
+      {
+        channels: { sms: { ...sms, sent: 26 }, email },
+      },
+    ],
+    [
+      'kanallar toplama eşit değil (e-posta bekleyen eksik)',
+      {
+        channels: { sms, email: { ...email, queued: 1 } },
+      },
+    ],
+    ['e-posta kanalı yok', { channels: { sms } }],
+    ['SMS kanalı yok', { channels: { email } }],
+    [
+      'kanal sayısı negatif',
+      { channels: { sms: { ...sms, sent: -1 }, email: { ...email, sent: 41 } } },
+    ],
+    ['kanal sayısı tam sayı değil', { channels: { sms: { ...sms, sent: 25.5 }, email } }],
+    ['channels nesne değil', { channels: 'sms' }],
+    ['channels null', { channels: null }],
+  ])('tutarsız veya bozuk alanı reddeder: %s', async (_name, extra) => {
+    fetchMock.mockResolvedValue(sseResponse([snapshot(body(extra))]))
+    const { received, error } = await collect()
+
+    expect(received).toHaveLength(0)
+    expect((error as ApiError).code).toBe('UNEXPECTED_RESPONSE')
+  })
+
+  it('bilinmeyen kanalları yok sayar; yalnızca sms ve e-posta okunur', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse([snapshot(body({ channels: { ...channels, push: sms } }))]),
+    )
+    const { received } = await collect()
+    expect(Object.keys(received[0]?.channels ?? {}).sort()).toEqual(['email', 'sms'])
+  })
+})
+
 describe('akışın sonu ve hatalar', () => {
   it('sunucu akışı kapatırsa STREAM_INTERRUPTED (görüntüler yine de iletilir)', async () => {
     fetchMock.mockResolvedValue(sseResponse([snapshot(body())]))

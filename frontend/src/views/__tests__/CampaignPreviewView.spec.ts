@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RouterLinkStub, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import CampaignPreviewView from '../CampaignPreviewView.vue'
 import { campaignBody, deferred, errorResponse, jsonResponse } from '@/__tests__/helpers'
+import { campaignListVersion } from '@/campaign/recent'
 
 const fetchMock = vi.fn<typeof fetch>()
 
@@ -27,7 +28,41 @@ const textarea = (w: VueWrapper) => w.get('textarea').element as HTMLTextAreaEle
 const requestedBriefs = () =>
   fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).brief as string)
 
+const stepStates = (w: VueWrapper) =>
+  w.findAll('[data-testid="campaign-steps"] li').map((li) => li.attributes('data-status'))
+
 describe('CampaignPreviewView', () => {
+  describe('üst bölüm ve adım göstergesi', () => {
+    it('başlık ve kısa açıklama görünür; kampanya yokken rozet yok, kitle adımı sürer', () => {
+      const w = mountView()
+
+      expect(w.get('h1').text()).toBe('Kampanya önizleme')
+      expect(w.get('[data-testid="page-description"]').text()).toContain('kitleyi')
+      expect(w.find('[data-testid="campaign-state"]').exists()).toBe(false)
+      expect(stepStates(w)).toEqual(['current', 'upcoming', 'upcoming', 'upcoming'])
+    })
+
+    it('kampanya kaydedilince Taslak rozeti çıkar ve içerik adımı sürer', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(201, campaignBody()))
+      const w = mountView()
+
+      await submit(w, 'İstanbul sepet')
+
+      expect(w.get('[data-testid="campaign-state"]').text()).toBe('Taslak')
+      expect(stepStates(w)).toEqual(['done', 'current', 'upcoming', 'upcoming'])
+    })
+
+    it('hata olursa kampanya oluşmadığı için rozet çıkmaz, kitle adımı sürer', async () => {
+      fetchMock.mockResolvedValue(errorResponse(500, 'INTERNAL'))
+      const w = mountView()
+
+      await submit(w, 'İstanbul sepet')
+
+      expect(w.find('[data-testid="campaign-state"]').exists()).toBe(false)
+      expect(stepStates(w)).toEqual(['current', 'upcoming', 'upcoming', 'upcoming'])
+    })
+  })
+
   describe('başarılı önizleme', () => {
     it('kırpılmış brief gönderir, üç kitle sayısını ve anlaşılan koşulları gösterir', async () => {
       fetchMock.mockResolvedValue(jsonResponse(201, campaignBody()))
@@ -39,7 +74,7 @@ describe('CampaignPreviewView', () => {
       expect(w.get('[data-testid="total"]').text()).toBe('190')
       expect(w.get('[data-testid="sms"]').text()).toBe('140')
       expect(w.get('[data-testid="email"]').text()).toBe('150')
-      const lines = w.findAll('#segment-title ~ ul li').map((li) => li.text())
+      const lines = w.findAll('[aria-labelledby="segment-title"] li').map((li) => li.text())
       expect(lines).toEqual([
         'Şehir: İstanbul',
         'Son 30 günde sepete ürün eklemiş',
@@ -61,7 +96,31 @@ describe('CampaignPreviewView', () => {
         name: 'campaign',
         params: { id: '498882b6-2221-4589-a99f-67ceb68c59c2' },
       })
-      expect(link.text()).toBe('İçeriği hazırla')
+      expect(link.text()).toBe('İleri: İçeriği hazırla')
+    })
+
+    it('"İleri" kitle hesaplanana kadar kapalıdır ve nedenini söyler; "Geri" yoktur (ilk aşama)', async () => {
+      const w = mountView()
+      const next = w.get('[data-testid="nav-next-disabled"]')
+
+      expect(next.attributes('disabled')).toBeDefined()
+      expect(next.text()).toBe('İleri: İçeriği hazırla')
+      expect(w.get('#step-nav-next-hint').text()).toBe('Önce kitleyi hesaplayın.')
+      expect(w.text()).not.toContain('Geri')
+
+      fetchMock.mockResolvedValue(jsonResponse(201, campaignBody()))
+      await submit(w, 'İstanbul sepet')
+
+      expect(w.find('[data-testid="nav-next-disabled"]').exists()).toBe(false)
+      expect(w.get('[data-testid="nav-next"]').text()).toBe('İleri: İçeriği hazırla')
+    })
+
+    it('hatada "İleri" kapalı kalır (kampanya oluşmadı)', async () => {
+      fetchMock.mockResolvedValue(errorResponse(500, 'INTERNAL'))
+      const w = mountView()
+      await submit(w, 'İstanbul sepet')
+      expect(w.find('[data-testid="nav-next"]').exists()).toBe(false)
+      expect(w.find('[data-testid="nav-next-disabled"]').exists()).toBe(true)
     })
 
     it('sıfır eşleşmeyi hata değil önizleme olarak gösterir', async () => {
@@ -74,7 +133,7 @@ describe('CampaignPreviewView', () => {
 
       expect(w.get('[data-testid="total"]').text()).toBe('0')
       expect(w.text()).toContain('hiç kullanıcı eşleşmedi')
-      expect(w.find('.error-panel').exists()).toBe(false)
+      expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
     })
 
     it('istek sürerken durum gösterir ve düğmeyi devre dışı bırakır', async () => {
@@ -119,7 +178,7 @@ describe('CampaignPreviewView', () => {
 
       await submit(w, 'Mavi sevenlere indirim, ürün kategorisine göre')
 
-      const panel = w.get('.error-panel')
+      const panel = w.get('[data-testid="error-panel"]')
       expect(panel.text()).toContain("Brief'ten geçerli bir kitle tanımı çıkarılamadı.")
       const items = panel.findAll('li').map((li) => li.text())
       expect(items[0]).toContain('"favorite_color" alanı desteklenmiyor')
@@ -137,13 +196,13 @@ describe('CampaignPreviewView', () => {
       fetchMock.mockResolvedValueOnce(errorResponse(422, 'SEGMENT_INVALID', reasons))
       const w = mountView()
       await submit(w, 'Mavi sevenler')
-      expect(w.find('.retry').exists()).toBe(false)
+      expect(w.find('[data-testid="error-retry"]').exists()).toBe(false)
 
       fetchMock.mockResolvedValueOnce(jsonResponse(201, campaignBody()))
       await submit(w, 'İstanbul sepet')
 
       expect(requestedBriefs()).toEqual(['Mavi sevenler', 'İstanbul sepet'])
-      expect(w.find('.error-panel').exists()).toBe(false)
+      expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
       expect(w.get('[data-testid="total"]').text()).toBe('190')
     })
 
@@ -157,8 +216,8 @@ describe('CampaignPreviewView', () => {
 
       await submit(w, 'x')
 
-      expect(w.find('.error-panel img').exists()).toBe(false)
-      expect(w.get('.error-panel').text()).toContain('<img src=x onerror=alert(1)>')
+      expect(w.find('[data-testid="error-panel"] img').exists()).toBe(false)
+      expect(w.get('[data-testid="error-panel"]').text()).toContain('<img src=x onerror=alert(1)>')
     })
   })
 
@@ -174,16 +233,16 @@ describe('CampaignPreviewView', () => {
         const w = mountView()
         await submit(w, 'Bursa sepet')
 
-        expect(w.get('.error-panel').text()).toContain(text)
+        expect(w.get('[data-testid="error-panel"]').text()).toContain(text)
         expect(w.find('[data-testid="total"]').exists()).toBe(false)
         expect(textarea(w).value).toBe('Bursa sepet')
 
         fetchMock.mockResolvedValueOnce(jsonResponse(201, campaignBody()))
-        await w.get('.retry').trigger('click')
+        await w.get('[data-testid="error-retry"]').trigger('click')
         await flushPromises()
 
         expect(requestedBriefs()).toEqual(['Bursa sepet', 'Bursa sepet'])
-        expect(w.find('.error-panel').exists()).toBe(false)
+        expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
         expect(w.get('[data-testid="total"]').text()).toBe('190')
       },
     )
@@ -195,7 +254,7 @@ describe('CampaignPreviewView', () => {
       await w.get('textarea').setValue('Başka bir şey yazıldı')
 
       fetchMock.mockResolvedValueOnce(jsonResponse(201, campaignBody()))
-      await w.get('.retry').trigger('click')
+      await w.get('[data-testid="error-retry"]').trigger('click')
       await flushPromises()
 
       expect(requestedBriefs()).toEqual(['Bursa', 'Bursa'])
@@ -207,8 +266,8 @@ describe('CampaignPreviewView', () => {
 
       await submit(w, 'Bursa')
 
-      expect(w.get('.error-panel').text()).toContain('Sunucuya ulaşılamadı')
-      expect(w.find('.retry').exists()).toBe(true)
+      expect(w.get('[data-testid="error-panel"]').text()).toContain('Sunucuya ulaşılamadı')
+      expect(w.find('[data-testid="error-retry"]').exists()).toBe(true)
     })
 
     it('JSON olmayan 502 yanıtını beklenmeyen yanıt olarak gösterir', async () => {
@@ -217,8 +276,8 @@ describe('CampaignPreviewView', () => {
 
       await submit(w, 'Bursa')
 
-      expect(w.get('.error-panel').text()).toContain('beklenmeyen bir yanıt')
-      expect(w.find('.retry').exists()).toBe(true)
+      expect(w.get('[data-testid="error-panel"]').text()).toContain('beklenmeyen bir yanıt')
+      expect(w.find('[data-testid="error-retry"]').exists()).toBe(true)
     })
 
     it('bozuk başarılı yanıtta kitle sayısı göstermez', async () => {
@@ -228,7 +287,7 @@ describe('CampaignPreviewView', () => {
       await submit(w, 'Bursa')
 
       expect(w.find('[data-testid="total"]').exists()).toBe(false)
-      expect(w.find('.error-panel').exists()).toBe(true)
+      expect(w.find('[data-testid="error-panel"]').exists()).toBe(true)
     })
   })
 
@@ -237,13 +296,13 @@ describe('CampaignPreviewView', () => {
       fetchMock.mockResolvedValueOnce(errorResponse(504, 'LLM_TIMEOUT'))
       const w = mountView()
       await submit(w, 'Bursa')
-      expect(w.find('.error-panel').exists()).toBe(true)
+      expect(w.find('[data-testid="error-panel"]').exists()).toBe(true)
 
       const pending = deferred<Response>()
       fetchMock.mockReturnValueOnce(pending.promise)
       await submit(w, 'Bursa sepet')
 
-      expect(w.find('.error-panel').exists()).toBe(false)
+      expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
       expect(w.find('[role="status"]').exists()).toBe(true)
       pending.resolve(jsonResponse(201, campaignBody()))
     })
@@ -284,7 +343,7 @@ describe('CampaignPreviewView', () => {
       first.reject(new DOMException('Aborted', 'AbortError'))
       await flushPromises()
 
-      expect(w.find('.error-panel').exists()).toBe(false)
+      expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
       expect(w.get('[data-testid="total"]').text()).toBe('190')
     })
   })
@@ -297,5 +356,34 @@ describe('CampaignPreviewView', () => {
     w.unmount()
 
     expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true)
+  })
+})
+
+// "Son kampanyalar" listesi kenar çubuğundadır (AppSidebar). Bu ekran listeyi kendisi çizmez;
+// kampanya oluşunca yalnızca haber verir ve liste kendini yeniler.
+describe('kenar çubuğundaki son kampanyalar listesine haber verme', () => {
+  it('ekranda liste yoktur (liste kenar çubuğundadır)', () => {
+    const w = mountView()
+    expect(w.find('[data-testid="recent-campaigns"]').exists()).toBe(false)
+  })
+
+  it('kampanya oluşunca listeye haber verir', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(201, campaignBody()))
+    const w = mountView()
+    const before = campaignListVersion.value
+
+    await submit(w, 'İstanbul sepet')
+
+    expect(campaignListVersion.value).toBe(before + 1)
+  })
+
+  it('hata olunca kampanya oluşmadığı için haber vermez', async () => {
+    fetchMock.mockResolvedValue(errorResponse(422, 'BRIEF_EMPTY'))
+    const w = mountView()
+    const before = campaignListVersion.value
+
+    await submit(w, 'x')
+
+    expect(campaignListVersion.value).toBe(before)
   })
 })

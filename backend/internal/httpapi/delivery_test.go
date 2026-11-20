@@ -181,6 +181,12 @@ func TestDeliveryStreamSendsSnapshotImmediatelyWithSSEHeadersAndContractShape(t 
 		Status:   "sending",
 		Messages: campaign.DeliveryCounts{Queued: 3, Retrying: 1, Sending: 1, Sent: 2, Failed: 4, Skipped: 5},
 		Failures: campaign.FailureCounts{Exhausted: 1, Rejected: 2},
+		// Kanal kırılımı: her durum için SMS + e-posta = toplam.
+		Channels: campaign.ChannelDelivery{
+			SMS:   campaign.DeliveryCounts{Queued: 1, Retrying: 1, Sent: 1, Failed: 2, Skipped: 2},
+			Email: campaign.DeliveryCounts{Queued: 2, Sending: 1, Sent: 1, Failed: 2, Skipped: 3},
+		},
+		Recovered: 1,
 	}}}
 	// Aralık çok uzun: ilk görüntü zamanlayıcıyı beklemeden gelmeli.
 	srv := newDeliveryServer(t, reader, func(d *Deps) { d.DeliveryInterval = time.Hour })
@@ -191,7 +197,10 @@ func TestDeliveryStreamSendsSnapshotImmediatelyWithSSEHeadersAndContractShape(t 
 		t.Fatalf("ilk olay snapshot olmalı: %+v", ev)
 	}
 	// Sözleşme (ARCHITECTURE §5): bu birebir biçim arayüzün doğruladığı biçimdir.
-	want := `{"status":"sending","messages":{"queued":3,"retrying":1,"sending":1,"sent":2,"failed":4,"skipped":5},"failures":{"exhausted":1,"rejected":2}}`
+	want := `{"status":"sending","messages":{"queued":3,"retrying":1,"sending":1,"sent":2,"failed":4,"skipped":5},` +
+		`"failures":{"exhausted":1,"rejected":2},` +
+		`"channels":{"sms":{"queued":1,"retrying":1,"sending":0,"sent":1,"failed":2,"skipped":2},` +
+		`"email":{"queued":2,"retrying":0,"sending":1,"sent":1,"failed":2,"skipped":3}},"recovered":1}`
 	if ev.Data != want {
 		t.Fatalf("veri = %s\nbeklenen %s", ev.Data, want)
 	}
@@ -208,6 +217,23 @@ func TestDeliveryStreamSendsSnapshotImmediatelyWithSSEHeadersAndContractShape(t 
 	}
 	if reader.ids[0] != campaignID {
 		t.Errorf("kampanya kimliği iletilmeli: %v", reader.ids)
+	}
+}
+
+// Kanal kırılımı ve toparlanan sayısı her görüntüde bulunur: boş (sıfır) olsalar da alan
+// atlanmaz, arayüz "alan yok" ile "sıfır" arasında ayrım yapmak zorunda kalmaz.
+func TestDeliveryStreamSnapshotAlwaysCarriesChannelsAndRecovered(t *testing.T) {
+	reader := &fakeDeliveries{snaps: []campaign.DeliverySnapshot{{Status: "draft"}}}
+	srv := newDeliveryServer(t, reader, func(d *Deps) { d.DeliveryInterval = time.Hour })
+	s := openStream(t, srv.url())
+
+	ev := s.next(t, time.Second)
+
+	zero := `{"queued":0,"retrying":0,"sending":0,"sent":0,"failed":0,"skipped":0}`
+	want := `{"status":"draft","messages":` + zero + `,"failures":{"exhausted":0,"rejected":0},` +
+		`"channels":{"sms":` + zero + `,"email":` + zero + `},"recovered":0}`
+	if ev.Data != want {
+		t.Fatalf("veri = %s\nbeklenen %s", ev.Data, want)
 	}
 }
 

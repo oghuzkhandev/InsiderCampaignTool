@@ -27,7 +27,7 @@ test(
     const stream = page.waitForResponse(
       (response) => response.url().endsWith(`/api/campaigns/${id}/events`) && response.ok(),
     )
-    await page.getByRole('link', { name: 'Gönderimi izle' }).click()
+    await page.getByRole('link', { name: 'İleri: Gönderimi izle' }).click()
     await page.waitForURL(new RegExp(`/campaigns/${id}/delivery$`))
     await expect(page.getByRole('heading', { level: 1, name: 'Gönderim takibi' })).toBeVisible()
     expect((await stream).headers()['content-type']).toContain('text/event-stream')
@@ -45,6 +45,22 @@ test(
     ).toHaveAttribute('aria-valuenow', '100')
     await expect(page.getByTestId('note-exhausted')).toHaveCount(0)
     await expect(page.getByTestId('note-rejected')).toHaveCount(0)
+
+    // Kanal dağılımı gerçek veriden: 3 SMS ve 4 e-posta, hepsi gönderildi.
+    await expect(page.getByTestId('channel-sms-total')).toHaveText(`${EXPECTED.sms} mesaj`)
+    await expect(page.getByTestId('channel-sms-sent')).toHaveText(String(EXPECTED.sms))
+    await expect(page.getByTestId('channel-email-total')).toHaveText(`${EXPECTED.email} mesaj`)
+    await expect(page.getByTestId('channel-email-sent')).toHaveText(String(EXPECTED.email))
+    for (const channel of ['sms', 'email']) {
+      await expect(page.getByTestId(`channel-${channel}-failed`)).toHaveText('0')
+      await expect(page.getByTestId(`channel-${channel}-unfinished`)).toHaveText('0')
+    }
+    // Bu ortamda provider her mesajın ilk yanıtını düşürür (`accept_then_drop`): her mesaj ikinci
+    // denemede, aynı anahtarla gönderilir. Yani hepsi yeniden denemeyle toparlanmıştır.
+    await expect(page.getByTestId('recovered-count')).toHaveText(String(MESSAGES))
+    await expect(page.getByTestId('completion-lines')).toContainText(
+      `${MESSAGES} mesaj ilk denemede tamamlanamadı, yeniden denemeyle gönderildi`,
+    )
     await expect(page.getByTestId('completed-note')).toBeVisible()
     await expect(page.getByTestId('connection-status')).toContainText('Canlı takip kapatıldı')
 
@@ -55,5 +71,9 @@ test(
     await page.reload()
     await expect(page.getByTestId('campaign-status')).toHaveText('Tamamlandı')
     await expect(page.getByTestId('count-sent')).toHaveText(String(MESSAGES))
+    // Kanal dağılımı ve toparlanan sayısı da sunucudaki gerçek veriden yeniden kurulur.
+    await expect(page.getByTestId('channel-sms-sent')).toHaveText(String(EXPECTED.sms))
+    await expect(page.getByTestId('channel-email-sent')).toHaveText(String(EXPECTED.email))
+    await expect(page.getByTestId('recovered-count')).toHaveText(String(MESSAGES))
   },
 )

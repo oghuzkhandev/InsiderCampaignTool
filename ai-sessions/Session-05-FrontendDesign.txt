@@ -1,0 +1,1443 @@
+
+❯ Bu 5. session olacak bir önceki aşamadaki checksler geçti CI temiz şimdi
+  başlamadan önce claude.md ardından docs/progress.md docs/repo-structure.md
+  docs/case.md docs/architecture.md ve decisions.md dosyalarını oku
+
+● PROGRESS.md 1075 satır, ilk 610'u geldi. Kalanını okuyorum ve branch'i kontrol
+  ediyorum.
+
+● Altı dosyayı da okudum. PROGRESS.md 1075 satır olduğu için iki parça halinde
+  okudum.
+
+  Branch durumu: durmam gerekiyor
+  git branch --show-current çıktısı feat/worker-dashboard, çalışma ağacı temiz.
+  CLAUDE.md'ye göre başka aşamanın branch'indeysem durup size söylemem
+  gerekiyor. 5. oturumun işi (frontend modernizasyonu) ayrı bir branch'te,
+  güncel main'den açılmalı. PROGRESS.md'ye göre bu branch ancak
+  feat/worker-dashboard PR'ı merge edildikten sonra açılır.
+
+  Aşağıdaki soruların cevabına göre ilerleyeceğim, hiçbir değişiklik yapmadım.
+
+  Okuduklarımın özeti
+  - Durum: feat/worker-dashboard aşamasının kodu, testleri ve dokümanları tamam.
+    Worker, mock provider, dashboard (SSE + Vue), /readyz, /metrics, opsiyonel
+    Prometheus (ADR-028), nginx geçişi ve README hazır.
+  - Bekleyen iş: PROGRESS.md'de PR/CI maddesi hâlâ açık. Siz CI'ın temiz
+    olduğunu söylediniz. Merge edildiyse PROGRESS.md'de bunu işlemem gerekir.
+  - Sıradaki iş: "Frontend iyileştirmeleri: tasarım ve bileşenleri
+    modernleştirme". Önerilen branch feat/frontend-modernization, durum
+    "planlandı, başlanmadı".
+    - Girdi: eski ekranlar (BriefForm, CampaignView, ApprovePanel, ErrorPanel,
+      ContentEditor) düz <button>/<input> kullanıyor, dashboard shadcn
+      kullanıyor. İki biçim sistemi bir arada.
+    - Korunacaklar: visual-themes.spec.ts (WCAG kontrastı ve cursor: pointer),
+      erişilebilirlik kuralları, mobil görünüm, 314 birim ve 17 e2e test.
+    - Kurallar: yeni bağımlılık eklemeden önce soracağım. any, as ve ! yok.
+  - Sonra: gerçek Claude adaptörü (feat/claude-adapter). PROGRESS.md bunu
+    teslimin en büyük eksiği olarak işaretliyor, case'te LLM entegrasyonu %25
+    ağırlıkta.
+  - Açık ADR'ler: ADR-013 (başlatma sırası, uygulandı ama onay bekliyor) ve
+    ADR-010 (30 günlük kural yorumu). ADR-001, 003, 004, 007, 008 ve 010 hâlâ
+    "Taslak".
+
+  PROGRESS.md'de gördüğüm küçük tutarsızlıklar
+  - "ADR-023 onaylandı (B)" satırı "Açık konular" bölümünde iki kez tekrar
+    ediyor (984 ve 987. satırlar).
+  - "Bu aşamada kalan işler" altındaki Dev ortamı ve PR/CI maddeleri [ ] olarak
+    duruyor. Siz CI'ın geçtiğini bildirdiğinizden güncel değiller.
+  - Önceki oturum ai-sessions/ altında 4. oturumun /export'unu bekliyor. Bu
+    oturumun export'u da oturum sonunda eklenecek.
+
+  Karar vermeniz gereken
+  1. feat/worker-dashboard PR'ı merge edildi mi? Edildiyse main'e geçip
+     güncelleyin, sonra feat/frontend-modernization (veya istediğiniz adla)
+     branch'ini açın. Branch'i ben açmayayım diye bekliyorum.
+  2. Frontend modernizasyonunun kapsamını netleştirelim: yalnızca eski ekranları
+     shadcn'a taşımak mı, yoksa genel görsel tasarım yenilemesi de var mı?
+     Öncelik sırası nedir?
+
+❯ worker dashboard PR merge edildi CI kontrolleri geçti yeni branch’i güncel
+  main’den açtım kapsam yalnızca eski componentleri shadcn’a taşımak değil genel
+  görsel düzeni de tutarlı hale getirmek mevcut shadcn componentlerini kullan
+  sade okunabilir ve mobil uyumlu bir tasarım olsun başlıklar boşluklar form
+  alanları kartlar ve ana işlemler tutarlı olsun yeni özellik endpoint veya
+  bağımlılık ekleme mevcut iş akışlarını ve erişilebilirliği koru önce kısa
+  tasarım önerini göster henüz kod yazma progress’te eski kalan durumları ve
+  tekrarları da doğrulanmış bilgilere göre güncelle
+
+● Önce branch'i ve PR/CI durumunu doğruluyorum, sonra mevcut frontend'i
+  inceleyeceğim.
+
+● Branch doğru (feat/frontend-modernization, temiz), PR #7 MERGED. Şimdi mevcut
+  ekranları okuyorum.
+
+● Tasarım için yeterince okudum. PROGRESS.md'yi güncellemeden önce
+  doğrulanabilir bilgileri topluyorum (CI, PR, ai-sessions/, testler).
+
+● Vitest Node 20 ile 21 hata verdi (proje Node 24 istiyor). Doğru sürümle
+  yeniden deniyorum.
+
+● Edit uyarısı: dosya ben okuduktan sonra diskte değişmiş. Devam etmeden neyin
+  değiştiğine bakıyorum.
+
+● Fark yalnızca benim iki Edit'im, başka değişiklik yok (uyarı paralel Edit'ten
+  kaynaklandı). Devam ediyorum.
+
+● Şimdi frontend aşaması bölümünü ve "Açık konular" bölümündeki eski/tekrarlı
+  maddeleri güncelliyorum.
+
+● Kısa tasarım önerisi (henüz kod yazmadım)
+
+  Tek frontend dosyasına dokunulmadı. Branch feat/frontend-modernization, temiz
+  başladı. Baz çizgisi (Node 24): 314 birim test geçiyor, Playwright 18 test
+  listeliyor (17 standart + 1 @real).
+
+  Mevcut durum
+  - İki sistem bir arada:
+    - Dashboard shadcn + Tailwind kullanıyor.
+    - BriefForm, ContentEditor, ApprovePanel, ErrorPanel, AudienceCounts,
+      SegmentSummary ve iki view (CampaignPreviewView, CampaignView) elle
+      yazılmış scoped CSS kullanıyor. Mavi .primary düğmeler, el yapımı input ve
+      textarea, kendi kutuları var.
+  - Tutarsızlıklar:
+    - h1 boyutları farklı (1.6rem ile text-2xl).
+    - Geri bağlantısı bir yerde düz link, diğerinde Button link.
+    - Durum bir yerde el yapımı hap, dashboard'da Badge.
+    - Sayı kutuları iki ayrı stilde.
+    - Kitle sayıları auto-fit ile 360 px'te tek sütuna düşüyor.
+    - Uzun kampanya kimliği (campaign.id) kaydırma taşırabilir.
+
+  Önerilen düzen (tüm ekranlarda aynı)
+  - Sayfa: App.vue kabuğu max-w-3xl, px-4 sm:px-6, py-8. Üst çubuk veya
+    navigasyon eklemiyorum, o ayrı bir ürün kararı olur.
+  - Başlık kalıbı: üstte Button variant="link" ile geri bağlantısı, ardından h1
+    (text-2xl font-semibold). Her ekranda tek h1, bölümler h2.
+  - Boşluk ölçeği: sayfa gap-6, kart içi gap-4, etiket ile alan arası gap-1.5.
+  - Bölümler: Her bölüm bir Card. Başlık CardTitle içindeki h2, yardımcı metin
+    text-sm text-muted-foreground. Dashboard'daki role="region" +
+    aria-labelledby kalıbı korunur.
+  - Düğme hiyerarşisi: Her kartta tek default (birincil) eylem. İkincil eylem
+    outline, gezinme link. Ana eylemler mobilde size="lg" ve tam genişlik,
+    sm'den itibaren otomatik genişlik.
+  - Sayı kutuları: Tek stil. Dashboard'daki rounded-lg border p-3 kutusu kitle
+    önizlemede de kullanılır, grid-cols-1 sm:grid-cols-3.
+  - Durum: Her yerde Badge.
+
+  | Bileşen | Taşıma |
+  | --- | --- |
+  | ErrorPanel | Alert variant="destructive" + AlertTitle/AlertDescription + Button outline sm. Adı, prop'ları ve role="alert" aynı kalır. |
+  | BriefForm | Field/Label + Textarea + Button. Örnek brief bağlantısı Button link sm. |
+  | ContentEditor | Label + Input/Textarea. Sayaç ve hata listeleri aynı id'lerle kalır. |
+  | ApprovePanel | İkinci adım onay kutusu Alert. role="alertdialog" ve iki adımlı akış aynı kalır. |
+  | CampaignView | Üç Card: "Brief ve kitle", "İçerik", "Onay". Onay sonrası kutu Alert/Card. "Doğrulanamadı" notu Alert. |
+  | CampaignPreviewView | Brief Card, sonuç Card. Yükleme Spinner + role="status". |
+  | Dashboard | Yalnızca başlık kalıbı, boşluk ve sayı kutusu stili hizalanır. |
+
+  Yeni bağımlılık yok, yalnızca mevcut ui/ bileşenleri kullanılır (button, card,
+  field/label, input, textarea, alert, badge, separator, spinner, skeleton,
+  progress). Field bileşenini uygularken inceleyeceğim. Form kütüphanesi
+  gerektiriyorsa Label + Textarea ile ilerlerim.
+
+  Korunacaklar
+  - Kod tarafı: tüm id, aria-describedby, data-testid ve rol adları (örn.
+    getByLabel('Brief'), 'Onayla ve kuyruğa al', 'İçeriği hazırla', 'Gönderimi
+    izle').
+  - Davranış: role değerleri (alert, status, alertdialog), ekran okuyucu
+    bölgesi, salt okunur ve aria-invalid durumları, cursor: pointer kuralı,
+    --app-* paleti ve iki temadaki WCAG kontrastı.
+  - Bilinen test bağımlılığı: bazı testler sınıf adlarına bağlı (.error-panel
+    11, .retry 6, .warning 3, button.link). Bunları davranışı gevşetmeden rol
+    veya data-testid seçicisine çevireceğim.
+
+  Doğrulama ve sıra
+  1. Sayfa kabuğu ve ortak kalıplar.
+  2. ErrorPanel.
+  3. Önizleme ekranı (BriefForm, AudienceCounts, SegmentSummary).
+  4. ContentEditor, ApprovePanel, CampaignView.
+  5. Dashboard hizalaması.
+  6. Kullanılmayan scoped CSS ve --app-* token'larının temizliği, ADR-021 notu.
+
+  Her adımda ayrı Edit'lerle ilerler, oxlint, eslint, vitest, npm run build,
+  type-check:e2e çalıştırırım. Sonunda make e2e ve 360 px, açık ve koyu temada
+  öncesi/sonrası ekran görüntülerini alırım. visual-themes.spec.ts önizleme
+  ekranını da kapsayacak şekilde genişletilir (yalnızca test, ürün davranışı
+  değişmez). Ayrıca üç ekranda 360 px yatay taşma kontrolü eklenir.
+
+  PROGRESS.md güncellemesi
+  Tek dosya değişti: docs/PROGRESS.md (79 ekleme, 66 silme). Doğrulanmış
+  bilgilere göre:
+  - PR #7 ve CI: merge edildi (fffdded). Backend, Frontend, Compose ve E2E
+    SUCCESS, main push CI success (gh ile doğruladım). Bölüm başlığı ve çıkış
+    koşulu "tamamlandı/sağlandı" yapıldı, "PR henüz açılmadı" ve "gerçek Actions
+    doğrulanamadı" ifadeleri kaldırıldı.
+  - Eski ifadeler düzeltildi:
+    - Spec'ler: dördü de uygulandı.
+    - llm_validation_failures_total uygulandı, llm_calls tablosu hâlâ yok.
+    - ratelimit_wait_seconds histogram.
+    - last_error başarıda temizlenmiyor ve dashboard göstermiyor.
+    - CI Compose işi observability profilini de doğrular.
+  - Tekrarlar: "ADR-023 onaylandı (B)" bölümde iki kez geçiyordu, biri silindi.
+  - Frontend aşaması: branch, kapsam, baz çizgisi ve "öneri onay bekliyor" notu
+    eklendi.
+
+  Karar vermeniz gerekenler
+  1. Birincil düğme rengi: Önerim shadcn'ın nötr default varyantı. Dashboard
+     zaten böyle, ADR-021'in "sade" gerekçesiyle uyumlu ve token değişikliği
+     gerektirmiyor. Alternatif: --primary'yi mevcut mavi --app-accent'e
+     bağlamak. Birincil eylem daha belirgin olur ama iki temada kontrastı
+     yeniden doğrulamam gerekir. Nötr olanla mı ilerleyeyim?
+  2. Dev veritabanında 00003/00004: PROGRESS'te açık bıraktım, ben bağlanmadığım
+     için doğrulayamam. Uyguladıysanız işaretlerim.
+  3. ADR durumları: DECISIONS.md'de hâlâ "Taslak" olanlar ADR-001, 003, 004,
+     007, 008, 010 ve 013. PROGRESS'te yalnızca 013 ve 010 yazıyordu, düzelttim.
+     Statüleri sizin onayınız olmadan değiştirmedim.
+  4. ai-sessions/README.md: 4. oturum bağlantısı
+     Session-04-Worker-Queue-MockProvider.txt diyor ama dizindeki dosya
+     Session-04-Worker-MockProvider-Queue.txt. Session-04-Tam-Konusma-Dokumu.txt
+     de yok. Kapsam dışı olduğu için dokunmadım. Düzelteyim mi?
+
+  Birinci sorunun cevabını ve tasarım onayını verirseniz 1. adımla başlarım.
+
+❯ nötr ile başla şimdilik 03 ve 04 dev veritabanında uygulandı progress’te
+  güncelleyebilirsin adr durumlarını bu iş kapsamında değiştirme session
+  textlerinde hata çıkmıştı önceki agent bash commandlerini de dahil edince
+  10.000 satırı geçti ve sığmadı ortadan başlıyordu onu düzelttim şu an bir
+  sorun yok elleme A'dan Z'ye var
+
+● Tamam, nötr default ile ilerliyorum. Önce ai-sessions/ durumunu doğrulayıp
+  PROGRESS'i güncelliyorum.
+
+● Şimdi 1. adım: sayfa kabuğu (App.vue). Önce PROGRESS'teki "onay bekliyor"
+  ifadelerini güncelliyorum.
+
+● 2. adım: ErrorPanel → shadcn Alert. Önce testlerin hangi seçicilere bağlı
+     olduğuna bakıyorum.
+
+● Testlerdeki sınıf seçicilerini data-testid'ye çeviriyorum (davranış
+  doğrulamaları aynı kalıyor).
+
+● 2. adım tamam (314/314). 3. adım için Field, Textarea, Label bileşenlerini
+     inceliyorum.
+
+● Şimdi AudienceCounts ve SegmentSummary (her biri kendi Card'ı, düz kardeş
+  kartlar), sonra önizleme ekranı.
+
+● .note seçicisini de kaçırmışım; bileşene data-testid ekleyip testleri
+  güncelliyorum.
+
+● 314/314. Tip kontrolü ve lint de çalıştırıyorum (Textarea v-model tipi için).
+
+● Tip kontrolü, build ve lint temiz. 4. adım için CampaignView betik kısmını ve
+  ilgili testlerin seçicilerini okuyorum.
+
+● Gerekli bilgi tamam. ApprovePanel ve ContentEditor'ı yazıyorum (id'ler, roller
+  ve aria-describedby zinciri korunuyor).
+
+● Şimdi CampaignView: önce script'e küçük eklemeler, sonra şablonu parça parça
+  (her parça ayrı Edit) değiştiriyorum.
+
+● Şimdi artık kullanılmayan scoped <style> bloğunu kaldırıyorum.
+
+● 314/314. Tip kontrolü, lint, build ve prettier kontrolü:
+
+● Prettier iki dosyada fark buldu. Formatlayıcıyı Bash ile --write çalıştırmak
+  kurala aykırı olacağından farkı görüp elle Edit ile uygulayacağım.
+
+● 5. adım: dashboard'u aynı başlık ve kart kalıbına hizalıyorum (yalnızca başlık
+     bloğu ve "Kampanya" bölümü).
+
+● IDE [overflow-wrap:anywhere] yerine wrap-anywhere öneriyor; üç yerde de
+  uyguluyorum.
+
+● Birim, lint, tip kontrolü, build ve prettier temiz. Şimdi gerçek tarayıcıda
+  izole ortamda e2e (make e2e, dev veritabanına dokunmaz) arka planda
+  çalıştırıyorum.
+
+● e2e koşarken spec dosyalarını değiştirmeyeceğim (çalışma tutarlılığı için);
+  yalnızca visual-themes.spec.ts'i okuyup genişletmeyi planlıyorum.
+
+● Birim testleri, lint, tip kontrolü ve build temiz. make e2e arka planda
+  koşuyor, bitince sonucu değerlendirip devam edeceğim (e2e koşarken kaynak
+  dosyalara dokunmuyorum).
+
+❯ tamam sonrasında şöyle bir düzenleme de yapalım güzel olur
+
+  üstte sayfa başlığı kısa açıklama ve kampanya durum badge'i
+  kitle -> içerik -> onay -> gönderim şeklinde sade adım göstergesi
+  içerik ekranında geniş düzenleyici yanında kompakt kitle ve onay özeti mobilde
+  alt alta
+  dashboard’da üstte toplam gönderildi başarısız ve bekleyen sayıları altında
+  ilerleme ve kanal dağılımı
+
+● Bu düzenlemeyi e2e sonucu geldikten, temizlik ve mobil test bitince 6. adım
+  olarak aynı branch'e ekleyeceğim. Bir madde için onayınıza ihtiyacım var.
+
+  Kanal dağılımı: veri yok
+  Dashboard'un SSE snapshot olayı yalnızca toplam mesaj sayılarını taşıyor
+  (queued, retrying, sending, sent, failed, skipped ve failures). Kanal bazında
+  sayı ARCHITECTURE §5 sözleşmesinde yok, GET /api/campaigns/{id} de gerçek
+  kuyruk sayısını vermiyor.
+
+  | Seçenek | Not |
+  | --- | --- |
+  | A. Backend'e channels eklemek | DeliverySnapshot sorgusuna kanal kırılımı, §5 ve TRK-001 sözleşmesi, backend testleri ve frontend ayrıştırıcı değişir. Doğru veri verir, ama bu ürün/sözleşme değişikliği ve backend işi. |
+  | B. Önizleme kitle sayısını "kanal dağılımı" diye göstermek | Önermiyorum. Onay anında seçilen alıcılardan farklı olabilir (ADR-023) ve gönderim durumu değil, yanıltıcı olur. |
+  | C. Şimdilik bırakmak | Ekran kanal bölümü olmadan tamamlanır, yer ayrılmaz. |
+
+  Önerim: C, sonra A. CLAUDE.md aşama dışı işi bu branch'e eklememe izin
+  vermiyor. Backend değişikliği ayrı bir branch'te (örn. feat/delivery-channels)
+  yapılır, sonra frontend'e kanal bölümü eklenir. Siz A'yı doğrudan bu aşamada
+  istiyorsanız söyleyin, o zaman sözleşme değişikliğini önce size açıklarım.
+
+  Diğer maddeler (yeni bağımlılık ve endpoint gerekmiyor)
+  1. Üst başlık: h1, bir satır açıklama ve durum Badge'i, üç ekranda aynı
+     kalıpla. Önerdiğim metinler:
+     - Önizleme: "Brief'i yazın, kitleyi ve kanal sayılarını görün."
+     - Kampanya: "İçeriği üretin veya düzenleyin, kaydettiğiniz sürümü
+       onaylayın."
+     - Gönderim: "Mesajların durumu canlı güncellenir."
+  2. Adım göstergesi: Kitle → İçerik → Onay → Gönderim. Tıklanabilir değil,
+     yalnızca mevcut durumu gösterir (tamamlandı, şu an, bekliyor). Durumu zaten
+     bildiğimiz verilerden türetirim: kampanya var mı, kaydedilmiş içerik var
+     mı, onaylı mı, gönderim completed mı. Önce mevcut shadcn Stepper bileşenini
+     deneyeceğim. Etkileşimli semantik taşıyorsa, aria-current="step" olan düz
+     bir <ol> kullanırım.
+  3. İçerik ekranı: lg ve üstünde iki sütun, geniş sütunda Brief ve düzenleyici,
+     yan sütunda kompakt kitle sayıları ve koşullar ile onay özeti (sürüm,
+     durum, onay düğmesi). Mobilde alt alta. Sayfa kabuğu bu ekran için
+     max-w-3xl'den genişler (max-w-5xl). Diğer ekranlarda içerik max-w-3xl
+     kalır.
+  4. Dashboard: üstte üç büyük sayı (Gönderildi, Başarısız, Bekleyen), altında
+     ilerleme çubuğu, en altta altı sayının ayrıntısı. Mevcut altı sayı ve
+     nedenleri korunur. "Bekleyen" = kuyrukta + yeniden denenecek + gönderiliyor
+     (henüz işi bitmemiş) olur. Atlanan ayrıntı listesinde kalır. count-*
+     data-testid'leri ayrıntı listesinde aynı kalır, üstteki özet kutuları yeni
+     id alır.
+
+  Mevcut id, rol ve data-testid güvenceleri aynen korunur.
+
+  Sıra
+  Önce make e2e sonucunu değerlendirip bitirmeyi planladığım işler:
+  kullanılmayan --app-* token'larının temizliği, visual-themes testine önizleme
+  ekranı ve 360 px taşma kontrolü, ADR-021 notu ve PROGRESS güncellemesi. Sonra
+  bu düzenleme.
+
+  Kanal dağılımı için C (şimdi bırak, sonra backend) mi yoksa A mı?
+
+● Bu bir arka plan bildirimi, sizin cevabınız değil; kanal dağılımı sorusu (A mı
+  C mi) hâlâ açık. Bu karara bağlı olmayan işlerle devam ediyorum, önce e2e
+  sonucuna bakıyorum.
+
+● E2E temiz: standart 17/17, @real 1/1, Prometheus/promtool kontrolleri geçti,
+  çıkış kodu 0. Şimdi temizlik: kullanılmayan --app-* token'ları.
+
+● Yalnızca tanımları var, hiçbir yerde kullanılmıyor. Kaldırıyorum.
+
+● Şimdi e2e testlerini genişletiyorum: visual-themes.spec.ts'e önizleme ekranı,
+  yeni mobile-layout.spec.ts ile 360 px taşma ve dokunma hedefi kontrolü.
+
+● Prettier'ın styles.css farkına ve ESLint uyarısına bakıyorum (uyarı: yeni
+  testte doğrudan expect yok).
+
+● styles.css prettier farkı bana ait değil (HEAD'de de aynı, shadcn üretimi);
+  dokunmuyorum. ESLint uyarısını gideriyorum.
+
+● Yeni testleri izole ortamda koşturuyorum (yalnızca visual-themes ve
+  mobile-layout).
+
+● Yeni testler geçti. Ekran görüntülerine gözle bakıyorum.
+
+● Mutasyon 1 yakalandı (36 < 40). Geri alıp mutasyon 2'yi deniyorum (brief
+  kartında sabit genişlik).
+
+● Güçlendirilmiş test mutasyonu yakaladı. Mutasyonu geri alıp tekrar
+  doğruluyorum.
+
+● Şimdi 6. adım: önce saf mantık (steps.ts, summary.ts) ve testleri, sonra
+  bileşenler, sonra ekranlar.
+
+● Şimdi PageHeader ve CampaignSteps bileşenleri ve testleri.
+
+● Ekranlar: önce kabuk genişliği ve önizleme ekranı.
+
+● Şimdi DeliveryCounts: üstte üç özet sayı, altında ilerleme, en altta altı
+  sayının ayrıntısı.
+
+● Şimdi CampaignView'in iki sütunlu düzeni. Mevcut şablona bakıp parça parça
+  düzenliyorum.
+
+● Düzen iki sütuna geçince içerik kartı bir seviye daha içeri girecek (prettier
+  girintisi için). Dosyayı bütün olarak okuyup yeniden yazacağım.
+
+● Şimdi AudienceCounts için kompakt varyant ve ApprovePanel'in dar yan sütuna
+  uyumu.
+
+● CampaignView ve önizleme/dashboard ekranları için yeni davranış testleri
+  ekleyeceğim; önce mevcut yardımcılara bakıyorum.
+
+● Yeni testlerin gerçekten yakaladığını görmek için iki mutasyon: bekleyen
+  toplamından sending'i çıkarmak ve adım göstergesinde dirty'yi yok saymak.
+
+● Her iki mutasyon da yakalandı. Geri alıyorum.
+
+● Şimdi e2e'yi yeni düzene göre genişletiyorum (adım göstergesi ve özet
+  sayıların okunabilirliği) ve ardından tam make e2e koşuyorum.
+
+● make e2e koşarken yalnızca dokümanları güncelliyorum (derleme bağlamına
+  girmiyorlar). Önce ADR-021'e tasarım notu (durum satırlarına dokunmadan).
+
+● make e2e arka planda koşuyor (yeni düzen için üç döngü). Doküman tarafında
+  ADR-021 tasarım notu (durum satırlarına dokunmadan) ve REPO-STRUCTURE
+  güncellendi. Sonuç gelince PROGRESS.md'yi doğrulanmış sayılarla güncelleyip
+  özeti vereceğim.
+
+● E2E: standart 20/20, @real 1/1, Prometheus/promtool temiz. Yeni düzenin ekran
+  görüntülerine bakıyorum.
+
+● Son döngü çıktı klasörünü silmiş; yalnızca görsel ve mobil spec'leri yeniden
+  koşup ekran görüntülerini alıyorum.
+
+● Görünüm tutarlı (masaüstü iki sütun, 360 px alt alta, dashboard üst özet).
+  PROGRESS.md'yi doğrulanmış sonuçlarla güncelliyorum.
+
+● Frontend modernizasyonu feat/frontend-modernization branch'inde yerelde
+  tamamlandı. Kanal dağılımı hariç hepsi bitti. Commit ve push yapmadım. GitHub
+  Actions'ı çalıştıramadım; yeni testler E2E işinde ilk kez orada koşacak.
+
+  Yapılanlar
+  - Tek bileşen sistemi: Eski ekranlar shadcn bileşenlerine taşındı. Uygulamada
+    scoped CSS kalmadı. Yeni bağımlılık eklenmedi. Birincil düğme nötr default
+    varyantı.
+  - Üst bölüm: Üç ekranda ortak PageHeader (geri bağlantısı, başlık, durum
+    rozeti, bir satır açıklama) var.
+  - Adım göstergesi: CampaignSteps Kitle → İçerik → Onay → Gönderim adımlarını
+    gösteriyor. Tıklanamaz. Etkileşimli Reka Stepper yerine aria-current="step"
+    taşıyan düz bir <ol> kullandım.
+  - Kampanya ekranı: Geniş ekranda iki sütun: solda brief ve düzenleyici, sağda
+    kompakt kitle, koşullar ve onay. Telefonda alt alta.
+  - Dashboard: Üstte Gönderildi, Başarısız ve Bekleyen sayıları, altında
+    ilerleme çubuğu ve altı sayının ayrıntısı. Bekleyen, kuyrukta + yeniden
+    denenecek + gönderiliyor toplamı. Ayrıntıdaki eski "Bekleyen" etiketi
+    "Sırada" oldu.
+  - Doküman: ADR-021'e tasarım notu eklendi, REPO-STRUCTURE ve PROGRESS
+    güncellendi. ADR durum satırlarına dokunmadım.
+
+  Kanal dağılımı yapılmadı
+  Dashboard'un SSE verisinde kanal bazında sayı yok, eklemek sözleşme ve backend
+  değişikliği olur. Siz hâlâ cevap vermediğiniz için bu branch'e eklemedim.
+  Önerim: ayrı bir aşama/branch (feat/delivery-channels gibi). Yapmak
+  istiyorsanız söyleyin, önce sözleşme değişikliğini size açıklarım. DECISIONS
+  ve PROGRESS'e "karar bekliyor" olarak yazdım.
+
+  Çalıştırılan komutlar ve sonuçları (Node 24)
+  | Komut | Sonuç |
+  | --- | --- |
+  | vitest run | 24 dosya, 357 test geçti (başlangıç 314) |
+  | oxlint, eslint, npm run build, type-check:e2e | temiz |
+  | prettier --check (dokunulan dosyalar) | uyumlu |
+  | make e2e (3 döngü) | çıkış kodu 0: standart 20/20 (başlangıç 17), @real 1/1, Prometheus ve promtool temiz |
+
+  - Mutasyonlar:
+    - Ana düğmeyi küçültmek mobil testte yakalandı (36 px).
+    - Sabit genişlikli taşma ilk sürüm testte yakalanmadı, çünkü Card taşan
+      içeriği kırpıyor. Testi "her görünür öğe viewport içinde" kontrolüyle
+      güçlendirdim, sonra yakalandı.
+    - waitingMessages'tan sending'i çıkarmak ve adım göstergesinde kaydedilmemiş
+      değişikliği yok saymak birim testlerde yakalandı.
+  - Ekran görüntüleri: Açık/koyu tema ve 360 px için gözle baktım.
+
+  Doğrulayamadıklarım ve sınırlar
+  - Gerçek GitHub Actions sonucu.
+  - frontend/src/styles.css prettier'a uymuyor, ama HEAD'de de aynıydı (shadcn
+    üretimi). Dokunmadım.
+  - Dashboard ayrıntısında Gönderildi ve Başarısız özetle tekrar ediyor
+    (testlerdeki altı sayı ve count-* kimlikleri korunsun diye). İsterseniz ayrı
+    küçük işte sadeleştiririm.
+  - Gerçek tarayıcı yalnızca Chromium.
+  - ai-sessions/README.md 4. oturum bağlantısı hâlâ eski dosya adını gösteriyor.
+    "Elleme" dediğiniz için dokunmadım.
+
+  Değişen dosyalar
+  Branch feat/frontend-modernization, 27 dosya değişti (+1191 / −862), 6 yeni
+  dosya/klasör.
+  - Yeni: frontend/e2e/mobile-layout.spec.ts, frontend/src/campaign/ (steps.ts
+    ve testi), PageHeader.vue, CampaignSteps.vue ve ikisinin testleri.
+  - Değişen: DECISIONS.md, docs/PROGRESS.md, docs/REPO-STRUCTURE.md ve frontend/
+    altında bileşenler, ekranlar, testler ve styles.css.
+
+  Tam farkı git diff ile inceleyebilirsiniz. Commit mesajı önerisi hazırlamamı
+  isterseniz söyleyin. PR açıklamasını CLAUDE.md gereği sizin yazmanız
+  gerekiyor.
+
+❯ kanal dağılımını bu aşamada eklememe kararını zaten verdik karar bekliyor
+  notunu kaldır üstteki queued retrying ve sending toplamını tamamlanmamış
+  olarak adlandır bunları düzeltip ilgili testleri çalıştır ben de ekranları
+  görsel olarak kontrol edeceğim ve başka fikirlerin varsa söyleyebilirsin
+  tasarımı detaylandırabilmek ve user friendly yapabilmek için
+
+● Önce değişecek yerleri tarıyorum.
+
+● Şimdi DECISIONS ve PROGRESS metinleri (karar notu ve etiket adı).
+
+● Birim testleri ve lint temiz. İlgili e2e testlerini (görsel ve dashboard)
+  izole ortamda koşuyorum.
+
+● Üç düzeltmeyi yaptım ve ilgili testleri çalıştırdım. Hepsi geçti; commit/push
+  yok.
+
+  Yapılanlar
+  1. Kanal dağılımı notu: DECISIONS.md (ADR-021 notu) ve docs/PROGRESS.md'deki
+     "karar bekliyor" ifadelerini kaldırdım. Artık "bu aşamada eklenmedi
+     (Oğuzhan'ın kararı)" yazıyor, ayrıca bir açık madde olarak durmuyor.
+  2. Üstteki toplam: Etiket "Bekleyen" yerine "Tamamlanmamış" oldu. Tutarlılık
+     için kod adlarını da değiştirdim: waitingMessages → unfinishedMessages,
+     data-testid summary-waiting → summary-unfinished.
+  3. Ayrıntıdaki etiket: "Bekleyen" etiketini "Sırada" yapmıştım, çünkü özetteki
+     ad aynıydı. Çakışma kalmadığı için eski haline, yani "Bekleyen"e geri
+     aldım. Şimdi üstte "Tamamlanmamış", altta "Bekleyen / Yeniden denenecek /
+     Gönderiliyor" görünüyor. İsterseniz "Sırada"ya döneriz.
+
+  Çalıştırılan komutlar ve sonuçları (Node 24)
+  - vitest run: 24 dosya, 357 test geçti.
+  - oxlint, eslint, npm run build (tip kontrolü dahil), type-check:e2e: temiz.
+  - Dokunulan dosyalarda prettier --check: uyumlu.
+  - İzole ortamda standart Playwright (--grep-invert @real): 20/20 geçti.
+  - @real testini ve tam make e2e'yi bu sefer yeniden koşmadım. Etiket
+    değişikliği gönderim akışını etkilemiyor, ama GitHub Actions'ı da
+    doğrulayamadım.
+
+  Ekranları kontrol etmeniz için
+  Compose'taki web konteyneri derlenmiş eski arayüzü servis ediyor. Yeni arayüzü
+  görmek için docker compose up -d --build web (veritabanına ve migration'a
+  dokunmaz) veya yerelde npm run dev kullanabilirsiniz. Dashboard için onaylı
+  bir kampanya gerekir. Hâlâ yeşil olan bir kampanyanın /campaigns/<id>/delivery
+  ekranına gidin. Ekran görüntülerini ben de aldım ama gözünüz benden iyi
+  yakalar.
+
+  Kullanıcı dostu yapmak için fikirler
+  Hiçbirini uygulamadım. Önce kapsam ve etkiye göre ayırdım:
+
+  Yalnızca görünüm, bu aşamaya sığar:
+  1. Kayıt geri bildirimi: "Yeni sürüm olarak kaydet" sonrası şu an yalnızca
+     "Sürüm 2" metni değişiyor. Kısa bir "Sürüm 2 kaydedildi" bildirimi (sonner
+     bileşeni ui/ altında hazır) daha net olur.
+  2. Kişiselleştirme önizlemesi: {{first_name}} yerine örnek bir ad (veya
+     "Değerli müşterimiz") koyarak SMS ve e-postanın alıcıya nasıl görüneceğini
+     gösteren salt okunur bir önizleme. Sayaç tahmini yerine daha anlaşılır
+     olur.
+  3. Telefonda onay düğmesi: Onay kartı sayfanın en altında. Kaydedilmiş içerik
+     varken ekranın altına yapışan bir "Onayla" çubuğu gezinmeyi azaltır.
+  4. Dashboard özeti: Tamamlanınca üstte tek cümlelik sonuç ("7 mesajın 5'i
+     gönderildi, 1'i başarısız, 1'i atlandı") ve başarısız/atlanan için ne
+     yapılabileceği.
+  5. Mikro metinler: "Taslak" ve "Onaylandı, kuyrukta" rozetleri için kısa
+     açıklama (tooltip). "Kitle önizleme" ile "Anlaşılan koşullar" kartlarını
+     tek kartta birleştirmek de sadeleştirir.
+
+  Davranış değişikliği içerir (önce sizinle konuşurum):
+  6. Adım göstergesinde geri gezinme: Tamamlanan adımlar tıklanabilir olsun (ör.
+     "Kitle" önizleme ekranına, "Gönderim" dashboard'a). Şu an bilgi amaçlı.
+  7. Kaydedilmemiş değişiklikle sayfadan ayrılma uyarısı: Ekranda yalnızca bir
+     not var. Tarayıcı çıkış uyarısı mevcut mu doğrulamadım. Önce kontrol
+     ederim.
+  8. Son kampanyalar listesi veya ana sayfada geçmiş: Bunun için yeni endpoint
+     gerekir, kapsam dışı.
+
+  En çok değer katacağını düşündüğüm üçü 2, 1 ve 4. Görsel kontrolünüzden sonra
+  hangilerini isterseniz söyleyin.
+
+❯ bence yeni ekran eklemekten önce mevcut akışı kolaylaştıran şu iyileştirmeler
+  değerli
+
+  - örnek brief seçenekleri boş ekranda 2–3 desteklenen örnek sun kullanıcı
+    nereden başlayacağını anlasın
+  - kaydedilmemiş değişiklik uyarısı metni değiştirdikten sonra sayfadan
+    çıkarken uyar içerik kaybolmasın
+  - açık işlem geri bildirimi “kaydedildi · sürüm 2” gibi kısa mesajlar göster
+    işlem sürerken tekrar tıklamayı engelle
+  - onay özeti hangi sürümün onaylanacağı sms ve e-posta önizlemeleri ile
+    tahmini alıcı sayıları aynı yerde görünsün
+  - kişiselleştirme önizlemesi {{first_name}} yerine örnek bir ad koyarak
+    mesajın nasıl görüneceğini göster bunun örnek olduğunu belirt
+  - gönderim sonu özeti başarılı başarısız ve atlananları kısa açıklamayla sun
+    yeniden denemeyle toparlanan mesaj sayısını da backend verisi eklenince
+    göster
+  - mobil kullanım ana eylemler kolay ulaşılır olsun uzun brief ve hata
+    metinleri taşmasınGönderim takibi aşamalarında back ve next olmalı türkçe
+    olarak yap ama tabi ki ingilizce değil
+  - gönderim tabiki kısmında back ve next buttonları koy testlerle bozulmadığını
+    onayla türkçe olarak yap ama tabi hepsini
+
+● Kapsam geniş; önce mevcut kodu inceleyip hangi örnek brief'lerin gerçekten
+  desteklendiğini ve kişiselleştirme kurallarını doğruluyorum.
+
+● Örnek brief'lerin gerçekten geçerli segment üretip kitle bulduğunu backend'de
+  doğrulamak istiyorum. Mevcut entegrasyon testlerinin kalıbına bakıyorum.
+
+● Test geçti (demo verisinde 191/73/14 kişi). Test'in gerçekten yakaladığını
+  görmek için örneklerden birini geçici olarak bozuyorum.
+
+● Örnek brief'ler JSON'da. Arayüz tarafı: önce kullanım yerlerine bakıyorum.
+
+● Adım A tamam (362/362). Sıra B: kaydedilmemiş değişiklik uyarısı (tarayıcıdan
+  çıkış + uygulama içi gezinme).
+
+● Test sızıntısı: önceki testlerdeki bağlanmış bileşenlerin beforeunload
+  dinleyicileri pencerede kalıyor. Testlerde bileşenleri afterEach'te
+  kapatıyorum.
+
+● Adım B tamam (375/375). Adım C: açık işlem geri bildirimi ("Kaydedildi · sürüm
+  2") ve işlem sırasında tekrar tıklama koruması.
+
+● Şimdi kişiselleştirme önizlemesi: önce saf yardımcı, sonra MessagePreview
+  bileşeni.
+
+● Şimdi ApprovePanel: hangi sürüm, tahmini alıcı sayıları ve önizlemeler aynı
+  kartta.
+
+● 390/390. Şimdi aynı önizlemeyi düzenleyici kartına (canlı taslak için) ve geri
+  bildirim/çift tıklama testlerini ekliyorum.
+
+● Şimdi yeni davranışlar için CampaignView testleri.
+
+● 399/399. Adım E: gönderim sonu özeti. Mevcut tamamlandı notunun testlerine
+  bakıyorum.
+
+● 408/408. Son ve en kapsamlı parça: her aşamada Türkçe "Geri" / "İleri"
+  gezintisi. Önce bileşen ve testi.
+
+● Şimdi PageHeader'dan geri bağlantısı yuvasını kaldırıp (artık StepNav var)
+  ekranlara bağlıyorum.
+
+● Dashboard için de Geri/İleri testleri:
+
+● Birim ve statik kontroller temiz (428/428). e2e'de bu değişikliklerden
+  etkilenecek yerleri tarıyorum.
+
+● Promise.all burada kilitlenir (yenileme diyalog kabul edilene kadar bitmez).
+  Diyaloğu işleyicide kabul edecek şekilde düzeltiyorum.
+
+● Statik kontroller temiz. Tam make e2e (3 döngü) arka planda başlıyor; bu
+  sırada yalnızca doküman güncelleyeceğim.
+
+● make e2e (3 döngü) arka planda koşuyor. Bitince sonucu değerlendirip
+  PROGRESS.md'yi doğrulanmış sayılarla güncelleyecek ve özeti vereceğim. Bu
+  arada REPO-STRUCTURE ve ADR-021 notlarını güncelledim.
+
+❯ Ubuntu bağlantısı koptu şimdi tekrar gözden geçir kaldığın yer varsa devam et
+
+● Bağlantı kopunca e2e çalıştırması yarım kalmış. Önce çalışma ağacının ve
+  Docker ortamının durumunu kontrol ediyorum.
+
+● Çalışma ağacı sağlam (tüm dosyalar yerinde). Docker'ın ve e2e ortamının
+  durumuna bakıyorum.
+
+● Her şey önceki durumdaki gibi (428/428, lint, build, prettier temiz). Şimdi
+  tam make e2e'yi yeniden başlatıyorum.
+
+● E2E çalıştırması arka planda; kaynak dosyalara dokunmadan bitmesini
+  bekliyorum. Bitince backend make test'i de (yeni örnek-brief testiyle)
+  koşturup PROGRESS.md'yi doğrulanmış sayılarla güncelleyeceğim.
+
+● Üç mobil test başarısız (22 geçti). Hata ayrıntılarına bakıyorum.
+
+● Düzeltmeler uygulandı ve make e2e yeniden koşuyor; bitince sonucu
+  değerlendireceğim (o sırada kaynağa dokunmuyorum).
+
+● Taşma düzeltmeleri işe yaradı (24 geçti); yalnızca uzun-metin testi kaldı.
+  Ayrıntısına bakıyorum.
+
+● Hedefli e2e'ler geçti (11/11). Son doğrulama olarak tam make e2e ve ardından
+  backend make test çalıştırıyorum.
+
+● Tam e2e ve backend testi arka planda koşuyor. Bitince sonuçlara göre
+  PROGRESS.md'yi güncelleyip özeti vereceğim.
+
+● E2E: standart 25/25, @real 1/1, Prometheus/promtool temiz; backend make test
+  yeşil. Go biçim ve vet kontrolü ardından PROGRESS.md'yi güncelliyorum.
+
+● Bağlantı kopmadan önceki iş kaldığı yerden tamamlandı. Yedi iyileştirmenin
+  hepsi ve gönderim dahil her aşamada Türkçe Geri / İleri hazır. Commit/push
+  yok.
+
+  Bağlantı koptuktan sonra
+  - Çalışma ağacı sağlam çıktı, hiçbir dosya kaybolmamıştı.
+  - Yarım kalan campaign-e2e konteynerlerini temizleyip her şeyi baştan
+    doğruladım. Dev yığınına (campaign-tool-*) dokunmadım.
+  - Tam make e2e ilk iki turda mobil testlerde kırıldı. Bu kırılmalar gerçek
+    hataydı ve düzelttim (aşağıda).
+
+  Eklenenler (yeni ekran, endpoint veya bağımlılık yok)
+  | İstek | Sonuç |
+  | --- | --- |
+  | Örnek brief'ler | Boş ekranda 3 örnek, yazmaya başlayınca kayboluyor. Liste tek kaynak olan exampleBriefs.json'da. Yeni backend testi her örneğin MockLLM ile geçerli segment ürettiğini ve alıcı bulduğunu doğruluyor (191 / 73 / 14 kişi). Örneği bozunca test kırıldı. |
+  | Kaydedilmemiş değişiklik uyarısı | Sekme kapatma ve yenilemede tarayıcı uyarısı, uygulama içi gezinmede (Geri, başka kampanya) onay penceresi. Vazgeçilirse metin korunuyor. Gerçek tarayıcıda diyaloglarla doğrulandı. |
+  | İşlem geri bildirimi | "Üretildi · sürüm 1" / "Kaydedildi · sürüm 2". İşlem sürerken düğmeler kapalı ve "Kaydediliyor…", "Onaylanıyor…" yazıyor. Çift tıklama tek istek. |
+  | Onay özeti | Aynı kartta: hangi sürüm, tahmini SMS ve e-posta alıcıları (≈) ve önizlemeler. |
+  | Kişiselleştirme önizlemesi | {{first_name}} yerine örnek ad "Ayşe". "Örnek önizleme" notu, gerçek mesajların alıcının kendi adıyla gittiğini söylüyor. Düzenleyicide canlı, onay özetinde kaydedilmiş sürüm için görünüyor. |
+  | Gönderim sonu özeti | Gönderilen, başarısız ve atlanan satırları kısa açıklama ve nedenleriyle. Yeniden denemeyle toparlanan sayıyı göstermedim, çünkü backend verisi yok. PROGRESS'te "Sonra yapılacaklar"a yazdım. |
+  | Mobil | Onay kartı dar ekranda içerikten hemen sonra geliyor, Geri/İleri çubuğu alta yapışıyor. Uzun brief ve hata metinleri taşmıyor. |
+  | Geri / İleri | Önizleme, kampanya ve dashboard'da StepNav. "İleri" hedef açılana kadar kapalı ve nedeni yazılı ("Önce kitleyi hesaplayın", "Önce içeriği onaylayın", "Gönderim tamamlanınca açılır"). |
+
+  Testlerin yakaladığı gerçek hatalar (düzeltildi)
+  - StepNav taşması: Düğmeler 360 px'te taşıyordu (41–46 px). Metinler artık
+    sarılıyor.
+  - Hata paneli: Boşluksuz uzun hata metnini kırmıyordu. ErrorPanel'e
+    wrap-anywhere ekledim.
+  - Uzun metin yapıştırma: Brief textarea'sı formu genişletiyordu. Brief ve
+    içerik textarea'larına wrap-anywhere ekledim.
+
+  Çalıştırılan komutlar ve sonuçları
+  - vitest run: 27 dosya, 428 test geçti (aşama başı 314).
+  - oxlint, eslint, npm run build (tip kontrolü dahil), type-check:e2e: temiz.
+  - prettier --check: dokunulan dosyalar uyumlu.
+  - make e2e: çıkış kodu 0. Standart Playwright 25/25 (aşama başı 17), @real
+    1/1, Prometheus ve promtool temiz.
+  - Backend: gofmt, go vet, go mod tidy -diff temiz. make test yeşil, yeni
+    örnek-brief testi dahil.
+
+  Dikkat etmeniz gerekenler
+  - Davranış kararları (ADR-021 notunda):
+    - Kampanya ekranındaki "Geri" yeni kampanya başlatıyor, çünkü önizleme
+      ekranı var olan kampanyayı yüklemiyor ve brief güncelleme endpoint'i
+      kapsam dışı. Mevcut taslak kayıtlı kalıyor.
+    - Yinelenen bağlantı kalmasın diye eski üst "geri" bağlantılarını ve onay
+      kartındaki "Gönderimi izle" düğmesini kaldırdım. Bağlantı metinleri artık
+      "İleri: Gönderimi izle" gibi hedefi taşıyor.
+    - Dashboard'da "İleri" gönderim bitince "Yeni kampanya"ya açılıyor.
+  - Tarayıcı uyarı metni: Sekme kapatmada tarayıcılar kendi metnini gösterir,
+    özel metin yalnızca uygulama içi gezinmede çıkar.
+  - Görsel kontrol: Ekran görüntülerine son eklemelerden önce baktım, sonrasını
+    sizin kontrolünüze bıraktım. Yeni arayüzü görmek için docker compose up -d
+    --build web.
+  - Doğrulanamayan: GitHub Actions. Yeni e2e testleri E2E işinde ilk kez orada
+    koşacak.
+
+  34 dosya değişti (+2094 / −885), 15 yeni dosya. Tam fark için git diff. Commit
+  mesajı önerisi hazırlamamı isterseniz söyleyin.
+
+❯ 8. Son kampanyalar listesi veya ana sayfada geçmiş: Bunun için yeni endpoint
+     gerekir, kapsam dışı. ve 4. Dashboard özeti: Tamamlanınca üstte tek
+     cümlelik sonuç ("7 mesajın 5'i gönderildi, 1'i başarısız, 1'i atlandı") ve
+     başarısız/atlanan için ne yapılabileceği. bunu yapalım ve son
+     yaptıklarından yola çıkarak şunu düzeltelim kampanya ekranındaki geri yeni
+     kampanya başlatıyorsa adını yeni kampanya yap kullanıcı mevcut adıma
+     döndüğünü sanmasın dashboard’da yeni kampanya açmak gönderimin
+     tamamlanmasına bağlı olmasın mevcut gönderim arka planda devam etsin
+     kaydedilmemiş değişiklik uyarısını koru
+
+● Önce kapsamı ayırıyorum: #4 (gönderim sonu özeti) ve gezinti düzeltmeleri
+  yalnızca arayüz, bu branch'e girer. #8 (son kampanyalar listesi) yeni bir
+  backend endpoint'i, spec ve testler gerektirir; CLAUDE.md "aşama dışı işi o
+  branch'e ekleme" dediği için onu bu branch'te yapmayacağım, sonda tasarımını
+  önereceğim. Önce mevcut kodu okuyorum.
+
+● 1. adım: Türkçe ek yardımcısı ("5'i", "7'si", "3'ü"…); sayıların okunuşuna
+     göre doğru ek için ayrı, tablo testli bir fonksiyon.
+
+● as dönüşümlerini kaldırıyorum (projede yeni kodda as yok kuralı).
+
+● 2. adım: gönderim sonu cümlesi ve "ne yapabilirsiniz" önerileri. Mevcut bloğu
+     okuyorum.
+
+● Şimdi bu fonksiyonların testlerini güncelliyorum.
+
+● Şimdi arayüz: dashboard'da öneriler ve "Yeni kampanya" her zaman açık;
+  StepNav'a özel metin ve her zaman görünen not desteği.
+
+● Birim testleri 449/449, lint ve build temiz. Şimdi e2e'deki eski metinleri
+  ("Geri: Yeni kampanya", "İleri kapalı") yeni davranışa göre güncelliyorum,
+  sonra tam e2e'yi koşacağım.
+
+● Statik kontroller temiz. Tam make e2e'yi başlatıyorum (bitene kadar yalnızca
+  dokümanlara dokunacağım).
+
+● make e2e koşuyor. Bitince sonucu doğrulayıp PROGRESS.md'yi güncelleyeceğim ve
+  #8 (son kampanyalar listesi) için backend tasarım önerimi sunacağım.
+
+● E2E: standart 25/25, @real 1/1, Prometheus/promtool temiz. PROGRESS.md'yi
+  güncelliyorum.
+
+● #4 ve gezinti düzeltmeleri bitti, tüm kontroller yeşil. #8 (son kampanyalar
+  listesi) bu branch'e girmedi; sebebini ve önerimi aşağıda yazdım. Commit/push
+  yok.
+
+  Yapılanlar
+  #4: Gönderim sonu özeti
+  - Tamamlanınca tek cümlelik sonuç görünüyor: *"7 mesajın 5'i gönderildi, 1'i
+    başarısız, 1'i atlandı."* Ek, sayının okunuşuna göre seçiliyor (5'i, 7'si,
+    3'ü, 6'sı, 1.234'ü). Hepsi tek sonuçsa "7 mesajın tamamı gönderildi." diyor.
+  - Her sonuç için "Ne yapabilirsiniz?" önerisi var. Öneriler uygulamanın gerçek
+    davranışına dayanıyor:
+    - Sonucu doğrulanamayan: teslim edilmiş olabilir, sağlayıcıdan kontrol edin.
+    - Reddedilen: adresleri kontrol edin.
+    - Atlanan: izin yoktu, yapılacak bir şey yok.
+    - Başarısız varken: kampanya yeniden gönderilemez, yeni kampanya brief'e
+      uyan herkese gider.
+
+  Gezinti düzeltmeleri
+  - Kampanya ekranı: Sol düğme "Geri" yerine "+ Yeni kampanya" oldu. Üzerine
+    gelince "Bu kampanya olduğu gibi kayıtlı kalır" yazıyor.
+  - Dashboard: "İleri: Yeni kampanya" gönderimin bitmesine bağlı değil, her
+    zaman açık. Gönderim sürerken altında "Gönderim arka planda devam eder."
+    notu çıkıyor. Bunu worker'ın gönderimi sayfadan bağımsız yürütmesine
+    dayandırdım.
+  - Uyarı: Kaydedilmemiş değişiklik uyarısı korundu, "+ Yeni kampanya" için de
+    çalışıyor.
+
+  Çalıştırılan komutlar ve sonuçları (Node 24)
+  - vitest run: 28 dosya, 449 test geçti.
+  - oxlint, eslint, npm run build (tip kontrolü dahil), type-check:e2e, prettier
+    --check: temiz.
+  - make e2e: çıkış kodu 0. Standart Playwright 25/25, @real 1/1, Prometheus ve
+    promtool temiz.
+  - Backend: Bu turda Go kodu değişmedi, make test yalnızca önceki turda koştu.
+  - Dokümanlar: ADR-021 notu ve PROGRESS güncellendi.
+
+  #8 neden yapılmadı ve önerim
+  Liste yeni bir backend endpoint'i, spec ve backend testleri demek. CLAUDE.md
+  "aşama dışı işi o branch'e ekleme" dediği için bunu ayrı bir aşama ve
+  branch'te yapmak gerekiyor. Yeni endpoint önerdiğim için de uygulamadan önce
+  açıklamam lazım. PROGRESS'e "onay bekliyor" olarak yazdım.
+
+  Öneri (kısa):
+  - Endpoint: GET /api/campaigns?limit=10, en yeni önce.
+  - Kayıt alanları: id, kırpılmış brief, status, created_at ve audience (zaten
+    kayıtlı). Mesaj sayısı yok.
+  - Limit: En fazla 20, sayfalama şimdilik yok.
+  - Yetki: Uygulamada kullanıcı kavramı olmadığından herkes tüm kampanyaları
+    görür. Mevcut GET /api/campaigns/{id} zaten böyle.
+  - Arayüz: Ana sayfada brief'in altında "Son kampanyalar" listesi. Satır
+    tıklanınca durumuna göre kampanya ekranına, onaylıysa gönderim takibine
+    gider.
+  - Testler:
+    - Gerçek PostgreSQL entegrasyon testi (sıra, limit, boş liste).
+    - Handler birim testleri.
+    - e2e'de liste ve satır tıklama.
+  - Dokümanlar: ARCHITECTURE §5 ve yeni bir kısa spec dosyası (CMP-001).
+  - Migration: Gerekmez, mevcut tablo ve created_at yeterli.
+
+  Onay verirseniz main'e merge edildikten sonra feat/campaign-history gibi yeni
+  bir branch açıp başlarım. Branch'i sizin açmanız gerektiği için bekliyorum.
+  Önce şu iki karar lazım: limit 10 mü olsun, ve satırda kitle sayısı
+  gösterilsin mi?
+
+❯ son kampanyalar listesini bu aşamanın kapsamına dahil ediyorum aynı branch’te
+  yapalım varsayılan limit 10 en fazla 20 olsun satırda brief durum ve tarih
+  yeterli kitle sayısı şimdilik gösterme taslaklar kampanya ekranına approved
+  sending ve completed olanlar gönderim takibine açılsın ilgili backend ve e2e
+  testlerini ekle progress ve spec’i güncelle
+
+● Kapsam kararınızı not aldım: liste bu aşamaya ve bu branch'e dahil, limit 10
+  (en fazla 20), satırda brief + durum + tarih, taslaklar kampanya ekranına,
+  diğerleri gönderim takibine. Önce mevcut backend kodunu inceliyorum.
+
+● Backend: önce campaign paketine liste sorgusu.
+
+● Şimdi HTTP işleyicisi.
+
+● Üretim kodu derleniyor. Şimdi testler: önce birim testlerin sahte deposu ve
+  yönlendirme tablosu.
+
+● Birim testleri geçiyor. Entegrasyon testi için mevcut yardımcıları (onaylı
+  kampanya kurma) arıyorum.
+
+● Yardımcılar mevcut. Gerçek PostgreSQL ile entegrasyon testini yazıyorum
+  (sıralama, varsayılan/üst sınır, eşit zaman sıralaması, boş liste, gerçek
+  durumlar, 1000 karakterlik brief).
+
+● Hepsi geçti. Testlerin gerçekten yakaladığını görmek için iki mutasyon: eşit
+  zamanda id DESC sıralamasını kaldırmak ve sıralamayı tersine çevirmek.
+
+● Her iki mutasyon da yakalandı. Sorguyu orijinal haline döndürüyorum.
+
+● Backend tamam. Şimdi frontend: önce API istemcisinin mevcut yapısına
+  bakıyorum.
+
+● Frontend API istemcisi, bağlantı hedefi mantığı ve bileşen.
+
+● Beklendiği gibi eski önizleme testleri fetch'i genel olarak taklit ediyor.
+  Onlarda listeyi taklit bileşenle değiştirip, liste için ayrı ve gerçek
+  bileşenli testler yazıyorum.
+
+● Test hatası kodda değil: aynı Response nesnesi iki kez okunuyor. Her çağrıya
+  yeni yanıt döndürüyorum.
+
+● Şimdi listenin ekrana gerçek bileşenle bağlandığını gösteren görünüm testleri.
+
+● Birim testleri 496/496, statik kontroller temiz. Şimdi e2e:
+  createCampaign/approvedCampaign yardımcılarına isteğe bağlı brief parametresi
+  ve yeni campaign-list.spec.ts.
+
+● Görsel ve mobil testlere liste kontrollerini ekliyorum.
+
+● E2E koşarken dokümanları yazıyorum. Önce spec şablonu ve dizini.
+
+● Yazım hatası yaptım ("kkayıtlı"); düzeltiyorum ve listeyi anlatan bölümü
+  ekliyorum.
+
+● Backend, arayüz, spec ve ADR-029 hazır. make e2e koşuyor; bitince sonucu
+  kontrol edip backend make test'i çalıştırıp PROGRESS.md'yi güncelleyeceğim.
+
+● E2E: standart 31/31 (25 + 6 yeni liste testi), @real 1/1, promtool temiz.
+  Şimdi backend'in tamamını doğruluyorum.
+
+● Şimdi PROGRESS.md'yi güncelliyorum.
+
+● Gönderim sonu özeti, gezinti düzeltmeleri ve son kampanyalar listesi tamam,
+  feat/frontend-modernization branch'indeyim. Commit/push yok, GitHub Actions'ı
+  doğrulayamadım.
+
+  Son kampanyalar listesi
+  - Satır: Ana sayfada "Son kampanyalar" bölümü var. Satırda brief (en çok 2
+    satır), durum rozeti ve tarih görünüyor, kitle sayısı yok.
+  - Yönlendirme: Taslak kampanya kampanya ekranına, approved, sending ve
+    completed olanlar gönderim takibine açılıyor. Satır nereye gittiğini de
+    yazıyor ("Kampanyayı aç" / "Gönderimi izle").
+  - Canlı yenileme: Yeni kampanya oluşunca liste aynı sayfada yenileniyor. Liste
+    yüklenemese de brief formu çalışıyor.
+  - Endpoint: GET /api/campaigns?limit=N, varsayılan 10, en fazla 20. Sıra
+    created_at DESC, id DESC, yani eşit zamanda da kararlı. Migration yok.
+  - Karar noktası: limit 20'den büyükse hata vermeyip 20'ye indiriyorum. Tam
+    sayı değilse veya 1'den küçükse 400 dönüyor ve veritabanı okunmuyor. Bunu
+    siz belirtmediğiniz için ben seçtim. Hata istiyorsanız söyleyin.
+  - Doküman: Spec CMP-001, ADR-029, ARCHITECTURE §5, REPO-STRUCTURE ve PROGRESS
+    güncellendi.
+
+  Gönderim sonu özeti ve gezinti
+  - Özet cümlesi: Tamamlanınca "7 mesajın 5'i gönderildi, 1'i başarısız, 1'i
+    atlandı." yazıyor. Ek sayının okunuşuna göre seçiliyor (5'i, 7'si, 3'ü,
+    1.234'ü), hepsi tek sonuçsa "tamamı" diyor.
+  - Öneriler: Her sonuç için "Ne yapabilirsiniz?" önerisi var:
+    - Sonucu doğrulanamayanlar için: teslim edilmiş olabilir, sağlayıcıdan
+      kontrol edin.
+    - Reddedilenler için: adresleri kontrol edin.
+    - Atlananlar için: izin yok, yapılacak bir şey yok.
+    - Başarısız varken: kampanya yeniden gönderilemez ve yeni kampanya brief'e
+      uyan herkese (gönderilenler dahil) gider.
+  - Kampanya ekranı: Sol düğme "Geri" yerine "+ Yeni kampanya" oldu. Üzerine
+    gelince "Bu kampanya olduğu gibi kayıtlı kalır" yazıyor.
+  - Dashboard: "İleri: Yeni kampanya" artık gönderimin bitmesine bağlı değil.
+    Gönderim sürerken "Gönderim arka planda devam eder." notu görünüyor.
+  - Uyarı: Kaydedilmemiş değişiklik uyarısı korundu, her iki yeni düğme için de
+    çalışıyor.
+
+  Çalıştırılan komutlar ve sonuçları
+  - vitest run: 30 dosya, 496 test geçti (aşama başı 314).
+  - Frontend statik kontroller: oxlint, eslint, npm run build (tip kontrolü
+    dahil), type-check:e2e ve prettier --check temiz.
+  - make e2e: çıkış kodu 0. Standart Playwright 31/31 (aşama başı 17), @real
+    1/1, promtool temiz.
+  - Backend: gofmt, go vet, go mod tidy -diff temiz. make test yeşil: cmd/api,
+    httpapi, tests/e2e ve tests/integration bu turda yeniden koştu, bunlar
+    campaigns_test üzerinde (dev veritabanına yazılmadı).
+  - Yeni testler:
+    - Backend birim testleri (HTTP sözleşmesi).
+    - Gerçek PostgreSQL entegrasyon testleri (25 kampanyayla sıra ve sınırlar,
+      dört durumun gerçek onay akışıyla listelenmesi, boş liste, 1000
+      karakterlik brief).
+    - 6 e2e testi, 21 kampanyayla varsayılan 10 ve üst sınır 20'yi kesin
+      sınıyor.
+    - Görsel ve mobil kontroller.
+  - Mutasyonlar: Sıralamayı tersine çevirmek ve eşit zamanda kimlik ayrımını
+    kaldırmak testlerce yakalandı.
+
+  Dikkat edin
+  - Kural istisnası: CLAUDE.md "aşama dışı işi o branch'e ekleme" diyor. Backend
+    endpoint'i bu branch'e sizin kararınızla girdi. PROGRESS ve ADR-029'a bu
+    şekilde not düştüm.
+  - İndeks yok: created_at için indeks eklemedim, çünkü şema değişikliği sizin
+    onayınızı ister. Demo ölçeğinde sorun değil. Spec'in "Sınırlar" bölümünde
+    yazıyor.
+  - PR boyutu: Bu PR artık hem frontend hem backend içeriyor. 43 dosya değişti
+    (+2731 / −896), 23 yeni dosya veya klasör. İsterseniz commit mesajı
+    önerisini birkaç parçaya bölerek hazırlayabilirim.
+  - Görsel kontrol: Yeni liste ekranını görmek için docker compose up -d --build
+    web api. Backend değiştiği için api'yi de yeniden derlemek gerekiyor.
+    Migration yok.
+
+  Sıradaki PROGRESS işleri: dashboard için kanal dağılımı ve "yeniden denemeyle
+  toparlanan" sayısı (backend verisi gerekiyor, "Sonra yapılacaklar"da), sonra
+  gerçek Claude adaptörü.
+
+❯ create_at için index ekleyebilirsin list campaign için iyi olur ve kanal
+  dağılımı ile yeniden denemeyle toparlanan sayısını da yap unutmadan
+
+● Üç iş var: (1) created_at indeksi için migration, (2) kanal dağılımı, (3)
+  yeniden denemeyle toparlanan sayısı. (2) ve (3) SSE snapshot sözleşmesini
+  değiştirir. Migration'ı yalnızca siz istediğiniz için yazıyorum ve dev
+  veritabanına uygulamayacağım. Önce mevcut kodu okuyorum.
+
+● Bu test 00004'ün geri alınmasını sınıyor; artık 00005 de kalktığı için
+  başlangıç noktası 00004 olmalı. Testi o kapsama göre düzeltiyorum.
+
+● Migration testleri geçti. Şimdi snapshot sözleşmesi (kanal dağılımı ve
+  toparlanan sayısı). Mevcut testlerin yapısına bakıyorum.
+
+● Backend'i uyguluyorum: önce campaign.DeliverySnapshot.
+
+● ChannelCounts adı pakette zaten var (kuyruk derinliği için). Kendi türümü
+  ChannelDelivery diye adlandırıyorum.
+
+● Şimdi HTTP yanıtı: kanal kırılımı ve recovered alanı.
+
+● Entegrasyon testlerini genişletiyorum (kanal kırılımı, toparlanan sayısı,
+  toplam tutarlılığı).
+
+● Testler geçti. İki mutasyonla yakaladıklarını doğruluyorum (attempts > 1 → >=
+  1, SMS/e-posta eşlemesini ters çevirmek).
+
+● Backend tamam. Şimdi frontend: önce API istemcisinin mevcut snapshot
+  ayrıştırıcısı.
+
+● Şimdi arayüz: kanal dağılımı bölümü ve toparlanan notu DeliveryCounts'ta.
+
+● Gönderim sonu özetindeki "Gönderildi" satırına toparlanan sayısını ekliyorum.
+
+● Şimdi e2e: taklit akış fixture'larına kanal ve toparlanan alanlarını ekleyip
+  gerçek akış testinde (@real) kesin değerleri doğruluyorum.
+
+● Prettier farklarını elle uyguluyorum (Bash ile yazma yasak).
+
+● Tam make e2e arka planda başlıyor; bu sırada yalnızca dokümanlara dokunacağım.
+
+❯ bağlantı koptu en son yapılanları kontrol edip devam eder misin
+
+● Bağlantı kopmuş; önce çalışma ağacının sağlamlığını ve son e2e çalıştırmasının
+  gerçek sonucunu kontrol ediyorum.
+
+● Dosyalar yerinde, ama e2e'de 2 test kırmızı (çıkış kodu 2; bildirimdeki "0"
+  yanıltıcıymış). Ayrıntıya bakıyorum.
+
+● Hata uygulamada değil, görsel test fixture'ında: atlanan mesajı SMS kanalına
+  koymuşum, testte e-postada arıyorum. Testi düzeltiyorum.
+
+● Prettier ve tip kontrolü temiz. Tam make e2e ve ardından backend make test
+  birlikte yeniden koşuyor.
+
+● Bağlantı kopması hiçbir dosyayı etkilememiş. Önceki turdaki e2e'de yalnızca
+  iki görsel test kırmızıydı (test fixture hatası, düzeltildi). Şimdi tam make
+  e2e ve ardından make test koşuyor. Bitince sonucu doğrulayıp PROGRESS.md'deki
+  sayıları güncelleyeceğim.
+
+● created_at indeksi, kanal dağılımı ve yeniden denemeyle toparlanan sayısı
+  tamam; üçü de testlerle doğrulandı. Bağlantı kopmasından hiçbir dosya
+  etkilenmedi. Commit/push yok, GitHub Actions'ı çalıştıramadım.
+
+  Yapılanlar
+  - İndeks: 00005_campaigns_recent_index.sql ile campaigns_recent_idx
+    (created_at DESC, id DESC) eklendi. Liste sorgusuyla birebir aynı sıralama
+    olduğundan sorgu tabloyu taramadan ve ayrıca sıralamadan ilk n kaydı okuyor.
+    Down yalnızca indeksi kaldırıyor.
+  - Kanal dağılımı:
+    - SSE snapshot: channels.sms ve channels.email alanları eklendi, her biri
+      aynı altı durum sayısını taşıyor. Her durum için SMS + e-posta toplamı
+      kampanya toplamına eşit.
+    - Dashboard: SMS ve e-posta ayrı kartlarda görünüyor: toplam, ilerleme
+      çubuğu, gönderilen, başarısız, tamamlanmamış, varsa atlanan. Mesajı
+      olmayan kanalda "Bu kanalda mesaj yok" yazıyor.
+  - Yeniden denemeyle toparlanan:
+    - recovered: sent olup attempts > 1 olan mesajların sayısı, sent'i aşamıyor.
+    - Dashboard: "Yeniden denemeyle toparlanan: N mesaj" notu ve gönderim sonu
+      özetindeki gönderilen satırı bunu gösteriyor.
+  - Sözleşme: İki alan her görüntüde yollanıyor, sıfır olsalar da. Arayüz
+    toplamı tutmayan görüntüyü reddediyor. Alanlar yoksa (eski sunucu) bu
+    bölümler gösterilmeden çalışıyor.
+  - Doküman: ARCHITECTURE §4 ve §5, TRK-001, CMP-001, ADR-029 (indeks notu) ve
+    yeni ADR-030 (snapshot sözleşmesi), ADR-021 ve PROGRESS güncellendi.
+
+  Çalıştırılan komutlar ve sonuçları
+  - Frontend (Node 24): vitest run 30 dosya, 531 test geçti (aşama başı 314).
+    oxlint, eslint, npm run build (tip kontrolü dahil), type-check:e2e, prettier
+    --check temiz.
+  - make e2e: çıkış kodu 0. Standart Playwright 31/31, @real 1/1, promtool
+    temiz.
+  - Backend: gofmt, go vet, go mod tidy -diff temiz. make test yeşil, yalnızca
+    campaigns_test üzerinde.
+  - İlk e2e koşusu: İki görsel test kırmızıydı, hata fixture'daydı: atlanan
+    mesajı SMS'e koyup testte e-postada arıyordum. Testi düzelttim, uygulama
+    hatası değildi.
+  - Gerçek worker ve provider: Yanıt kaybı senaryosunda recovered = 2 çıkıyor.
+    @real e2e 3 SMS + 4 e-posta için 7 toparlanan ve kanal sayılarını kesin
+    doğruluyor.
+  - Mutasyonlar: attempts > 1 → >= 1 ve SMS/e-posta eşlemesini ters çevirmek
+    testlerce yakalandı. Önceki turdaki sıralama mutasyonları da yakalanmıştı.
+
+  Dikkat edin
+  - Dev veritabanı: Migration 00005'i dev veritabanına ben uygulamadım,
+    CLAUDE.md gereği siz uygulayacaksınız. docker compose up temiz kurulumda
+    otomatik uygular. Mevcut dev veritabanında docker compose up migrate
+    yeterli, indeks eklemek veriye dokunmaz. API değiştiği için docker compose
+    up -d --build api web de gerekiyor.
+  - Eski migration testleri: İki test 00005'ten etkilendi. 00004 testleri sürüm
+    5'i değil 4'ü bekliyordu, artık UpTo(4) ve DownTo(4) ile 00004'e odaklı
+    çalışıyor.
+  - recovered'ın anlamı: attempts işleme denemelerini sayar (ARCHITECTURE §3),
+    provider çağrısından önce çöken deneme de dahil. Yani sayı "ilk denemede
+    gönderilemeyip sonradan gönderilen" mesajlar, yalnızca yanıt kaybı değil.
+    ADR-030'a yazdım.
+  - PR boyutu: Branch artık epey büyük: 54 dosya değişti (+3712 / −934), hem
+    frontend hem backend var. İsterseniz commit mesajı önerisini parçalara
+    bölerek hazırlayabilirim, PR açıklamasını CLAUDE.md gereği siz yazacaksınız.
+
+  Sıradaki PROGRESS işi gerçek Claude adaptörü, kalan açık konular "Sonra
+  yapılacaklar"da.
+
+❯ bu aşamayı burada kapatalım indeks ve recovered açıklamalarını teknik olarak
+  doğru netleştir sonra biteceğiz 5. session'ı
+
+● Önce açıklamaların nerelerde geçtiğini tarayıp teknik olarak yanlış veya fazla
+  iddialı olanları belirliyorum.
+
+● Şimdi düzeltmeleri uyguluyorum. Önce kod yorumları (Go ve TypeScript), sonra
+  arayüz metni.
+
+● Test beklentilerini yeni (doğru) ifadeye çeviriyorum ve "ilk deneme başarısız
+  oldu" denmediğini de sabitliyorum.
+
+● Migration'da yalnızca yorum satırları değişti; SQL ifadelerini ve test
+  adını/yorumunu da netleştiriyorum.
+
+● SQL ifadeleri aynı, testler geçiyor. Şimdi dokümanlardaki açıklamalar: ADR-029
+  ve ADR-030.
+
+● Şimdi aşamayı kapatan kısımlar: durum paragrafı, çıkış koşulu ve "sıradaki
+  iş".
+
+● Açıklamalar düzeltildi ve aşama PROGRESS.md'de kapatıldı. Son doğrulama olarak
+  frontend kontrolleri ve tam make e2e koşuyor; bitince sonucu bildireceğim ve
+  oturumu özetleyeceğim.
+
+● feat/frontend-modernization aşaması kapatıldı. Commit/push yok, GitHub
+  Actions'ı doğrulayamadım.
+
+  Düzeltilen açıklamalar
+
+  Indeks (campaigns_recent_idx): Önceki ifadelerim fazla iddialıydı ("tabloyu
+  taramadan okur", "yavaşlamaz").
+  - Ne sağlar: Planlayıcı seçerse sorgu indeksi sırayla gezip ilk n kayıtta
+    durur. Tam tarama ve Sort adımı olmaz, maliyet kabaca O(log N + n) artar.
+  - Ne sağlamaz: brief ve status indekste olmadığı için n satır tablodan okunur
+    (index-only değil). Planlayıcı maliyete göre karar verir, çok küçük tabloda
+    (demo ölçeği) tarama + sıralama seçip indeksi kullanmayabilir.
+  - Test: EXPLAIN testi sıralı taramayı kapatarak indeksin bu sorgu için
+    kullanılabilir olduğunu gösteriyor, planlayıcının her ölçekte seçtiğini
+    değil. Test adını ve mesajını buna göre düzelttim.
+  - Maliyet ve kilit: Her eklemede bir indeks girişi yazılır. Düz CREATE INDEX
+    SHARE kilidi alır: okumalar sürer, yazmalar bitmesini bekler. CONCURRENTLY
+    goose transaction'ında kullanılamıyor.
+
+  recovered: Arayüz metni teknik olarak yanlıştı.
+  - Tanım: status = 'sent' ve attempts > 1. attempts her claim'de arttığı için
+    bu, mesajın sent olmadan önce birden fazla kez işlendiği demek.
+  - İkinci claim şu durumlarda olur:
+    - Geçici provider hatası sonrası backoff.
+    - Kayıp yanıt. Provider ilk isteği zaten kabul etmiş olabilir, worker aynı
+      Idempotency-Key ile yeniden denemekle kayıtlı sonucu alır.
+    - Lease dolması veya worker çökmesi sonrası reaper. Önceki deneme provider'a
+      hiç ulaşmamış olabilir.
+  - Metin değişti: "ilk denemede gönderilemedi" iddiası kayıp yanıtta yanlıştı.
+    Artık "ilk denemede tamamlanamadı, yeniden denemeyle gönderildi" yazıyor ve
+    testlerde "başarısız/gönderilemedi" kelimeleri geçmediği sabitlendi.
+  - Ne demek değil: Nedeni ayırmıyor ve provider çağrı sayısı değil. Idempotency
+    yüzünden bu mesajlar da en çok bir kez teslim edilmiş. Nedenleri ayırmak
+    mesaj başına yeni veri saklamayı gerektirirdi.
+  - Kanal kırılımı: "Tutarsızlık oluşmaz" iddiası messages.channel üzerindeki
+    CHECK (sms, email) kısıtına dayanıyor, bunu da yazdım.
+
+  Bu ifadeler kodda, 00005 yorumlarında, ADR-029/030, ARCHITECTURE §4 ve §5,
+  TRK-001, CMP-001 ve PROGRESS'te tutarlı hale getirildi.
+
+  Migration dosyasına dokundum: CLAUDE.md "migration'ı ancak ben istersem
+  değiştir" diyor. Yalnızca yorum satırlarını düzelttim, CREATE INDEX ve DROP
+  INDEX ifadeleri bire bir aynı (diff ile doğruladım). Bunu istemediyseniz git
+  checkout backend/migrations/00005_campaigns_recent_index.sql ile eski
+  yorumlara dönebilirsiniz, ama o zaman yorumdaki iddialı ifade kalır.
+
+  Çalıştırılan komutlar ve sonuçları
+  - vitest run: 30 dosya, 531 test geçti (aşama başı 314).
+  - Frontend statik kontroller: oxlint, eslint, npm run build (tip kontrolü
+    dahil), type-check:e2e, prettier --check temiz.
+  - make e2e: çıkış kodu 0. Standart Playwright 31/31, @real 1/1, promtool
+    temiz.
+  - Backend: Metin değişiminden sonra gofmt ve go vet temiz, httpapi ile
+    indeks/migration/snapshot testleri yeşil. Tam make test bu turdan önce yeşil
+    koşmuştu ve sonra yalnızca yorum ve test adı değişti.
+
+  PROGRESS'te aşama kapanışı
+  Durum "aşama kapatıldı", çıkış koşulu "sağlandı (yerelde)" olarak işlendi.
+  Kapsamın genişlediği de yazıldı: akış iyileştirmeleri, son kampanyalar
+  listesi, indeks ve snapshot alanları.
+
+  Sizin yapmanız gerekenler
+  1. PR: Branch'in PR'ını açın. 54 dosya değişti (+3794 / −937), hem frontend
+     hem backend var. CI sonucunu doğrulayıp squash merge edin. Commit mesajı
+     önerisini isterseniz hazırlarım, PR açıklamasını CLAUDE.md gereği siz
+     yazacaksınız.
+  2. Dev veritabanı: Migration 00005'i docker compose up migrate ile uygulayın,
+     sonra docker compose up -d --build api web. İndeks eklemek veriye dokunmaz.
+  3. ai-sessions/: 5. oturumun /export'unu ekleyin. Paylaşmadan önce anahtar ve
+     kişisel veri temizliği gerekir. Önceki oturumlarda dosya 10.000 satırı aşıp
+     ortadan başlamıştı, bu sefer de kontrol edin.
+  4. Sıradaki iş: Gerçek Claude adaptörü (feat/claude-adapter). Case'te LLM
+     entegrasyonu %25 ağırlıkta ve teslimin en büyük eksiği bu.
+
+❯ Migration yaptım dev db'ye ama CASE.md kontrol et Claude yapmak zorunlu değil
+  Claude API yok zaten şu an
+
+● CASE.md'yi ve koddaki durumu kontrol ediyorum.
+
+● Doğru okuyorsunuz: CASE.md gerçek modeli zorunlu tutmuyor. PROGRESS'te onu
+  "teslimin en büyük eksiği" diye yazmıştım, bu fazla güçlü; düzeltiyorum.
+
+● CASE.md'ye göre gerçek Claude entegrasyonu zorunlu değil, bu yüzden
+  dokümanlardaki "teslimin en büyük eksiği" ifadesini düzelttim. Yalnızca
+  doküman değişti, kod ve test çalıştırmadım. Commit/push yok.
+
+  CASE.md ne diyor
+  - Satır 53: "Geliştirme sırasında mock bir LLM ile çalışabilir, gerçek modelle
+    denemek istersen … API key'ini alabilirsin." Gerçek model isteğe bağlı.
+  - Satır 49: "Testler gerçek API key olmadan, mock bir LLM ile çalışmalı."
+    Bizim testler zaten böyle.
+  - Satır 46: "Claude'u çağırmak yeterli değil; çıktısını güvenilir hale
+    getirmeni bekliyoruz." %25'lik LLM kriterinin vurgusu burada: JSON
+    doğrulama, tek düzeltme denemesi ve akış yönetimi. Bunlar MockLLM'e karşı
+    tam ve testli.
+
+  Kalan küçük boşluk
+  Satır 53 aynı zamanda uygulamanın anahtarı .env'deki ANTHROPIC_API_KEY'den
+  okumasını istiyor. .env.example ve compose.yaml bu değişkeni taşıyor, ama
+  hiçbir kod onu okumuyor. LLM_PROVIDER yalnızca mock kabul ediyor. Bu, "Claude
+  yapmak zorunlu değil"den ayrı, küçük bir uyumsuzluk. Anahtar olmadığı için
+  bilinçli bırakıyoruz ve dokümana yazdım.
+
+  Önceki mesajlarımda "gerçek Claude adaptörü teslimin en büyük eksiği"
+  demiştim. Bu CASE.md'nin söylediğinden güçlüydü.
+
+  Yapılanlar
+  - PROGRESS: Adaptör maddesi "isteğe bağlı, şimdilik yapılmıyor" oldu.
+    Kararınız, CASE.md'nin ilgili satırları ve ANTHROPIC_API_KEY boşluğu
+    yazıldı. "Teslimin en büyük eksiği" ifadesi iki yerde kaldırıldı. "Sıradaki
+    iş"ten de çıkardım.
+  - PROGRESS (migration): Dev veritabanına 00005'i uyguladığınızı not ettim. Ben
+    doğrulayamıyorum.
+  - README: "Bilinen sınırlamalar"daki adaptör maddesi, case'in mock'a izin
+    verdiğini ve ANTHROPIC_API_KEY'in henüz okunmadığını açıkça söylüyor.
+
+  Sizin kararınız
+  Satır 53'ü kapatmak istersem küçük bir seçenek var: LLM_PROVIDER=anthropic
+  seçilirse ANTHROPIC_API_KEY'i okuyup anahtar yoksa net bir hata verecek,
+  adaptör yazmadan. Küçük bir kod değişikliği, test eklerim ama kapsamı
+  genişletir. Yapmamı isterseniz söyleyin, yoksa mevcut haliyle bırakıyorum.
+
+  5. oturum için son iş sizin: /export'u ai-sessions/'a eklemek ve PR'ı açmak.
+
+❯ Export yapmadan önce şunu yapmanı istiyorum şu an campaign list vs çok dağınık
+  shadcn ile bir sidebar koy üst tarafa da bir dashboard'a tekrar geri gitmek
+  için bir main h1 başlık Campaign Tool yapabilirsin ve componentleri ve genel
+  tasarımı Iconlarla yap ve smooth hafif renkler koy
+
+● Bu iş kapsamlı: kenar çubuğu, üst başlık, ikonlar ve yeni renk paleti. Önce
+  shadcn sidebar bileşeninin mevcut durumuna ve uygulamanın kabuğuna bakıyorum.
+
+● Sidebar'ın API'sini okudum. Şimdi kabuğu kuruyorum: önce paylaşılan yenileme
+  sinyali, StatusBadge, sidebar ve App.vue; ardından ikonlar, pastel palet ve
+  testler.
+
+● Sidebar bileşenleri hazır; şimdi App.vue kabuğunu (üst başlık + "Campaign
+  Tool" bağlantısı) yazıyorum.
+
+● Kart başlıklarına ve düğmelere ikon ekliyorum (AudienceCounts bitti; sırada
+  SegmentSummary, ApprovePanel, BriefForm, StepNav, DeliveryCounts).
+
+● Bileşen ikonları tamam; şimdi palet token'larını (pastel indigo) styles.css'e
+  yazıyorum, ardından tür kontrolü ve testler.
+
+● Artık kullanılmayan campaignStatusVariant fonksiyonunu ve testini
+  kaldırıyorum, StepNav/liste testlerindeki ok işaretlerini güncelliyorum.
+
+● Şimdi birim testlerini ve tür kontrolünü çalıştırıp neyin kırıldığına
+  bakıyorum.
+
+● Şimdi e2e düzeltmelerini uyguluyorum: belirsiz kalan "Gönderimi izle"
+  bağlantıları, main kapsamı ve mobil çekmece.
+
+● Birim, tür, lint ve prettier temiz. Şimdi izole Compose ortamında standart
+  tarayıcı testlerini (yeni app-shell dahil) çalıştırıyorum.
+
+● Testler çalışırken dokümanları güncelliyorum. Önce ilgili bölümleri buluyorum.
+
+● E2E hâlâ arka planda koşuyor; sonucu bekliyorum. Bu arada backend'in
+  etkilenmediğini doğrulamak için git status'u kontrol ediyorum.
+
+● E2E ortamı hâlâ ayağa kalkıyor (Docker build sürüyor). Bittiğinde bildirim
+  gelecek; sonucu o zaman değerlendirip PROGRESS.md'deki doğrulama sayılarını
+  güncelleyeceğim.
+
+● Bildirim exit 0 diyor, ama daha önce log ile çelişmişti; logu doğruluyorum.
+
+● Standart set 37/37 geçti. @real döngüsünü de (gönderim bağlantısı
+  konumlayıcısı değişti) çalıştırıyorum.
+
+● Kenar çubuğu, üstteki "Campaign Tool" başlığı, ikonlar ve pastel renkler
+  hazır; bir noktada isteğinden saptım: "Campaign Tool" h1 değil, ana sayfaya
+  dönen bir bağlantı.
+
+  Neden h1 değil
+  - Her sayfada tek h1 (sayfa başlığı) var. İkincisi eklenirse ekran okuyucu
+    gezintisi, PageHeader ve getByRole('heading', {level:1}) / get('h1')
+    kullanan testler bozulur.
+  - Gerçekten h1 istersen marka h1, sayfa başlıkları h2 olur; bu ayrı ve daha
+    geniş bir değişiklik. Karar senin.
+
+  Ne değişti
+  - Kenar çubuğu: "Yeni kampanya" düğmesi ve "Son kampanyalar" listesi ana
+    sayfadaki karttan buraya taşındı. Masaüstünde açık, düğmeyle kapanır.
+    Telefonda çekmece olur ve bir bağlantıya gidince kapanır.
+  - Liste yenileme: liste sayfa değişince, kampanya oluşunca, onaylanınca ve
+    dashboard'da durum değişince kendini yeniler. Ekranlar sadece
+    campaign/recent.ts üzerinden haber verir.
+  - Üst başlık: kenar çubuğu düğmesi ve "Campaign Tool" bağlantısı.
+    Kaydedilmemiş değişiklik uyarısı bu bağlantıda ve kenar çubuğunda da
+    çalışıyor.
+  - İkonlar: kart başlıkları, düğmeler, kitle ve kanal satırları, özet kutuları
+    ve uyarılar. Hepsi aria-hidden. StepNav okları artık ikon; erişilebilir
+    adlar ("Geri: …" / "İleri: …") aynı.
+  - Durum rozeti: yeni StatusBadge ikon, metin ve tonla gösteriyor.
+  - Renkler: soft mavi-gri zemin, beyaz kartlar, pastel indigo birincil renk,
+    açık ve koyu tema. Önceki "nötr birincil" kararının yerine geçti; bunu
+    ADR-021'e not ettim.
+  - Kapsam: yeni bağımlılık veya endpoint yok, backend değişmedi.
+
+  Doğrulama (yerelde, Node 24)
+
+  | Kontrol | Sonuç |
+  |---|---|
+  | vitest | 31 dosya, 543 test geçti |
+  | vue-tsc, oxlint, eslint, type-check:e2e, npm run build | temiz |
+  | prettier --check | benim dosyalarımda temiz; shadcn components/ui/ ve styles.css baştan beri uymuyor |
+  | make e2e-standard | 37/37 geçti (yeni app-shell.spec.ts ve mobil çekmece/üst başlık testleri dahil) |
+  | make e2e-delivery (@real) | 1/1 geçti |
+
+  - Test düzeltmeleri: kenar çubuğu satırları bazı konumlayıcıları
+    belirsizleştirdi: Gönderimi izle, getByRole('button'), /Geri/. Bunları
+    daralttım.
+  - Silinen kod: kullanılmayan campaignStatusVariant ve testi silindi.
+  - Doküman düzeltmesi: PROGRESS.md'de created_at indeksinin "yok" yazdığı iki
+    eski satır vardı (indeks migration 00005 ile eklenmişti); düzelttim.
+  - Node uyarısı: bu terminalin varsayılan Node'u v20; testler için v24'ü PATH'e
+    ekledim. Kendi terminalinde de v22.18+ veya v24 kullan.
+
+  Doğrulayamadıklarım
+  - GitHub Actions.
+  - e2e-observability döngüsünü bu son değişiklikten sonra yeniden koşmadım
+    (backend ve metrikler değişmedi).
+  - Yeni renkleri ve çekmeceyi gözle kontrol etmedim; ekran görüntüleri
+    test-results/ altına yazılıyor ama bakmadım. Kontrast ölçümleri otomatik
+    testte.
+
+  Dokümanlar (PROGRESS.md, REPO-STRUCTURE.md, ADR-021, CMP-001) güncellendi.
+  Commit atmadım. Session 5'i export edip PR'ı açabilirsin.
+
+❯ git status bak ilgili dosyaları bana git add+commit olarak ver
+
+● Branch feat/frontend-modernization. Değişikliklerin hepsi bu aşamaya ait; .env
+  veya ai-sessions/ değişikliği yok. Commit atmadım.
+
+  cd /home/oguzhandogandev/development/campaign-tool
+  git add -A
+  git status --short   # hepsi "A"/"M" görünmeli, beklenmeyen dosya olmamalı
+  git commit -m "feat: modernize frontend with shadcn shell, campaign list and delivery breakdown" \
+    -m "- Migrate all components to shadcn, add app shell (sidebar, Campaign Tool header), icons and soft indigo palette
+  - Add step indicator, Geri/Ileri navigation, example briefs, unsaved-changes guard, approval summary and message preview
+  - Add GET /api/campaigns (default 10, max 20) with created_at index (migration 00005) and recent campaigns sidebar list
+  - Add per-channel breakdown and recovered count to delivery snapshot
+  - Add unit, integration and e2e tests; update PROGRESS, ARCHITECTURE, REPO-STRUCTURE, ADR-021/029/030 and specs"
+
+  - Commit mesajı: PR squash merge ile birleşeceği için tek commit yeterli,
+    Co-Authored-By satırı koymadım (CLAUDE.md kuralı).
+  - Mesaj dili: İngilizce yazdım. Türkçe istersen değiştiririm.
+  - Mantıksal bölme: istersen üçe bölebilirsin: backend (backend/), frontend
+    (frontend/), docs (docs/, DECISIONS.md, README.md). Dokümanlar tüm
+    değişikliklere birlikte atıf yaptığı için tek commit daha tutarlı.
+  - Push öncesi: CI için git push -u origin feat/frontend-modernization sonrası
+    PR açılır. Session 5'i ai-sessions/ altına export etmeyi unutma; ayrı commit
+    olarak eklenebilir.
+
+❯ Observability'i README.md'ye koy bu arada yapmadık büyük ihtimalle ve başka
+  unuttuğumuz şeyler varsa
+
+● Önce CASE.md'nin gözlemlenebilirlik ve teslim kriterlerini, README'de neyin
+  zaten olduğunu ve kodda gerçekte ne olduğunu karşılaştırıyorum.
+
+● README'ye gözlemlenebilirlik bölümünü yazıyorum (mevcut kısa Prometheus
+  bölümünün yerine) ve demo akışına yeni arayüzü ekliyorum.
+
+● README'ye gözlemlenebilirlik bölümünü ekledim, ama bu özellik zaten
+  yapılmıştı; yalnızca README'de kısa geçiyordu.
+
+  Zaten yapılmış olanlar (ADR-016, 027 ve 028; make e2e-observability ile test
+  ediliyor)
+  - /healthz ve /readyz API'de çalışıyor.
+  - API ve worker kendi /metrics uçlarını sunuyor. Bu uçlar yalnızca Docker iç
+    ağında erişilebilir, host'a açılmıyor.
+  - 7 metrik var, promtool ile doğrulanıyor, loglar slog ile yazılıyor.
+  - İsteğe bağlı Prometheus profili hazır.
+
+  README'de ne değişti
+  - Yeni "Gözlemlenebilirlik" bölümü ve uç tablosu: /healthz, /readyz ve iç
+    /metrics ne verir.
+  - Metrik tablosu, adlar ve etiketler koddan doğrulanarak yazıldı.
+  - İç ağdaki metrikleri okuma komutu: docker compose exec web wget -qO-
+    http://api:9090/metrics.
+  - Log okuma komutu: docker compose logs -f api worker.
+  - Prometheus bölümü: scrape aralığı, hangi sorgulara bakılacağı, Grafana ve
+    uyarı kuralı olmadığı.
+  - Demo akışına kenar çubuğu ve "Campaign Tool" başlığı eklendi.
+
+  README'yi (50 satır eklendi) ve diğer dosyaları henüz commit etmedim; commit
+  komutunu tekrar vereyim mi?
+
+  Unuttuğumuz şeyler
+  - ai-sessions/README.md bozuk bağlantı: Session 4 satırı
+    Session-04-Worker-Queue-MockProvider.txt dosyasına bağlanıyor. Gerçek dosya
+    adı Session-04-Worker-MockProvider-Queue.txt.
+  - Session 5 satırı: tabloda yok. Export'u ekleyince eklenecek.
+  - ai-sessions/ dosyalarına dokunmadım: önceki isteğin gereği. Bağlantıyı sen
+    düzeltirsin ya da söylersen ben düzeltirim.
+  - CI: hiç doğrulanmadı. PR'daki ilk koşu yeni testleri (app-shell,
+    campaign-list vb.) ve e2e-observability'i ilk kez çalıştıracak.
+  - Gerçek Claude adaptörü: yok. README sınırlamalarında yazılı. CASE'e göre
+    isteğe bağlı.
+
+  Başka eksik bulmadım. docker compose up için .env gerekmiyor (varsayılanlar
+  compose.yaml'da), CASE.md'nin teslim listesindeki diğer maddeler de mevcut.
+
+❯ ai-sessions/README.md bozuk bağlantı: Session 4 satırı
+  Session-04-Worker-Queue-MockProvider.txt dosyasına bağlanıyor. Gerçek dosya
+  adı Session-04-Worker-MockProvider-Queue.txt düzelt bunu
+
+● [ai-sessions/README.md](ai-sessions/README.md) satır 30'daki bağlantıyı
+  Session-04-Worker-MockProvider-Queue.txt olarak düzelttim. Dört oturum
+  bağlantısı da artık gerçek dosyalara gidiyor; başka satıra dokunmadım.
+
+  Önceki mesajımda "tabloda Session 5 satırı yok" demiştim, bu yanlıştı. 5.
+  satır zaten var, durumu "Planlandı" ve dosya adı
+  Session-05-Frontend-Tasarim.txt olarak önerilmiş. Export'u kaydedince durumu
+  "Kayıtlı" yapıp bağlantıyı eklemen gerekir. İstersen o satırı da ben
+  güncellerim.
+
+  Commit atmadım. README, ai-sessions düzeltmesi ve diğer değişiklikler şu an
+  çalışma ağacında. Commit komutunu ai-sessions/README.md dahil güncel haliyle
+  ister misin?
+
+❯ son export yine bozuk kendi mesajlarım yok düzelt onu da 3 4 gibi olsun
+
+● wrap fonksiyonunu ilk taslakta karmaşık yazmışım; temizleyip yeniden
+  yazıyorum.
+
+❯ Ben Oğuzhan projemizi burada bitiyoruz artık sonrasında ben tüm kontrolleri 
+  yapıp bitireceğim güzel bir çalışma oldu tüm sessionlarda neredeyse hatasız 
+  ilerleyerek çok clean bir şekilde bitirdik görüşmek üzere :)
+
+● Teşekkürler Oğuzhan, birlikte çalışmak güzeldi. Projen için bol şans, görüşürüz! :)

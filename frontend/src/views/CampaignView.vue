@@ -1,6 +1,14 @@
 <script setup lang="ts">
+import {
+  CheckIcon,
+  FileTextIcon,
+  MessageSquareTextIcon,
+  PencilLineIcon,
+  SaveIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+} from '@lucide/vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import { ApiError, isAbortError, type ApiReason } from '@/api/campaigns'
 import {
   approveCampaign,
@@ -14,12 +22,24 @@ import {
 } from '@/api/content'
 import { applyDelta, emptyFields, hasText, sameFields } from '@/content/draft'
 import { FIELD_LABELS, contentErrorTitle, contentReasonMessage } from '@/content/messages'
+import { useUnsavedChangesGuard } from '@/content/useUnsavedChangesGuard'
 import ApprovePanel from '@/components/ApprovePanel.vue'
 import AudienceCounts from '@/components/AudienceCounts.vue'
 import ContentEditor from '@/components/ContentEditor.vue'
 import ErrorPanel from '@/components/ErrorPanel.vue'
+import MessagePreview from '@/components/MessagePreview.vue'
 import SegmentSummary from '@/components/SegmentSummary.vue'
+import CampaignSteps from '@/components/CampaignSteps.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
+import StepNav, { type NavStep } from '@/components/StepNav.vue'
+import { notifyCampaignsChanged } from '@/campaign/recent'
+import { stepStatuses } from '@/campaign/steps'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
 
 const props = defineProps<{ id: string }>()
 
@@ -43,6 +63,8 @@ const generateError = ref<ApiError | null>(null)
 const saveError = ref<ApiError | null>(null)
 const approveError = ref<ApiError | null>(null)
 const approveResult = ref<ApproveResult | null>(null)
+/** Son başarılı işlemin kısa geri bildirimi ("Kaydedildi · sürüm 2"); kullanıcı metni değiştirince gizlenir. */
+const feedback = ref<string | null>(null)
 
 const controllers = new Set<AbortController>()
 
@@ -88,6 +110,7 @@ async function load() {
   detail.value = null
   generateError.value = saveError.value = approveError.value = null
   approveResult.value = null
+  feedback.value = null
   manualEntry.value = false
 
   const controller = track()
@@ -129,15 +152,46 @@ const dirty = computed(() => {
   if (saved.value) return !sameFields(draft.value, fieldsOf(saved.value))
   return hasText(draft.value)
 })
+// Kaydedilmemiş metin varken sayfadan ayrılmak içeriği kaybettirir: kullanıcı uyarılır.
+useUnsavedChangesGuard(() => dirty.value && !isApproved.value)
 const showEditor = computed(
   () => generating.value || saved.value !== null || fromPartial.value || manualEntry.value,
 )
 const canApprove = computed(() => saved.value !== null && !dirty.value && !busy.value)
+// Henüz içerik yokken sayfanın ana eylemi üretmektir; içerik varken ana eylem kaydetmek
+// (ve sonra onaylamaktır), yeniden üretme ikincil kalır.
+const generateIsPrimary = computed(
+  () => saved.value === null && !fromPartial.value && !manualEntry.value,
+)
+// Soldaki düğme önceki aşamaya DÖNMEZ: önizleme ekranı var olan bir kampanyayı yüklemez, yeni bir
+// brief ile yeni kampanya başlatır (bu kampanya olduğu gibi kayıtlı kalır). Kullanıcı "geri
+// döndüğünü" sanmasın diye "Geri" değil kendi adıyla ("Yeni kampanya") anılır. "İleri":
+// onaylanınca gönderim takibi; onaydan önce kapalıdır. Kaydedilmemiş metin varken ayrılmak
+// her iki durumda da uyarılır.
+const backStep: NavStep = {
+  label: 'Yeni kampanya',
+  text: '+ Yeni kampanya',
+  to: '/',
+  title: 'Yeni bir kampanya başlatır. Bu kampanya olduğu gibi kayıtlı kalır.',
+}
+const nextStep = computed<NavStep>(() =>
+  isApproved.value
+    ? { label: 'Gönderimi izle', to: `/campaigns/${props.id}/delivery`, testid: 'delivery-link' }
+    : { label: 'Gönderimi izle', hint: 'Önce içeriği onaylayın.' },
+)
+// Adım göstergesi: kaydedilmiş ve değişmemiş içerik varsa içerik adımı biter, onay sürer.
+const steps = computed(() =>
+  stepStatuses({
+    status: detail.value?.status ?? null,
+    contentReady: saved.value !== null && !dirty.value,
+  }),
+)
 
 async function generate() {
   if (busy.value) return
   const controller = track()
   generating.value = true
+  feedback.value = null
   generateError.value = saveError.value = approveError.value = null
   fromPartial.value = false
   draft.value = emptyFields() // canlı geçici önizleme
@@ -152,6 +206,7 @@ async function generate() {
     )
     if (!controllers.has(controller)) return
     adopt(version)
+    feedback.value = `Üretildi · sürüm ${version.content_version}`
   } catch (err) {
     if (!controllers.has(controller) || isAbortError(err)) return
     const error = toApiError(err)
@@ -175,12 +230,14 @@ async function save() {
   if (busy.value || !dirty.value) return
   const controller = track()
   saving.value = true
+  feedback.value = null
   saveError.value = approveError.value = null
   try {
     const version = await saveContent(props.id, draft.value, controller.signal)
     if (!controllers.has(controller)) return
     adopt(version)
     generateError.value = null
+    feedback.value = `Kaydedildi · sürüm ${version.content_version}`
   } catch (err) {
     if (!controllers.has(controller) || isAbortError(err)) return
     const error = toApiError(err)
@@ -197,6 +254,7 @@ async function approve() {
   if (!version || !canApprove.value) return
   const controller = track()
   approving.value = true
+  feedback.value = null
   approveError.value = null
   try {
     const result = await approveCampaign(props.id, version.content_version, controller.signal)
@@ -208,6 +266,8 @@ async function approve() {
       approved_content_version: result.approved_content_version,
       approved_at: result.approved_at,
     }
+    // Kenar çubuğundaki liste kampanyanın yeni durumunu göstersin.
+    notifyCampaignsChanged()
   } catch (err) {
     if (!controllers.has(controller) || isAbortError(err)) return
     const error = toApiError(err)
@@ -274,11 +334,22 @@ const approvedAtText = computed(() => {
 </script>
 
 <template>
-  <main>
-    <RouterLink class="back" to="/">← Yeni kampanya</RouterLink>
-    <h1>Kampanya</h1>
+  <main class="grid gap-6">
+    <PageHeader
+      title="Kampanya"
+      description="İçeriği üretin veya düzenleyin, kaydettiğiniz sürümü onaylayın."
+    >
+      <template #badge>
+        <StatusBadge v-if="detail" :status="detail.status" data-testid="campaign-state" />
+      </template>
+      <CampaignSteps v-if="detail" :statuses="steps" />
+    </PageHeader>
 
-    <p v-if="loading" class="status" role="status">Kampanya yükleniyor…</p>
+    <div v-if="loading" class="grid gap-3" role="status" data-testid="loading">
+      <span class="sr-only">Kampanya yükleniyor…</span>
+      <Skeleton class="h-5 w-2/3" />
+      <Skeleton class="h-40 w-full" />
+    </div>
     <ErrorPanel
       v-else-if="loadError"
       :title="contentErrorTitle(loadError)"
@@ -287,213 +358,202 @@ const approvedAtText = computed(() => {
       @retry="load"
     />
 
-    <template v-else-if="detail">
-      <section class="summary" aria-labelledby="brief-title">
-        <h2 id="brief-title">Brief</h2>
-        <p class="brief">{{ detail.brief }}</p>
-        <p class="state" :class="{ approved: isApproved }">
-          {{ isApproved ? 'Onaylandı' : 'Taslak' }}
-        </p>
-        <AudienceCounts :audience="detail.audience" />
-        <SegmentSummary :segment="detail.segment" />
-      </section>
+    <!-- Geniş ekranda iki sütun: solda brief ve geniş düzenleyici, sağda kompakt kitle ve onay
+         özeti. Dar ekranda alt alta: brief, içerik, kitle, onay. -->
+    <div v-else-if="detail" class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div class="grid gap-6">
+        <Card role="region" aria-labelledby="brief-title">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <FileTextIcon class="text-primary size-5" aria-hidden="true" />
+              <h2 id="brief-title">Brief</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p class="text-sm wrap-anywhere whitespace-pre-wrap">{{ detail.brief }}</p>
+          </CardContent>
+        </Card>
 
-      <section class="content" aria-labelledby="content-title">
-        <h2 id="content-title">İçerik</h2>
-        <p v-if="saved" class="version" data-testid="version">
-          Sürüm {{ saved.content_version }} · {{ sourceLabel }}
-        </p>
+        <Card role="region" aria-labelledby="content-title">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <MessageSquareTextIcon class="text-primary size-5" aria-hidden="true" />
+              <h2 id="content-title">İçerik</h2>
+            </CardTitle>
+            <CardDescription v-if="saved" data-testid="version">
+              Sürüm {{ saved.content_version }} · {{ sourceLabel }}
+            </CardDescription>
+          </CardHeader>
 
-        <div v-if="!isApproved" class="toolbar">
-          <button type="button" class="primary" :disabled="busy" @click="generate">
-            {{ generating ? 'Üretiliyor…' : saved || fromPartial ? 'Yeniden üret' : 'İçerik üret' }}
-          </button>
-          <button
-            v-if="!showEditor"
-            type="button"
-            class="secondary"
-            :disabled="busy"
-            @click="manualEntry = true"
-          >
-            İçeriği elle yaz
-          </button>
-        </div>
-        <p v-if="generating" class="status" role="status">
-          İçerik üretiliyor… Gördüğünüz metin geçicidir; doğrulanınca sürüm olarak kaydedilir.
-        </p>
+          <CardContent class="grid gap-4">
+            <div v-if="!isApproved" class="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                size="lg"
+                :variant="generateIsPrimary ? 'default' : 'outline'"
+                class="w-full sm:w-auto"
+                :disabled="busy"
+                @click="generate"
+              >
+                <SparklesIcon aria-hidden="true" />
+                {{
+                  generating ? 'Üretiliyor…' : saved || fromPartial ? 'Yeniden üret' : 'İçerik üret'
+                }}
+              </Button>
+              <Button
+                v-if="!showEditor"
+                type="button"
+                variant="outline"
+                size="lg"
+                class="w-full sm:w-auto"
+                :disabled="busy"
+                @click="manualEntry = true"
+              >
+                <PencilLineIcon aria-hidden="true" />
+                İçeriği elle yaz
+              </Button>
+            </div>
 
-        <ErrorPanel
-          v-if="generateError"
-          :title="contentErrorTitle(generateError)"
-          :reasons="generateSplit.general"
-          :retryable="generateError.code !== 'CAMPAIGN_NOT_DRAFT'"
-          retry-label="Yeniden üret"
-          hint=""
-          @retry="generate"
+            <div
+              v-if="generating"
+              class="text-muted-foreground flex items-start gap-2 text-sm"
+              role="status"
+            >
+              <!-- Spinner svg'si kendi `status` rolünü taşır; metin zaten bu bölgede okunur. -->
+              <Spinner
+                class="mt-0.5 shrink-0 motion-reduce:animate-none"
+                role="presentation"
+                aria-hidden="true"
+              />
+              <span>
+                İçerik üretiliyor… Gördüğünüz metin geçicidir; doğrulanınca sürüm olarak kaydedilir.
+              </span>
+            </div>
+
+            <ErrorPanel
+              v-if="generateError"
+              :title="contentErrorTitle(generateError)"
+              :reasons="generateSplit.general"
+              :retryable="generateError.code !== 'CAMPAIGN_NOT_DRAFT'"
+              retry-label="Yeniden üret"
+              hint=""
+              @retry="generate"
+            />
+            <Alert v-if="fromPartial" role="status" data-testid="partial-notice">
+              <AlertDescription>
+                Üretilen metin doğrulanamadı ve henüz kaydedilmedi. Aşağıdaki metni düzeltip
+                kaydedin veya yeniden üretin; onay yalnızca kaydedilmiş sürümle yapılabilir.
+              </AlertDescription>
+            </Alert>
+
+            <ContentEditor
+              v-if="showEditor"
+              v-model="draft"
+              :readonly="generating || saving || isApproved"
+              :problems="problems"
+            />
+
+            <!-- Canlı önizleme: yazarken mesajın alıcıya nasıl görüneceğinin örneği. -->
+            <section
+              v-if="showEditor && hasText(draft)"
+              class="grid gap-2 rounded-lg border p-3"
+              aria-labelledby="preview-title"
+              data-testid="editor-preview"
+            >
+              <h3 id="preview-title" class="text-sm font-medium">Mesaj önizlemesi</h3>
+              <MessagePreview :fields="draft" />
+            </section>
+
+            <div
+              v-if="showEditor && !isApproved"
+              class="flex flex-col gap-2 sm:flex-row sm:items-center"
+            >
+              <Button
+                type="button"
+                size="lg"
+                class="w-full sm:w-auto"
+                :disabled="busy || !dirty"
+                @click="save"
+              >
+                <SaveIcon aria-hidden="true" />
+                {{ saving ? 'Kaydediliyor…' : 'Yeni sürüm olarak kaydet' }}
+              </Button>
+              <span v-if="dirty && !generating" class="text-muted-foreground text-sm">
+                Kaydedilmemiş değişiklik var.
+              </span>
+              <!-- Her zaman var olan durum bölgesi: metin değişince ekran okuyucuya bildirilir. -->
+              <span
+                role="status"
+                class="inline-flex items-center gap-1 text-sm font-medium empty:hidden"
+                data-testid="action-feedback"
+              >
+                <template v-if="feedback && !dirty">
+                  <CheckIcon class="size-4" aria-hidden="true" />
+                  {{ feedback }}
+                </template>
+              </span>
+            </div>
+            <ErrorPanel
+              v-if="saveError"
+              :title="contentErrorTitle(saveError)"
+              :reasons="saveSplit.general"
+              :retryable="false"
+              hint=""
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <!-- Dar ekranda `contents`: kartlar üst gride katılır ve `order` ile dizilir; onay özeti
+           içerikten hemen sonra gelir (ana eyleme kaydırmadan ulaşılır), kitle ve koşullar
+           onun ardından. Geniş ekranda sağ sütunda yapışkan bir bölümdür. -->
+      <aside class="grid gap-6 max-lg:contents lg:sticky lg:top-6" aria-label="Kitle ve onay özeti">
+        <AudienceCounts class="max-lg:order-2" compact :audience="detail.audience" />
+        <SegmentSummary class="max-lg:order-2" :segment="detail.segment" />
+
+        <ApprovePanel
+          v-if="saved && !isApproved"
+          class="max-lg:order-1"
+          :version="saved.content_version"
+          :content="fieldsOf(saved)"
+          :audience="detail.audience"
+          :disabled="!canApprove"
+          :pending="approving"
+          @approve="approve"
         />
-        <p v-if="fromPartial" class="notice" role="status">
-          Üretilen metin doğrulanamadı ve henüz kaydedilmedi. Aşağıdaki metni düzeltip kaydedin veya
-          yeniden üretin; onay yalnızca kaydedilmiş sürümle yapılabilir.
-        </p>
-
-        <ContentEditor
-          v-if="showEditor"
-          v-model="draft"
-          :readonly="generating || saving || isApproved"
-          :problems="problems"
-        />
-
-        <div v-if="showEditor && !isApproved" class="toolbar">
-          <button type="button" class="primary" :disabled="busy || !dirty" @click="save">
-            {{ saving ? 'Kaydediliyor…' : 'Yeni sürüm olarak kaydet' }}
-          </button>
-          <span v-if="dirty && !generating" class="dirty">Kaydedilmemiş değişiklik var.</span>
-        </div>
         <ErrorPanel
-          v-if="saveError"
-          :title="contentErrorTitle(saveError)"
-          :reasons="saveSplit.general"
+          v-if="approveError"
+          class="max-lg:order-1"
+          :title="contentErrorTitle(approveError)"
+          :reasons="approveReasons"
           :retryable="false"
           hint=""
         />
-      </section>
 
-      <ApprovePanel
-        v-if="saved && !isApproved"
-        :version="saved.content_version"
-        :audience="detail.audience"
-        :disabled="!canApprove"
-        :pending="approving"
-        @approve="approve"
-      />
-      <ErrorPanel
-        v-if="approveError"
-        :title="contentErrorTitle(approveError)"
-        :reasons="approveReasons"
-        :retryable="false"
-        hint=""
-      />
+        <Card v-if="isApproved" class="max-lg:order-1" role="status" data-testid="approved">
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <ShieldCheckIcon
+                class="size-5 shrink-0 text-emerald-700 dark:text-emerald-300"
+                aria-hidden="true"
+              />
+              Kampanya onaylandı: sürüm {{ detail.approved_content_version }}
+              <template v-if="approvedAtText"> · {{ approvedAtText }}</template>
+            </CardTitle>
+            <CardDescription v-if="approveResult" data-testid="queued">
+              {{ approveResult.queued.sms }} SMS ve {{ approveResult.queued.email }} e-posta mesajı
+              gönderim için kuyruğa alındı.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p class="text-muted-foreground text-sm">
+              İçerik artık değiştirilemez. Gönderimin durumunu "İleri" ile izleyebilirsiniz.
+            </p>
+          </CardContent>
+        </Card>
+      </aside>
+    </div>
 
-      <section v-if="isApproved" class="approved-box" role="status" data-testid="approved">
-        <p class="title">
-          Kampanya onaylandı: sürüm {{ detail.approved_content_version }}
-          <template v-if="approvedAtText"> · {{ approvedAtText }}</template>
-        </p>
-        <p v-if="approveResult" data-testid="queued">
-          {{ approveResult.queued.sms }} SMS ve {{ approveResult.queued.email }} e-posta mesajı
-          gönderim için kuyruğa alındı.
-        </p>
-        <p class="hint">İçerik artık değiştirilemez.</p>
-        <Button as-child variant="outline" class="justify-self-start">
-          <RouterLink :to="`/campaigns/${id}/delivery`" data-testid="delivery-link">
-            Gönderimi izle →
-          </RouterLink>
-        </Button>
-      </section>
-    </template>
+    <StepNav sticky :back="backStep" :next="nextStep" />
   </main>
 </template>
-
-<style scoped>
-main {
-  display: grid;
-  gap: 1.5rem;
-}
-h1 {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-}
-h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-}
-.back {
-  justify-self: start;
-  color: var(--app-accent);
-}
-.summary,
-.content {
-  display: grid;
-  gap: 0.9rem;
-}
-.brief {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.state {
-  justify-self: start;
-  margin: 0;
-  padding: 0.15rem 0.6rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  background: var(--app-warning-bg);
-  border: 1px solid var(--app-border);
-  border-radius: 999px;
-}
-.state.approved {
-  background: var(--app-surface);
-}
-.version,
-.status,
-.hint {
-  margin: 0;
-  color: var(--app-muted);
-  font-size: 0.9rem;
-}
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem;
-}
-.notice {
-  margin: 0;
-  padding: 0.7rem 0.9rem;
-  background: var(--app-warning-bg);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-}
-.dirty {
-  color: var(--app-muted);
-  font-size: 0.9rem;
-}
-.primary,
-.secondary {
-  padding: 0.6rem 1.2rem;
-  font: inherit;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.primary {
-  color: var(--app-on-accent);
-  background: var(--app-accent);
-  border: none;
-}
-.secondary {
-  color: inherit;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-}
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.approved-box {
-  display: grid;
-  gap: 0.4rem;
-  padding: 1rem;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-}
-.approved-box p {
-  margin: 0;
-}
-.approved-box .title {
-  font-weight: 700;
-}
-</style>

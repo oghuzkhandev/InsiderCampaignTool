@@ -25,17 +25,47 @@ interface Messages {
   skipped: number
 }
 
-/** Toplamı MESSAGES olan, gönderimin sürdüğü bir an. */
-const IN_PROGRESS: Messages = { queued: 3, retrying: 1, sending: 1, sent: 2, failed: 0, skipped: 0 }
-/** Toplamı MESSAGES olan, tamamlanmış gönderim: bir mesaj deneme sınırında başarısız oldu. */
-const COMPLETED: Messages = { queued: 0, retrying: 0, sending: 0, sent: 5, failed: 1, skipped: 1 }
+const none: Messages = { queued: 0, retrying: 0, sending: 0, sent: 0, failed: 0, skipped: 0 }
+
+/** Bir durum görüntüsünün sayıları: toplam, kanal kırılımı (sms + e-posta = toplam) ve toparlanan. */
+interface Fixture {
+  messages: Messages
+  channels: { sms: Messages; email: Messages }
+  recovered: number
+}
+
+/** Toplamı MESSAGES olan, gönderimin sürdüğü bir an (SMS: 3, e-posta: 4 mesaj). */
+const IN_PROGRESS: Fixture = {
+  messages: { queued: 3, retrying: 1, sending: 1, sent: 2, failed: 0, skipped: 0 },
+  channels: {
+    sms: { ...none, queued: 1, sent: 2 },
+    email: { ...none, queued: 2, retrying: 1, sending: 1 },
+  },
+  recovered: 1,
+}
+/** Toplamı MESSAGES olan, tamamlanmış gönderim: bir e-posta deneme sınırında başarısız oldu. */
+const COMPLETED: Fixture = {
+  messages: { queued: 0, retrying: 0, sending: 0, sent: 5, failed: 1, skipped: 1 },
+  channels: {
+    sms: { ...none, sent: 3 },
+    email: { ...none, sent: 2, failed: 1, skipped: 1 },
+  },
+  recovered: 2,
+}
 
 function snapshotEvent(
   status: string,
-  messages: Messages,
+  fixture: Fixture,
   failures = { exhausted: 0, rejected: 0 },
 ): string {
-  return `event: snapshot\ndata: ${JSON.stringify({ status, messages, failures })}\n\n`
+  const data = {
+    status,
+    messages: fixture.messages,
+    failures,
+    channels: fixture.channels,
+    recovered: fixture.recovered,
+  }
+  return `event: snapshot\ndata: ${JSON.stringify(data)}\n\n`
 }
 
 function fulfillEvents(route: Route, body: string) {
@@ -67,7 +97,7 @@ test('onaylanan kampanyanın gönderimi canlı izlenir; bağlantı koparsa yenid
   })
 
   // Onay ekranından gönderim takibine geç.
-  await page.getByRole('link', { name: 'Gönderimi izle' }).click()
+  await page.getByRole('link', { name: 'İleri: Gönderimi izle' }).click()
   await page.waitForURL(new RegExp(`/campaigns/${id}/delivery$`))
   await expect(page.getByRole('heading', { level: 1, name: 'Gönderim takibi' })).toBeVisible()
 
@@ -78,6 +108,12 @@ test('onaylanan kampanyanın gönderimi canlı izlenir; bağlantı koparsa yenid
   await expect(count(page, 'sending')).toHaveText('1')
   await expect(count(page, 'sent')).toHaveText('2')
   await expect(page.getByTestId('campaign-status')).toHaveText('Gönderiliyor')
+  // Kanal dağılımı (SMS 3, e-posta 4 mesaj) ve yeniden denemeyle toparlanan.
+  await expect(page.getByTestId('channel-sms-total')).toHaveText(`${EXPECTED.sms} mesaj`)
+  await expect(page.getByTestId('channel-email-total')).toHaveText(`${EXPECTED.email} mesaj`)
+  await expect(page.getByTestId('channel-sms-sent')).toHaveText('2')
+  await expect(page.getByTestId('channel-email-unfinished')).toHaveText('4') // 2 + 1 + 1
+  await expect(page.getByTestId('recovered-count')).toHaveText('1')
 
   // Akış koptu: ekran yeniden bağlanır ve tamamlanmış durumu gösterir (sayılar yenilenir).
   await expect(page.getByTestId('campaign-status')).toHaveText('Tamamlandı')
@@ -100,6 +136,41 @@ test('onaylanan kampanyanın gönderimi canlı izlenir; bağlantı koparsa yenid
   await expect(page.getByTestId('completed-note')).toBeVisible()
   await expect(page.getByTestId('connection-status')).toContainText('Canlı takip kapatıldı')
   expect(streamRequests).toBe(2) // tamamlanınca bir daha bağlanmadı
+
+  // Kanal dağılımı: SMS'in hepsi gitti, e-postada bir başarısız ve bir atlanan var.
+  await expect(page.getByTestId('channel-sms-sent')).toHaveText('3')
+  await expect(page.getByTestId('channel-sms-failed')).toHaveText('0')
+  await expect(page.getByTestId('channel-sms-skipped')).toHaveCount(0)
+  await expect(page.getByTestId('channel-email-sent')).toHaveText('2')
+  await expect(page.getByTestId('channel-email-failed')).toHaveText('1')
+  await expect(page.getByTestId('channel-email-skipped')).toHaveText('Atlandı: 1')
+  await expect(page.getByTestId('channel-email-unfinished')).toHaveText('0')
+  // Yeniden denemeyle toparlanan: canlı notta ve gönderim sonu özetinde.
+  await expect(page.getByTestId('recovered-count')).toHaveText('2')
+
+  // Gönderim sonu özeti: başarılı, başarısız ve atlanan kısa açıklamayla; üstte özet sayılar.
+  const lines = page.getByTestId('completion-lines')
+  await expect(lines).toContainText('Gönderildi: 5')
+  await expect(lines).toContainText(
+    '2 mesaj ilk denemede tamamlanamadı, yeniden denemeyle gönderildi',
+  )
+  await expect(lines).toContainText('Başarısız: 1')
+  await expect(lines).toContainText('1 mesajın sonucu doğrulanamadı (deneme sınırı doldu)')
+  await expect(lines).toContainText('Atlandı: 1')
+  await expect(page.getByTestId('completion-headline')).toHaveText(
+    "7 mesajın 5'i gönderildi, 1'i başarısız, 1'i atlandı.",
+  )
+  // Ne yapılabileceği: başarısız (sonucu doğrulanamayan) ve atlanan için ayrı öneriler.
+  const advice = page.getByTestId('completion-advice')
+  await expect(advice).toHaveCount(2)
+  await expect(advice.first()).toContainText('teslim edilmiş olabilir')
+  await expect(advice.last()).toContainText('yapmanız gereken bir şey yok')
+  await expect(page.getByTestId('summary-sent')).toHaveText('5')
+  await expect(page.getByTestId('summary-failed')).toHaveText('1')
+  await expect(page.getByTestId('summary-unfinished')).toHaveText('0')
+
+  // Gönderim bitti: "İleri" yeni kampanyaya açılır.
+  await expect(page.getByRole('link', { name: 'İleri: Yeni kampanya' })).toBeVisible()
 
   // Sayfa yenilenince kampanya ve son durum sunucudan yeniden kurulur.
   await page.reload()

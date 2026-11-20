@@ -2,8 +2,9 @@
 // gösterilmez; yalnızca durum ve neden kodlarına karşılık gelen sabit açıklamalar
 // ve sayılar kullanılır (content/messages.ts ile aynı yaklaşım).
 import type { ApiError } from '@/api/campaigns'
-import type { DeliveryCounts } from '@/api/delivery'
-import type { BadgeVariants } from '@/components/ui/badge'
+import type { DeliveryCounts, DeliverySnapshot } from '@/api/delivery'
+import { totalMessages } from './summary'
+import { withPossessive } from './turkish'
 
 /** Kampanya durumunun kullanıcıya gösterilen adı. Bilinmeyen durum olduğu gibi gösterilir. */
 export function campaignStatusLabel(status: string): string {
@@ -18,17 +19,6 @@ export function campaignStatusLabel(status: string): string {
       return 'Tamamlandı'
     default:
       return status
-  }
-}
-
-export function campaignStatusVariant(status: string): NonNullable<BadgeVariants['variant']> {
-  switch (status) {
-    case 'sending':
-      return 'default'
-    case 'approved':
-      return 'secondary'
-    default:
-      return 'outline'
   }
 }
 
@@ -57,6 +47,107 @@ export function exhaustedNote(count: number): string {
     `${nf.format(count)} mesaj: Gönderim sonucu doğrulanamadı; deneme sınırı doldu. ` +
     'Bu, mesajın kesinlikle teslim edilmediği anlamına gelmez.'
   )
+}
+
+export interface CompletionLine {
+  key: 'sent' | 'failed' | 'skipped'
+  label: string
+  count: number
+  text: string
+  /** Kullanıcının bu sonuç için yapabilecekleri (veya yapılacak bir şey olmadığı). */
+  advice: string[]
+}
+
+/**
+ * Gönderim bitince sonucun tek cümlelik özeti: "7 mesajın 5'i gönderildi, 1'i başarısız,
+ * 1'i atlandı." Başarısız veya atlanan mesaj olması kampanyanın tamamlanmasını engellemez;
+ * özet bunu gizlemeden söyler. Yalnızca sıfırdan büyük sonuçlar yazılır; hepsi tek sonuçsa
+ * "tamamı" denir.
+ */
+export function completionHeadline(counts: DeliveryCounts): string {
+  const total = totalMessages(counts)
+  if (total === 0) return 'Gönderilecek mesaj yoktu.'
+
+  const outcomes = [
+    { count: counts.sent, list: 'gönderildi', whole: 'gönderildi' },
+    { count: counts.failed, list: 'başarısız', whole: 'başarısız oldu' },
+    { count: counts.skipped, list: 'atlandı', whole: 'atlandı' },
+  ].filter((o) => o.count > 0)
+
+  const only = outcomes.length === 1 ? outcomes[0] : undefined
+  if (only) return `${nf.format(total)} mesajın tamamı ${only.whole}.`
+  const parts = outcomes.map((o) => `${withPossessive(o.count)} ${o.list}`)
+  return `${nf.format(total)} mesajın ${parts.join(', ')}.`
+}
+
+/**
+ * Gönderim sonu özetinin satırları: gönderilen, başarısız ve atlanan mesajlar, her biri kısa
+ * bir açıklama ve "ne yapabilirsiniz" önerisiyle. Başarısız ve atlanan satırı yalnızca o
+ * mesajlardan varsa çıkar. Sayılar ve nedenler sunucudan gelir; burada yalnızca metne
+ * dökülür. Öneriler uygulamanın gerçek davranışına dayanır: kampanya yeniden gönderilemez ve
+ * yeni bir kampanya brief'e uyan herkese gider. Gönderilen satırı, varsa yeniden denemeyle
+ * toparlanan mesaj sayısını da söyler.
+ */
+export function completionLines(snapshot: DeliverySnapshot): CompletionLine[] {
+  const { messages, failures } = snapshot
+  // Yeniden denemeyle toparlananlar gönderilenlerin bir bölümüdür; varsa açıkça söylenir. "İlk
+  // denemede başarısız oldu" denmez: ilk deneme kayıp yanıt veya çöken worker yüzünden de
+  // tamamlanamamış olabilir (sağlayıcı o isteği kabul etmiş olabilir).
+  const recovered = snapshot.recovered ?? 0
+  const lines: CompletionLine[] = [
+    {
+      key: 'sent',
+      label: 'Gönderildi',
+      count: messages.sent,
+      text:
+        recovered > 0
+          ? `Sağlayıcı kabul etti. ${nf.format(recovered)} mesaj ilk denemede tamamlanamadı, yeniden denemeyle gönderildi.`
+          : 'Sağlayıcı kabul etti.',
+      advice: [],
+    },
+  ]
+  if (messages.failed > 0) {
+    const parts: string[] = []
+    const advice: string[] = []
+    if (failures.exhausted > 0) {
+      parts.push(
+        `${nf.format(failures.exhausted)} mesajın sonucu doğrulanamadı (deneme sınırı doldu)`,
+      )
+      advice.push(
+        'Sonucu doğrulanamayan mesajlar teslim edilmiş olabilir; yeniden göndermeden önce sağlayıcıdan teslim durumunu kontrol edin.',
+      )
+    }
+    if (failures.rejected > 0) {
+      parts.push(`${nf.format(failures.rejected)} mesaj sağlayıcı tarafından reddedildi`)
+      advice.push(
+        'Reddedilen mesajlar yeniden denenmez; alıcıların telefon veya e-posta adreslerini kontrol edin.',
+      )
+    }
+    const other = messages.failed - failures.exhausted - failures.rejected
+    if (other > 0) parts.push(`${nf.format(other)} mesaj gönderilemedi`)
+    advice.push(
+      "Bu kampanya yeniden gönderilemez. Yeni bir kampanya brief'e uyan herkese gider, daha önce gönderilenlere de ulaşabilir.",
+    )
+    lines.push({
+      key: 'failed',
+      label: 'Başarısız',
+      count: messages.failed,
+      text: `${parts.join('; ')}.`,
+      advice,
+    })
+  }
+  if (messages.skipped > 0) {
+    lines.push({
+      key: 'skipped',
+      label: 'Atlandı',
+      count: messages.skipped,
+      text: 'Kanal izni olmadığı için gönderilmedi.',
+      advice: [
+        'Bu alıcıların o kanal için izni gönderim sırasında yoktu. İzinsiz gönderilmez; yapmanız gereken bir şey yok.',
+      ],
+    })
+  }
+  return lines
 }
 
 /** Sağlayıcının kesin olarak reddettiği mesajlar (örneğin geçersiz alıcı); yeniden denenmez. */

@@ -53,6 +53,17 @@ type fakeStore struct {
 	getResult campaign.Campaign
 	getErr    error
 	gotID     string
+
+	listResult []campaign.Summary
+	listErr    error
+	gotLimit   int
+	listCalls  int
+}
+
+func (f *fakeStore) List(_ context.Context, limit int) ([]campaign.Summary, error) {
+	f.listCalls++
+	f.gotLimit = limit
+	return f.listResult, f.listErr
 }
 
 func (f *fakeStore) Create(_ context.Context, brief string, seg segment.Segment, counts audience.Counts) (campaign.Campaign, error) {
@@ -410,8 +421,8 @@ func TestRoutingErrorsAreJSON(t *testing.T) {
 		status              int
 		code                string
 	}{
-		{http.MethodGet, "/api/campaigns", "POST", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
-		{http.MethodPut, "/api/campaigns", "POST", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
+		{http.MethodPut, "/api/campaigns", "GET, POST", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
+		{http.MethodDelete, "/api/campaigns", "GET, POST", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
 		{http.MethodDelete, "/api/campaigns/abc", "GET", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
 		{http.MethodPost, "/api/campaigns/abc", "GET", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
 		{http.MethodGet, "/api/unknown", "", http.StatusNotFound, "NOT_FOUND"},

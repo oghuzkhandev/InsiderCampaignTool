@@ -31,7 +31,7 @@ describe('sayılar', () => {
 
   it('her sayının adını ve kısa açıklamasını gösterir (anlaşılırlık)', () => {
     const w = mountCounts(snapshot())
-    const terms = w.findAll('dt').map((t) => t.text())
+    const terms = w.findAll('[data-testid="count-details"] dt').map((t) => t.text())
 
     expect(terms).toEqual([
       'Bekleyen',
@@ -78,6 +78,51 @@ describe('sayılar', () => {
       }),
     })
     expect(w.get('[data-testid="count-failed"]').classes()).not.toContain('text-destructive')
+  })
+})
+
+describe('özet sayılar', () => {
+  it('üstte gönderildi, başarısız ve tamamlanmamış sayılarını gösterir', () => {
+    const w = mountCounts(snapshot()) // bekleyen 3 + yeniden 1 + gönderiliyor 2 = 6 tamamlanmamış
+    const terms = w.findAll('[data-testid="delivery-summary"] dt').map((t) => t.text())
+
+    expect(terms).toEqual(['Gönderildi', 'Başarısız', 'Tamamlanmamış'])
+    expect(text(w, 'summary-sent')).toBe('40')
+    expect(text(w, 'summary-failed')).toBe('2')
+    expect(text(w, 'summary-unfinished')).toBe('6')
+  })
+
+  it('tamamlanmamış sayısı bekleyenleri, yeniden denenecekleri ve gönderilenleri toplar; atlananı saymaz', () => {
+    const w = mountCounts(
+      snapshot({
+        messages: { queued: 1, retrying: 10, sending: 100, sent: 0, failed: 0, skipped: 1000 },
+      }),
+    )
+    expect(text(w, 'summary-unfinished')).toBe('111')
+  })
+
+  it('özet sayılar ile ayrıntı aynı görüntüden gelir (yeni görüntü ikisini de değiştirir)', async () => {
+    const w = mountCounts(snapshot())
+    await w.setProps({
+      snapshot: snapshot({
+        messages: { queued: 0, retrying: 0, sending: 0, sent: 49, failed: 0, skipped: 0 },
+      }),
+    })
+    expect(text(w, 'summary-sent')).toBe('49')
+    expect(text(w, 'count-sent')).toBe('49')
+    expect(text(w, 'summary-unfinished')).toBe('0')
+  })
+
+  it('başarısız özet sayısı sıfırdan büyükse vurgulanır, sıfırsa vurgulanmaz', async () => {
+    const w = mountCounts(snapshot())
+    expect(w.get('[data-testid="summary-failed"]').classes()).toContain('text-destructive')
+
+    await w.setProps({
+      snapshot: snapshot({
+        messages: { queued: 0, retrying: 0, sending: 0, sent: 5, failed: 0, skipped: 0 },
+      }),
+    })
+    expect(w.get('[data-testid="summary-failed"]').classes()).not.toContain('text-destructive')
   })
 })
 
@@ -156,6 +201,128 @@ describe('erişilebilirlik', () => {
 
     expect(region.attributes('aria-labelledby')).toBe('delivery-counts-title')
     expect(w.get('h2#delivery-counts-title').text()).toBe('Mesaj durumu')
-    expect(w.findAll('dl dt')).toHaveLength(6)
+    // Üç özet sayı ve altı ayrıntı sayısı, ikisi de tanım listesinde.
+    expect(w.findAll('[data-testid="delivery-summary"] dt')).toHaveLength(3)
+    expect(w.findAll('[data-testid="count-details"] dt')).toHaveLength(6)
+  })
+})
+
+describe('kanal dağılımı', () => {
+  const zero = { queued: 0, retrying: 0, sending: 0, sent: 0, failed: 0, skipped: 0 }
+  // sms + email = snapshot() içindeki toplam (3, 1, 2, 40, 2, 1)
+  const sms = { queued: 1, retrying: 1, sending: 1, sent: 25, failed: 1, skipped: 0 }
+  const email = { queued: 2, retrying: 0, sending: 1, sent: 15, failed: 1, skipped: 1 }
+  const withChannels = (extra: Partial<DeliverySnapshot> = {}) =>
+    snapshot({ channels: { sms, email }, ...extra })
+
+  it('SMS ve e-postayı ayrı ayrı, gerçek sayılarıyla gösterir', () => {
+    const w = mountCounts(withChannels())
+
+    expect(w.get('h3').text()).toBe('Kanal dağılımı')
+    expect(text(w, 'channel-sms-total')).toBe('29 mesaj') // 1+1+1+25+1+0
+    expect(text(w, 'channel-email-total')).toBe('20 mesaj') // 2+0+1+15+1+1
+    expect(text(w, 'channel-sms-sent')).toBe('25')
+    expect(text(w, 'channel-sms-failed')).toBe('1')
+    expect(text(w, 'channel-sms-unfinished')).toBe('3') // bekleyen 1 + yeniden 1 + gönderiliyor 1
+    expect(text(w, 'channel-email-sent')).toBe('15')
+    expect(text(w, 'channel-email-unfinished')).toBe('3') // 2 + 0 + 1
+  })
+
+  it('her kanalın kendi ilerlemesini (işi biten oranı) gösterir', () => {
+    const w = mountCounts(withChannels())
+    const bars = w.findAll('[data-testid="channel-split"] [role="progressbar"]')
+
+    expect(bars.map((b) => b.attributes('aria-valuenow'))).toEqual(['89', '85']) // 26/29, 17/20
+    expect(bars.map((b) => b.attributes('aria-label'))).toEqual([
+      'SMS: işi biten mesajların oranı',
+      'E-posta: işi biten mesajların oranı',
+    ])
+  })
+
+  it('atlananı yalnızca varsa gösterir', () => {
+    const w = mountCounts(withChannels())
+    expect(w.find('[data-testid="channel-sms-skipped"]').exists()).toBe(false) // SMS'te 0
+    expect(text(w, 'channel-email-skipped')).toBe('Atlandı: 1')
+  })
+
+  it('başarısızı yalnızca sıfırdan büyükse vurgular', () => {
+    const w = mountCounts(withChannels({ channels: { sms, email: { ...email, failed: 0 } } }))
+    expect(w.get('[data-testid="channel-sms-failed"]').classes()).toContain('text-destructive')
+    expect(w.get('[data-testid="channel-email-failed"]').classes()).not.toContain(
+      'text-destructive',
+    )
+  })
+
+  it('mesajı olmayan kanal için "Bu kanalda mesaj yok" der ve ilerleme göstermez', () => {
+    const all = snapshot().messages
+    const w = mountCounts(snapshot({ channels: { sms: all, email: zero } }))
+
+    expect(text(w, 'channel-email-empty')).toBe('Bu kanalda mesaj yok.')
+    expect(text(w, 'channel-email-total')).toBe('0 mesaj')
+    expect(w.find('[data-testid="channel-email-sent"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="channel-split"] [role="progressbar"]')).toHaveLength(1)
+  })
+
+  it('kanal kırılımı yoksa (eski sunucu) bölüm hiç görünmez, diğer sayılar yerinde kalır', () => {
+    const w = mountCounts(snapshot())
+
+    expect(w.find('[data-testid="channel-split"]').exists()).toBe(false)
+    expect(text(w, 'count-sent')).toBe('40')
+  })
+
+  it('yeni görüntü kanal sayılarını değiştirir (üzerine eklemez)', async () => {
+    const w = mountCounts(withChannels())
+    await w.setProps({
+      snapshot: withChannels({
+        channels: { sms: { ...sms, sent: 26, queued: 0 }, email },
+        messages: { queued: 2, retrying: 1, sending: 2, sent: 41, failed: 2, skipped: 1 },
+      }),
+    })
+    expect(text(w, 'channel-sms-sent')).toBe('26')
+    expect(text(w, 'channel-sms-total')).toBe('29 mesaj')
+  })
+
+  it('her kanal adlandırılmış bir bölgedir', () => {
+    const w = mountCounts(withChannels())
+    expect(w.get('[data-testid="channel-sms"]').attributes('aria-label')).toBe(
+      'SMS gönderim durumu',
+    )
+    expect(w.get('[data-testid="channel-email"]').attributes('aria-label')).toBe(
+      'E-posta gönderim durumu',
+    )
+  })
+})
+
+describe('yeniden denemeyle toparlananlar', () => {
+  it('toparlanan varsa sayıyı ve ne demek olduğunu gösterir', () => {
+    const w = mountCounts(snapshot({ recovered: 12 }))
+
+    expect(text(w, 'recovered-count')).toBe('12')
+    const note = text(w, 'recovered-note')
+    expect(note).toContain('Yeniden denemeyle toparlanan')
+    expect(note).toContain('ilk denemede tamamlanamadı, yeniden denemeyle gönderildi')
+    // İlk denemenin başarısız olduğu söylenmez: kayıp yanıt veya çöken worker da olabilir.
+    expect(note).not.toMatch(/başarısız|gönderilemedi/)
+  })
+
+  it('sıfırsa veya alan yoksa göstermez', () => {
+    expect(
+      mountCounts(snapshot({ recovered: 0 }))
+        .find('[data-testid="recovered-note"]')
+        .exists(),
+    ).toBe(false)
+    expect(mountCounts(snapshot()).find('[data-testid="recovered-note"]').exists()).toBe(false)
+  })
+
+  it('yeni görüntü sayıyı değiştirir', async () => {
+    const w = mountCounts(snapshot({ recovered: 2 }))
+    await w.setProps({ snapshot: snapshot({ recovered: 5 }) })
+    expect(text(w, 'recovered-count')).toBe('5')
+  })
+
+  it('toparlananlar gönderilenlere ikinci kez eklenmez (gönderilen sayısı değişmez)', () => {
+    const w = mountCounts(snapshot({ recovered: 12 }))
+    expect(text(w, 'count-sent')).toBe('40')
+    expect(text(w, 'summary-sent')).toBe('40')
   })
 })

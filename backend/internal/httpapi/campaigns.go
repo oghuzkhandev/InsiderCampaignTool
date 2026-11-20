@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -92,6 +93,56 @@ func (s *server) createCampaign(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", "/api/campaigns/"+created.ID)
 	writeJSON(w, http.StatusCreated, toResponse(created))
+}
+
+// campaignSummaryResponse, kampanya listesindeki bir satırdır (CMP-001).
+type campaignSummaryResponse struct {
+	ID        string    `json:"id"`
+	Brief     string    `json:"brief"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type campaignListResponse struct {
+	Campaigns []campaignSummaryResponse `json:"campaigns"`
+}
+
+// parseListLimit, `limit` sorgu parametresini okur. Verilmezse varsayılan (10),
+// MaxListLimit'ten (20) büyükse 20 kullanılır. Tam sayı olmayan veya 1'den küçük değer
+// geçersizdir; sessizce düzeltilmez, istemci hatasını göstermek için reddedilir.
+func parseListLimit(r *http.Request) (limit int, ok bool) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return campaign.DefaultListLimit, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return min(n, campaign.MaxListLimit), true
+}
+
+// listCampaigns, en yeni kampanyaları döndürür (CMP-001). Yalnızca satırı tanıtmaya yetecek
+// alanlar vardır; kampanyanın ayrıntısı `GET /api/campaigns/{id}`'dedir.
+func (s *server) listCampaigns(w http.ResponseWriter, r *http.Request) {
+	limit, ok := parseListLimit(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"limit 1 ile "+strconv.Itoa(campaign.MaxListLimit)+" arasında bir tam sayı olmalı.")
+		return
+	}
+	list, err := s.Campaigns.List(r.Context(), limit)
+	if err != nil {
+		s.internalError(w, r, "kampanya listesi okunamadı", err)
+		return
+	}
+	resp := campaignListResponse{Campaigns: make([]campaignSummaryResponse, 0, len(list))}
+	for _, c := range list {
+		resp.Campaigns = append(resp.Campaigns, campaignSummaryResponse{
+			ID: c.ID, Brief: c.Brief, Status: c.Status, CreatedAt: c.CreatedAt.UTC(),
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // getCampaign, kampanyayı kimliğiyle okur.

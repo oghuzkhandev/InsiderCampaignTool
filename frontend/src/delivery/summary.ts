@@ -10,6 +10,15 @@ export function totalMessages(counts: DeliveryCounts): number {
 }
 
 /**
+ * Tamamlanmamış mesajlar: kuyrukta bekleyen, yeniden denenecek ve şu an gönderilen.
+ * Bunlar sıfırlanınca bütün mesajların işi bitmiş olur (`finishedMessages` ile birlikte
+ * toplam mesaj sayısını verir).
+ */
+export function unfinishedMessages(counts: DeliveryCounts): number {
+  return counts.queued + counts.retrying + counts.sending
+}
+
+/**
  * İşi bitmiş mesajlar: gönderilen, başarısız ve atlanan (terminal durumlar). Bunların
  * hepsi bittiğinde kampanya tamamlanır; başarısız veya atlanan mesaj olması
  * tamamlanmayı engellemez.

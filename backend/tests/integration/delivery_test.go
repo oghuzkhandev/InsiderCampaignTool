@@ -207,6 +207,13 @@ func TestLostFirstResponseIsRetriedWithTheSameKeyAndDeliveredOnce(t *testing.T) 
 	if got := acceptanceCount(t, db); got != 2 {
 		t.Fatalf("2 kabul kaydı (her mesaj için bir): %d", got)
 	}
+	// Gönderim takibinin görüntüsü: iki mesaj da ikinci denemede gönderildi (yeniden denemeyle
+	// toparlandı), her kanalda biri.
+	view := snapshotOf(t, db, q.campaignID)
+	if view.Recovered != 2 || view.Messages.Sent != 2 ||
+		view.Channels.SMS.Sent != 1 || view.Channels.Email.Sent != 1 {
+		t.Fatalf("toparlanan 2 ve kanal başına 1 gönderilen bekleniyordu: %+v", view)
+	}
 }
 
 // Sürekli yanıt kaybı ayrı bir senaryodur: provider isteği kabul eder ama hiçbir
@@ -240,6 +247,11 @@ func TestEveryResponseLostEndsExhaustedWithSingleAcceptance(t *testing.T) {
 	// Kampanya yine completed olur ve gerçek dağılım korunur.
 	if got := statusCounts(t, db, q.campaignID); got["failed"] != 1 || len(got) != 1 {
 		t.Fatalf("dağılım: %v", got)
+	}
+	// Hiçbir mesaj gönderilmedi: toparlanan yok; başarısızlık SMS kanalında ve nedeni belli.
+	view := snapshotOf(t, db, q.campaignID)
+	if view.Recovered != 0 || view.Channels.SMS.Failed != 1 || view.Failures.Exhausted != 1 {
+		t.Fatalf("toparlanan 0, SMS'te 1 başarısız (exhausted) bekleniyordu: %+v", view)
 	}
 }
 

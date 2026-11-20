@@ -1,36 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ListFilterIcon } from '@lucide/vue'
 import type { Segment } from '@/api/campaigns'
 import { describeSegment } from '@/segment/describe'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 const props = defineProps<{ segment: Segment }>()
 const lines = computed(() => describeSegment(props.segment))
 </script>
 
 <template>
-  <section aria-labelledby="segment-title">
-    <h2 id="segment-title">Anlaşılan koşullar</h2>
-    <p class="hint">Hepsi birlikte geçerlidir. Beklediğiniz gibi değilse brief'i düzenleyin.</p>
-    <ul>
-      <li v-for="(line, i) in lines" :key="i">{{ line }}</li>
-    </ul>
-  </section>
+  <Card role="region" aria-labelledby="segment-title">
+    <CardHeader>
+      <CardTitle class="flex items-center gap-2">
+        <ListFilterIcon class="text-primary size-5" aria-hidden="true" />
+        <h2 id="segment-title">Anlaşılan koşullar</h2>
+      </CardTitle>
+      <CardDescription>
+        Hepsi birlikte geçerlidir. Beklediğiniz gibi değilse brief'i düzenleyin.
+      </CardDescription>
+    </CardHeader>
+    <CardContent>
+      <ul class="list-disc space-y-1 pl-5 text-sm">
+        <li v-for="(line, i) in lines" :key="i">{{ line }}</li>
+      </ul>
+    </CardContent>
+  </Card>
 </template>
-
-<style scoped>
-h2 {
-  margin: 0 0 0.25rem;
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-.hint {
-  margin: 0 0 0.5rem;
-  color: var(--app-muted);
-  font-size: 0.9rem;
-}
-ul {
-  margin: 0;
-  padding-left: 1.25rem;
-  list-style: disc;
-}
-</style>
