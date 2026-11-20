@@ -159,8 +159,7 @@ anahtarla yeniden denenir.
 - [Repo yapısı](docs/REPO-STRUCTURE.md)
 - [Claude çalışma oturumları](ai-sessions/README.md)
 
-## Kapsam ve bilinen sınırlamalar
+## Kapsam
 
 Çekirdek akış (brief → doğrulanmış segment ve kitle → içerik → insan onayı →
 güvenilir gönderim → canlı izleme) uçtan uca çalışır ve testlidir. Yetiştirilemeyenler
-ve bilinçli sınırlar:
