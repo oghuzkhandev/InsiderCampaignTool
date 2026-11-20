@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import TemplatesView from '../TemplatesView.vue'
-import { getTemplates } from '@/api/workspace'
+import { getTemplates, type saveTemplate, type deleteTemplate } from '@/api/workspace'
 
 vi.mock('@/api/workspace', () => ({
-  getTemplates: vi.fn(),
-  saveTemplate: vi.fn(),
-  deleteTemplate: vi.fn(),
+  getTemplates: vi.fn<typeof getTemplates>(),
+  saveTemplate: vi.fn<typeof saveTemplate>(),
+  deleteTemplate: vi.fn<typeof deleteTemplate>(),
 }))
 
 let wrapper: VueWrapper | undefined

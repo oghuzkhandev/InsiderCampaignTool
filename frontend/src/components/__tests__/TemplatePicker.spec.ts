@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import TemplatePicker from '../TemplatePicker.vue'
 import { getTemplates } from '@/api/workspace'
 
-vi.mock('@/api/workspace', () => ({ getTemplates: vi.fn() }))
+vi.mock('@/api/workspace', () => ({ getTemplates: vi.fn<typeof getTemplates>() }))
 afterEach(() => vi.clearAllMocks())
 
 describe('TemplatePicker', () => {
