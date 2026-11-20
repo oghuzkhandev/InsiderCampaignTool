@@ -1,24 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { localDateTime } from '@/campaign/schedule'
 import ApprovePanel from '../ApprovePanel.vue'
 
 const audience = { total: 190, sms: 134, email: 150 }
-const content = {
-  sms_text: 'Merhaba {{first_name}}, %30 indirim seni bekliyor!',
-  email_subject: '{{first_name}}, sepetin seni bekliyor',
-  email_body: 'Merhaba {{first_name}},\n\nSepetindeki ürünler hâlâ seni bekliyor.',
-}
 
 function mountPanel(
   props: Partial<{
     version: number
     disabled: boolean
     pending: boolean
-    content: typeof content
   }> = {},
 ) {
   return mount(ApprovePanel, {
-    props: { version: 2, audience, content, disabled: false, pending: false, ...props },
+    props: { version: 2, audience, disabled: false, pending: false, ...props },
   })
 }
 
@@ -39,23 +34,10 @@ describe('onay özeti', () => {
     expect(w.text()).toContain('kesin sayı onay anındaki izin ve adres durumuna göre belirlenir')
   })
 
-  it('SMS ve e-posta önizlemelerini örnek adla, aynı kartta gösterir', () => {
+  it('önizlemeyi içermez ve onaylanacak sürüm değişince özeti günceller', async () => {
     const w = mountPanel()
-    expect(w.get('[data-testid="preview-sms"]').text()).toBe(
-      'Merhaba Ayşe, %30 indirim seni bekliyor!',
-    )
-    expect(w.get('[data-testid="preview-subject"]').text()).toBe('Ayşe, sepetin seni bekliyor')
-    expect(w.get('[data-testid="preview-note"]').text()).toContain('Örnek önizleme')
-    expect(w.text()).not.toContain('{{first_name}}, sepetin')
-  })
-
-  it('önizleme onaylanacak sürümün metnini gösterir (sürüm değişince güncellenir)', async () => {
-    const w = mountPanel()
-    await w.setProps({
-      version: 3,
-      content: { ...content, sms_text: 'Yeni sürüm metni {{first_name}}' },
-    })
-    expect(w.get('[data-testid="preview-sms"]').text()).toBe('Yeni sürüm metni Ayşe')
+    expect(w.find('[data-testid="message-preview"]').exists()).toBe(false)
+    await w.setProps({ version: 3 })
     expect(w.get('[data-testid="approve-version"]').text()).toBe('Sürüm 3 onaylanacak.')
   })
 
@@ -69,6 +51,52 @@ describe('onay özeti', () => {
 })
 
 describe('ApprovePanel', () => {
+  it('gönderim zamanı ve onay düğmesi alıcılarla aynı kartta, önizleme ise dışarıdadır', () => {
+    const w = mountPanel()
+    const schedule = w.get('[data-testid="approve-schedule"]')
+    expect(schedule.findAll('[role="radio"]')).toHaveLength(2)
+    expect(schedule.find('input[type="radio"]').exists()).toBe(false)
+    expect(schedule.find('[aria-label="Hemen gönder hakkında bilgi"]').exists()).toBe(true)
+    expect(schedule.find('[aria-label="Tarih ve saat seç hakkında bilgi"]').exists()).toBe(true)
+    const summary = w.get('[aria-labelledby="approve-title"]')
+    expect(summary.find('[data-testid="approve-schedule"]').exists()).toBe(true)
+    expect(summary.find('[data-testid="approve-open"]').exists()).toBe(true)
+    expect(summary.find('[data-testid="message-preview"]').exists()).toBe(false)
+    expect(schedule.text()).toContain('daha erken gönderilmez')
+  })
+
+  it('tarih seçimi boş veya geçmişse onay diyaloğunu açmaz', async () => {
+    const w = mountPanel()
+    await w.get('#send-later').trigger('click')
+    await w.get('[data-testid="approve-open"]').trigger('click')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(w.get('#send-time-error').text()).toContain('tarih ve saat')
+    await w.get('#send-time').setValue('2020-01-01T12:00')
+    await w.get('[data-testid="approve-open"]').trigger('click')
+    expect(w.get('#send-time-error').text()).toContain('gelecekte')
+    expect(w.emitted('approve')).toBeUndefined()
+  })
+
+  it('gelecekteki yerel saati özetler ve yalnızca son onayda UTC olarak yayınlar', async () => {
+    const w = mountPanel()
+    const at = new Date(2035, 4, 12, 14, 30)
+    await w.get('#send-later').trigger('click')
+    await w.get('#send-time').setValue(localDateTime(at))
+    await w.get('[data-testid="approve-open"]').trigger('click')
+    expect(w.get('[data-testid="confirm-schedule"]').text()).toContain('2035')
+    expect(w.emitted('approve')).toBeUndefined()
+    await w.get('[data-testid="approve-confirm"]').trigger('click')
+    expect(w.emitted('approve')).toEqual([[at.toISOString()]])
+  })
+
+  it('onay diyaloğundayken saat değiştirilirse önceki onay kapanır', async () => {
+    const w = mountPanel()
+    await w.get('#send-later').trigger('click')
+    await w.get('#send-time').setValue('2035-05-12T14:30')
+    await w.get('[data-testid="approve-open"]').trigger('click')
+    await w.get('#send-time').setValue('2035-05-12T15:30')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+  })
   it('onay için iki adım ister: önce onay kutusu, sonra yayın', async () => {
     const w = mountPanel()
     await w.get('[data-testid="approve-open"]').trigger('click')

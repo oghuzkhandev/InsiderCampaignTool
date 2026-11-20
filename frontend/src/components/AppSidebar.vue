@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
+  CalendarClockIcon,
   CirclePlusIcon,
   LayoutDashboardIcon,
   LayoutTemplateIcon,
@@ -28,6 +29,7 @@ const links = [
   { to: '/overview', label: 'Genel bakış', icon: LayoutDashboardIcon },
   { to: '/', label: 'Yeni kampanya', icon: CirclePlusIcon },
   { to: '/campaigns', label: 'Kampanyalar', icon: MegaphoneIcon },
+  { to: '/scheduled', label: 'Zamanlanmış', icon: CalendarClockIcon },
   { to: '/audiences', label: 'Kitleler', icon: UsersRoundIcon },
   { to: '/templates', label: 'İçerik şablonları', icon: LayoutTemplateIcon },
 ]

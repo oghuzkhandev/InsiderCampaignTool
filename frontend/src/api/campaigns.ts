@@ -109,6 +109,7 @@ export async function createCampaign(brief: string, signal?: AbortSignal): Promi
 
 /** Listedeki bir kampanya satırı (GET /api/campaigns, CMP-001). Kitle sayısı ve segment yoktur. */
 export interface CampaignSummary {
+  scheduled_at?: string
   id: string
   brief: string
   status: string
@@ -158,7 +159,18 @@ export function parseCampaignList(status: number, body: unknown): CampaignSummar
     ) {
       throw invalidResponse(status)
     }
-    list.push({ id: row.id, brief: row.brief, status: row.status, created_at: row.created_at })
+    if (
+      row.scheduled_at !== undefined &&
+      (typeof row.scheduled_at !== 'string' || Number.isNaN(Date.parse(row.scheduled_at)))
+    )
+      throw invalidResponse(status)
+    list.push({
+      id: row.id,
+      brief: row.brief,
+      status: row.status,
+      created_at: row.created_at,
+      ...(typeof row.scheduled_at === 'string' ? { scheduled_at: row.scheduled_at } : {}),
+    })
   }
   return list
 }

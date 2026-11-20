@@ -14,6 +14,7 @@ import {
   type ContentFields,
 } from './campaigns'
 import { readSse } from './sse'
+import { isScheduledTimestamp } from '@/campaign/schedule'
 
 export type { ContentFields } from './campaigns'
 
@@ -28,6 +29,7 @@ export interface ContentVersion extends ContentFields {
 
 /** Kampanya ve varsa son doğrulanmış içerik ile onay bilgisi. */
 export interface CampaignDetail extends Campaign {
+  scheduled_at?: string
   content?: ContentVersion
   approved_content_version?: number
   approved_at?: string
@@ -48,6 +50,7 @@ export interface ChannelCounts {
 }
 
 export interface ApproveResult {
+  scheduled_at?: string
   id: string
   status: string
   approved_content_version: number
@@ -83,6 +86,10 @@ export async function getCampaign(id: string, signal?: AbortSignal): Promise<Cam
   const campaign = parseCampaign(response.status, body)
   const detail: CampaignDetail = { ...campaign }
   if (isRecord(body)) {
+    if (body.scheduled_at !== undefined) {
+      if (!isScheduledTimestamp(body.scheduled_at)) throw invalidResponse(response.status)
+      detail.scheduled_at = body.scheduled_at
+    }
     if (body.content !== undefined)
       detail.content = parseContentVersion(response.status, body.content)
     if (body.approved_content_version !== undefined) {
@@ -169,11 +176,15 @@ export async function approveCampaign(
   id: string,
   contentVersion: number,
   signal?: AbortSignal,
+  scheduledAt?: string,
 ): Promise<ApproveResult> {
   const { response, body } = await send(`${ENDPOINT}/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ content_version: contentVersion }),
+    body: JSON.stringify({
+      content_version: contentVersion,
+      ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
+    }),
     signal,
   })
   return parseApproveResult(response.status, body)
@@ -248,7 +259,10 @@ function parseApproveResult(status: number, data: unknown): ApproveResult {
   ) {
     throw invalidResponse(status)
   }
+  if (data.scheduled_at !== undefined && !isScheduledTimestamp(data.scheduled_at))
+    throw invalidResponse(status)
   return {
+    ...(typeof data.scheduled_at === 'string' ? { scheduled_at: data.scheduled_at } : {}),
     id: data.id,
     status: data.status,
     approved_content_version: data.approved_content_version,
