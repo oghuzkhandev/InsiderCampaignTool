@@ -33,6 +33,40 @@ export function campaignBody(overrides: Partial<Campaign> = {}): Campaign {
   }
 }
 
+// --- "Segmente uyan kişiler" listesi testleri için yardımcılar ---
+
+import type { AudienceMember, AudiencePage } from '@/api/audience'
+
+export function memberBody(overrides: Partial<AudienceMember> = {}): AudienceMember {
+  return {
+    id: 1,
+    first_name: 'Ayşe',
+    city: 'İstanbul',
+    email: 'ayse@example.test',
+    phone: '+905550000001',
+    sms_status: 'eligible',
+    email_status: 'eligible',
+    ...overrides,
+  }
+}
+
+/** `items` verilmezse tek kişilik bir sayfa; `total` verilmezse sayfadaki kişi sayısı. */
+export function audiencePageBody(overrides: Partial<AudiencePage> = {}): AudiencePage {
+  const items = overrides.items ?? [memberBody()]
+  return { page: 1, limit: 10, total: items.length, items, ...overrides }
+}
+
+/** `count` kişilik bir sayfa; kimlikler `firstId`'den başlar. */
+export function members(count: number, firstId = 1): AudienceMember[] {
+  return Array.from({ length: count }, (_, i) =>
+    memberBody({
+      id: firstId + i,
+      first_name: `Kişi ${firstId + i}`,
+      email: `kisi${firstId + i}@example.test`,
+    }),
+  )
+}
+
 export interface Deferred<T> {
   promise: Promise<T>
   resolve: (value: T) => void

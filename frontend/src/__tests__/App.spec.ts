@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import App from '../App.vue'
 import router from '../router'
-import { notifyCampaignsChanged } from '@/campaign/recent'
 import { jsonResponse } from '@/__tests__/helpers'
 
 const detail = {
@@ -92,88 +91,40 @@ describe('App', () => {
   })
 })
 
-describe('uygulama kabuğu (üst başlık ve kenar çubuğu)', () => {
-  it('her ekranda "Campaign Tool" başlığı ana sayfaya döner; sayfa başlığı (h1) tek kalır', async () => {
-    stubApi()
-    for (const path of ['/', '/campaigns/abc', '/campaigns/abc/delivery']) {
-      const wrapper = await mountAt(path)
-
-      const brand = wrapper.get('[data-testid="brand-link"]')
-      expect(brand.text()).toBe('Campaign Tool')
-      expect(brand.attributes('href')).toBe('/')
-      expect(wrapper.findAll('h1')).toHaveLength(1)
-
-      wrapper.unmount()
-      mounted = null
-    }
+describe('uygulama kabuğu (üst başlık ve menü)', () => {
+  it('marka adı ve beş sayfa bağlantısı görünür; marka ikonu yoktur', async () => {
+    const api = stubApi()
+    const wrapper = await mountAt('/')
+    const brand = wrapper.get('[data-testid="brand-link"]')
+    expect(brand.text()).toBe('Insider Campaign Tool')
+    expect(brand.attributes('href')).toBe('/overview')
+    expect(brand.find('svg').exists()).toBe(false)
+    const links = wrapper.get('nav[aria-label="Sayfalar"]').findAll('a')
+    expect(links.map((link) => [link.text(), link.attributes('href')])).toEqual([
+      ['Genel bakış', '/overview'],
+      ['Yeni kampanya', '/'],
+      ['Kampanyalar', '/campaigns'],
+      ['Kitleler', '/audiences'],
+      ['İçerik şablonları', '/templates'],
+    ])
+    expect(wrapper.findAll('h1')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="recent-campaigns"]').exists()).toBe(false)
+    expect(api.listCalls()).toHaveLength(0)
   })
 
-  it('marka bağlantısına tıklamak ana sayfaya götürür', async () => {
+  it('marka bağlantısı genel bakışı açar', async () => {
     stubApi()
     const wrapper = await mountAt('/campaigns/abc')
-
     await wrapper.get('[data-testid="brand-link"]').trigger('click')
     await flushPromises()
-
-    expect(router.currentRoute.value.path).toBe('/')
+    expect(router.currentRoute.value.path).toBe('/overview')
+    expect(wrapper.get('h1').text()).toBe('Genel bakış')
   })
 
-  it('kenar çubuğunda "Yeni kampanya" ve son kampanyalar listesi bulunur', async () => {
-    const api = stubApi({
-      campaigns: [summary('b', 'İkinci brief', 'approved'), summary('a', 'Birinci brief')],
-    })
-    const wrapper = await mountAt('/')
-
-    const newCampaign = wrapper.get('[data-testid="sidebar-new-campaign"]')
-    expect(newCampaign.text()).toBe('Yeni kampanya')
-    expect(newCampaign.attributes('href')).toBe('/')
-
-    const list = wrapper.get('[data-testid="recent-campaigns"]')
-    expect(list.findAll('[data-testid="recent-brief"]').map((b) => b.text())).toEqual([
-      'İkinci brief',
-      'Birinci brief',
-    ])
-    expect(api.listCalls()).toEqual(['/api/campaigns?limit=10'])
-  })
-
-  it('liste sayfa içeriğinden bağımsız çalışır: yüklenemese de ekran açılır', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockImplementation(async (input) => {
-        if (String(input).startsWith('/api/campaigns?')) {
-          return jsonResponse(500, { error: { code: 'INTERNAL', message: 'x', reasons: [] } })
-        }
-        return jsonResponse(200, detail)
-      }),
-    )
+  it('kampanya ayrıntısında Kampanyalar menüsü etkin kalır', async () => {
+    stubApi()
     const wrapper = await mountAt('/campaigns/abc')
-
-    expect(wrapper.get('[data-testid="recent-campaigns"]').text()).toContain(
-      'Son kampanyalar yüklenemedi',
-    )
-    expect(wrapper.get('h1').text()).toBe('Kampanya')
-    expect(wrapper.text()).toContain('Örnek brief')
-  })
-
-  it('bir ekran kampanyayı değiştirince (haber verince) liste yeniden okunur', async () => {
-    const api = stubApi()
-    await mountAt('/')
-    expect(api.listCalls()).toHaveLength(1)
-
-    notifyCampaignsChanged()
-    await flushPromises()
-
-    expect(api.listCalls()).toHaveLength(2)
-  })
-
-  it('başka ekrana geçince liste yeniden okunur', async () => {
-    const api = stubApi()
-    await mountAt('/')
-    expect(api.listCalls()).toHaveLength(1)
-
-    await router.push('/campaigns/abc')
-    await flushPromises()
-
-    expect(api.listCalls()).toHaveLength(2)
+    const active = wrapper.get('nav[aria-label="Sayfalar"] a[aria-current="page"]')
+    expect(active.text()).toBe('Kampanyalar')
   })
 })

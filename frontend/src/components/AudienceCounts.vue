@@ -46,7 +46,7 @@ const items = computed(() => [
         </div>
       </dl>
       <dl v-else class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div v-for="item in items" :key="item.id" class="bg-muted/50 rounded-lg border p-3">
+        <div v-for="item in items" :key="item.id" class="card-3d bg-muted/50 rounded-lg border p-3">
           <dt class="text-muted-foreground flex items-center gap-2 text-sm">
             <component :is="item.icon" class="text-primary size-4 shrink-0" aria-hidden="true" />
             {{ item.label }}

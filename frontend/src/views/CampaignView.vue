@@ -22,9 +22,10 @@ import {
 } from '@/api/content'
 import { applyDelta, emptyFields, hasText, sameFields } from '@/content/draft'
 import { FIELD_LABELS, contentErrorTitle, contentReasonMessage } from '@/content/messages'
-import { useUnsavedChangesGuard } from '@/content/useUnsavedChangesGuard'
+import { useUnsavedChangesGuard, UNSAVED_MESSAGE } from '@/content/useUnsavedChangesGuard'
 import ApprovePanel from '@/components/ApprovePanel.vue'
 import AudienceCounts from '@/components/AudienceCounts.vue'
+import TemplatePicker from '@/components/TemplatePicker.vue'
 import ContentEditor from '@/components/ContentEditor.vue'
 import ErrorPanel from '@/components/ErrorPanel.vue'
 import MessagePreview from '@/components/MessagePreview.vue'
@@ -87,6 +88,15 @@ const fieldsOf = (v: ContentVersion): ContentFields => ({
   email_subject: v.email_subject,
   email_body: v.email_body,
 })
+
+function applyTemplate(fields: ContentFields) {
+  if (busy.value || isApproved.value || (dirty.value && !window.confirm(UNSAVED_MESSAGE))) return
+  draft.value = { ...fields }
+  manualEntry.value = true
+  fromPartial.value = false
+  generateError.value = saveError.value = null
+  feedback.value = 'Şablon düzenleyiciye aktarıldı. Kaydetmeden onaylanamaz.'
+}
 
 function adopt(version: ContentVersion | undefined) {
   saved.value = version ?? null
@@ -386,6 +396,7 @@ const approvedAtText = computed(() => {
           </CardHeader>
 
           <CardContent class="grid gap-4">
+            <TemplatePicker v-if="!isApproved" :disabled="busy" @select="applyTemplate" />
             <div v-if="!isApproved" class="flex flex-col gap-2 sm:flex-row">
               <Button
                 type="button"

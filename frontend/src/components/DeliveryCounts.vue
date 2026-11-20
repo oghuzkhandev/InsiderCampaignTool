@@ -107,7 +107,7 @@ const summary = computed(() => [
         <div
           v-for="item in summary"
           :key="item.id"
-          class="rounded-lg border p-3 sm:p-4"
+          class="card-3d rounded-lg border p-3 sm:p-4"
           :class="item.tone"
         >
           <dt class="text-muted-foreground flex items-center gap-1.5 text-sm">
@@ -158,7 +158,7 @@ const summary = computed(() => [
           <section
             v-for="row in channelRows"
             :key="row.key"
-            class="grid content-start gap-2 rounded-lg border p-3"
+            class="card-3d grid content-start gap-2 rounded-lg border p-3"
             :aria-label="`${row.label} gönderim durumu`"
             :data-testid="`channel-${row.key}`"
           >
@@ -211,7 +211,7 @@ const summary = computed(() => [
       <div class="grid gap-3">
         <h3 class="text-sm font-medium">Ayrıntı</h3>
         <dl class="grid grid-cols-2 gap-3 sm:grid-cols-3" data-testid="count-details">
-          <div v-for="item in COUNT_ITEMS" :key="item.key" class="rounded-lg border p-3">
+          <div v-for="item in COUNT_ITEMS" :key="item.key" class="card-3d rounded-lg border p-3">
             <dt class="text-muted-foreground text-sm">{{ item.label }}</dt>
             <dd
               class="text-xl font-bold tabular-nums"

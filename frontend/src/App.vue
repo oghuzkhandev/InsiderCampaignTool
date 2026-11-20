@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
-import { MegaphoneIcon } from '@lucide/vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 </script>
@@ -12,7 +11,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
     <!-- İçerik alanı. Ekranların kendi <main> öğesi vardır; bu yüzden SidebarInset (main) değil
          düz bir kap kullanılır. `min-w-0`: flex çocuğu uzun içerikle kenar çubuğunun yanından taşmasın. -->
     <div class="flex min-w-0 flex-1 flex-col">
-      <!-- Üst başlık: kenar çubuğu düğmesi ve ana sayfaya (yeni kampanya / brief) dönen marka.
+      <!-- Üst başlık: kenar çubuğu düğmesi ve genel bakışa dönen marka.
            Sayfa başlığı (h1) her ekranda tek kalır; marka bağlantı olarak durur. -->
       <header
         class="bg-background/85 sticky top-0 z-20 flex h-14 items-center gap-2 border-b px-3 backdrop-blur sm:px-4"
@@ -21,12 +20,13 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
         <!-- Dokunmatik ekranda 40 px'lik hedef; geniş ekranda shadcn'ın kompakt boyutu. -->
         <SidebarTrigger class="size-10 md:size-8" />
         <RouterLink
-          to="/"
+          to="/overview"
           class="text-primary hover:bg-accent focus-visible:ring-ring/50 -ml-1 flex items-center gap-2 rounded-lg px-2 py-2 outline-none focus-visible:ring-3"
           data-testid="brand-link"
         >
-          <MegaphoneIcon class="size-5" aria-hidden="true" />
-          <span class="text-lg font-semibold tracking-tight">Campaign Tool</span>
+          <span class="text-base font-semibold tracking-tight sm:text-lg"
+            >Insider Campaign Tool</span
+          >
         </RouterLink>
       </header>
 

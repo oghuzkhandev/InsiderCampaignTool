@@ -1,6 +1,9 @@
 <script setup lang="ts">
-// Üç ekranın ortak üst bölümü: sayfa başlığı, kampanya durum rozeti, kısa açıklama ve altta
-// adım göstergesi (varsayılan slot). Geri ve ileri gezinti `StepNav` bileşenindedir.
+// Ekranların ortak üst bölümü: sayfa başlığı, kampanya durum rozeti, kısa açıklama, başlığı
+// içerikten ayıran ince degrade çizgi (Separator) ve altta adım göstergesi (varsayılan slot).
+// Geri ve ileri gezinti `StepNav` bileşenindedir.
+import { Separator } from '@/components/ui/separator'
+
 defineProps<{
   title: string
   description?: string
@@ -18,6 +21,10 @@ defineProps<{
         {{ description }}
       </p>
     </div>
+    <Separator
+      class="from-primary/60 via-border bg-linear-to-r to-transparent"
+      data-testid="page-header-separator"
+    />
     <slot />
   </header>
 </template>

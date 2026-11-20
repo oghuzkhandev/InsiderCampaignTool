@@ -4,6 +4,7 @@ import { ApiError, createCampaign, isAbortError, type Campaign } from '@/api/cam
 import { errorTitle } from '@/api/messages'
 import { reasonMessage } from '@/segment/reasons'
 import AudienceCounts from '@/components/AudienceCounts.vue'
+import AudienceMemberList from '@/components/AudienceMemberList.vue'
 import BriefForm from '@/components/BriefForm.vue'
 import ErrorPanel from '@/components/ErrorPanel.vue'
 import SegmentSummary from '@/components/SegmentSummary.vue'
@@ -111,6 +112,7 @@ const reasons = computed(() =>
       <template v-else-if="campaign">
         <AudienceCounts :audience="campaign.audience" />
         <SegmentSummary :segment="campaign.segment" />
+        <AudienceMemberList :campaign-id="campaign.id" />
         <p class="text-muted-foreground text-sm wrap-anywhere">
           Taslak kampanya kaydedildi (kimlik: {{ campaign.id }}).
         </p>

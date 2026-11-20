@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RouterLinkStub, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import CampaignPreviewView from '../CampaignPreviewView.vue'
-import { campaignBody, deferred, errorResponse, jsonResponse } from '@/__tests__/helpers'
+import {
+  audiencePageBody,
+  campaignBody,
+  deferred,
+  errorResponse,
+  jsonResponse,
+  memberBody,
+} from '@/__tests__/helpers'
 import { campaignListVersion } from '@/campaign/recent'
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -14,8 +21,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// Kişi listesi kendi isteğini yapar; bu dosyadaki testler tüm `fetch` çağrılarına aynı yanıtı
+// verdiği için liste burada sahte bileşenle değiştirilir. Listenin kendisi
+// `AudienceMemberList.spec.ts`'te, ekranla birlikte çalışması aşağıdaki "kişi listesi"
+// bölümünde sınanır.
 function mountView() {
-  return mount(CampaignPreviewView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  return mount(CampaignPreviewView, {
+    global: { stubs: { RouterLink: RouterLinkStub, AudienceMemberList: true } },
+  })
 }
 
 async function submit(w: VueWrapper, brief: string) {
@@ -385,5 +398,104 @@ describe('kenar çubuğundaki son kampanyalar listesine haber verme', () => {
     await submit(w, 'x')
 
     expect(campaignListVersion.value).toBe(before)
+  })
+})
+
+// ADR-031: kitle sayılarının altındaki "Segmente uyan kişiler" listesi bu ekranla birlikte çalışır.
+// Burada gerçek bileşen kullanılır; `fetch` adrese göre yönlendirilir.
+describe('segmente uyan kişiler listesi', () => {
+  const CAMPAIGN_ID = '498882b6-2221-4589-a99f-67ceb68c59c2'
+
+  function mountWithList() {
+    return mount(CampaignPreviewView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+  }
+
+  /** POST /api/campaigns kampanya, GET .../audience liste döndürür. */
+  function routeFetch(list: () => Response, campaign = campaignBody()) {
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(String(input).includes('/audience') ? list() : jsonResponse(201, campaign)),
+    )
+  }
+  const audienceCalls = () =>
+    fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/audience'))
+
+  it('kampanya oluşunca listeyi o kampanyanın kimliğiyle ister; sayıların ve kural özetinin altında gösterir', async () => {
+    routeFetch(() => jsonResponse(200, audiencePageBody()))
+    const w = mountWithList()
+
+    await submit(w, 'İstanbul sepet')
+
+    expect(audienceCalls()).toEqual([`/api/campaigns/${CAMPAIGN_ID}/audience?page=1&limit=10`])
+    expect(w.get('[data-testid="audience-members"] h2').text()).toBe('Segmente uyan kişiler')
+    expect(w.findAll('[data-testid="member-row"]')).toHaveLength(1)
+    const html = w.html()
+    const at = (id: string) => html.indexOf(`id="${id}"`)
+    expect(at('audience-title')).toBeGreaterThan(-1)
+    expect(at('segment-title')).toBeGreaterThan(at('audience-title'))
+    expect(at('audience-members-title')).toBeGreaterThan(at('segment-title'))
+  })
+
+  it('kampanya oluşmadan liste yoktur ve istenmez', async () => {
+    const w = mountWithList()
+
+    expect(w.find('[data-testid="audience-members"]').exists()).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('kampanya oluşamazsa (hata) liste istenmez ve gösterilmez', async () => {
+    fetchMock.mockResolvedValue(errorResponse(422, 'BRIEF_EMPTY'))
+    const w = mountWithList()
+
+    await submit(w, 'x')
+
+    expect(audienceCalls()).toEqual([])
+    expect(w.find('[data-testid="audience-members"]').exists()).toBe(false)
+  })
+
+  it('liste yüklenemese de kitle sayıları ve kural özeti görünür; listede hata ve yeniden dene çıkar', async () => {
+    routeFetch(() => errorResponse(500, 'INTERNAL'))
+    const w = mountWithList()
+
+    await submit(w, 'İstanbul sepet')
+
+    expect(w.get('[data-testid="total"]').text()).toBe('190')
+    expect(w.find('[aria-labelledby="segment-title"]').exists()).toBe(true)
+    const list = w.get('[data-testid="audience-members"]')
+    expect(list.get('[data-testid="error-panel"]').text()).toContain('Kişi listesi yüklenemedi')
+    expect(list.find('[data-testid="error-retry"]').exists()).toBe(true)
+    // Kampanya hatası paneli (sayfa düzeyi) çıkmaz: yalnızca listenin kendi paneli vardır.
+    expect(w.findAll('[data-testid="error-panel"]')).toHaveLength(1)
+  })
+
+  it('yeni brief gönderilince eski kampanyanın satırları kalkar, yeni kampanyanın listesi istenir', async () => {
+    const second = 'aaaaaaaa-1111-4222-8333-bbbbbbbbbbbb'
+    const first = deferred<Response>()
+    let created = 0 // POST /api/campaigns çağrıları: ilki birinci, ikincisi ikinci kampanya
+    fetchMock.mockImplementation((input) => {
+      const url = String(input)
+      if (url.includes(`/${CAMPAIGN_ID}/audience`)) return first.promise
+      if (url.includes('/audience')) {
+        const items = [memberBody({ first_name: 'Yeni kampanya' })]
+        return Promise.resolve(jsonResponse(200, audiencePageBody({ items })))
+      }
+      created += 1
+      return Promise.resolve(jsonResponse(201, campaignBody(created === 1 ? {} : { id: second })))
+    })
+    const w = mountWithList()
+
+    await submit(w, 'birinci') // kampanya 1: listesi henüz gelmedi
+    await submit(w, 'ikinci') // kampanya 2
+    const stale = [memberBody({ first_name: 'Eski kampanya' })]
+    first.resolve(jsonResponse(200, audiencePageBody({ items: stale })))
+    await flushPromises()
+
+    expect(audienceCalls()).toEqual([
+      `/api/campaigns/${CAMPAIGN_ID}/audience?page=1&limit=10`,
+      `/api/campaigns/${second}/audience?page=1&limit=10`,
+    ])
+    const names = w
+      .findAll('[data-testid="member-name"]')
+      .map((n) => n.get('span:last-child').text())
+    expect(names).toEqual(['Yeni kampanya'])
   })
 })
