@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { CirclePlusIcon } from '@lucide/vue'
 import { ApiError, createCampaign, isAbortError, type Campaign } from '@/api/campaigns'
 import { errorTitle } from '@/api/messages'
 import { reasonMessage } from '@/segment/reasons'
@@ -13,8 +14,8 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import StepNav, { type NavStep } from '@/components/StepNav.vue'
 import { notifyCampaignsChanged } from '@/campaign/recent'
+import { notify } from '@/notify/notify'
 import { stepStatuses } from '@/campaign/steps'
-import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 
 const brief = ref('')
@@ -42,10 +43,21 @@ async function submit(text: string) {
     campaign.value = result
     // Kenar çubuğundaki "Son kampanyalar" yeni kampanyayı göstersin.
     notifyCampaignsChanged()
+    notify.success(
+      'Taslak kampanya kaydedildi',
+      `Kitle hesaplandı: ${result.audience.total.toLocaleString('tr-TR')} kişi eşleşti.`,
+    )
   } catch (err) {
     if (controller !== current || isAbortError(err)) return
     error.value =
       err instanceof ApiError ? err : new ApiError(0, 'INTERNAL', 'Beklenmeyen bir hata oluştu.')
+    // Brief'in desteklenmemesi kullanıcının düzeltebileceği bir durumdur (uyarı); diğerleri hatadır.
+    const title = errorTitle(error.value)
+    if (error.value.code === 'SEGMENT_INVALID' || error.value.code.startsWith('BRIEF_')) {
+      notify.warning('Kitle hesaplanamadı', title)
+    } else {
+      notify.error('Kitle hesaplanamadı', title)
+    }
   } finally {
     if (controller === current) loading.value = false
   }
@@ -75,8 +87,9 @@ const reasons = computed(() =>
 </script>
 
 <template>
-  <main class="mx-auto grid w-full max-w-3xl gap-6">
+  <main class="mx-auto grid w-full max-w-5xl gap-8">
     <PageHeader
+      :icon="CirclePlusIcon"
       title="Kampanya önizleme"
       description="Brief'i yazın, kitleyi ve kanal sayılarını görün."
     >
@@ -86,11 +99,7 @@ const reasons = computed(() =>
       <CampaignSteps :statuses="steps" />
     </PageHeader>
 
-    <Card>
-      <CardContent>
-        <BriefForm v-model="brief" :loading="loading" @submit="submit" />
-      </CardContent>
-    </Card>
+    <BriefForm v-model="brief" :loading="loading" @submit="submit" />
 
     <div class="grid gap-6" aria-live="polite">
       <div

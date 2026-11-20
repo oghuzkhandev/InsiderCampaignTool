@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
+import { Toaster } from '@/components/ui/sonner'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 </script>
 
@@ -33,9 +34,13 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
       <!-- Ortak sayfa kabuğu: aynı kenar boşlukları. Dar ekranlar (önizleme, gönderim takibi)
            kendi içlerinde max-w-3xl ile daralır; kampanya ekranı iki sütun için tam genişliği
            kullanır. -->
-      <div class="mx-auto w-full max-w-5xl px-4 pt-8 pb-16 sm:px-6 sm:pt-10">
+      <div class="mx-auto w-full max-w-6xl px-3 pt-6 pb-12 sm:px-4 sm:pt-8">
         <RouterView />
       </div>
     </div>
+
+    <!-- Eylem sonuçları (başarı, uyarı, hata, bilgi): ekranın üstünde, 12 sn kalan bildirimler.
+         Kartları `notify` (src/notify) gösterir. -->
+    <Toaster position="top-center" expand :visible-toasts="4" :gap="22" :offset="16" />
   </SidebarProvider>
 </template>

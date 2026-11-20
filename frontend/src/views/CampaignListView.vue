@@ -1,20 +1,29 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { CirclePlusIcon, MegaphoneIcon } from '@lucide/vue'
 import { getCampaignPage } from '@/api/workspace'
 import { useResource } from '@/composables/useResource'
 import { campaignTarget, campaignTargetLabel } from '@/campaign/links'
+import { formatScheduledTime, deviceTimeZone } from '@/campaign/schedule'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ErrorPanel from '@/components/ErrorPanel.vue'
+import FilterSelect from '@/components/FilterSelect.vue'
 import ListPagination from '@/components/ListPagination.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 const route = useRoute()
 const statuses = ['', 'draft', 'approved', 'sending', 'completed']
+/** Durum süzgecinin seçenekleri ("Tüm durumlar" FilterSelect'in kendi ilk seçeneğidir). */
+const STATUS_OPTIONS = [
+  { value: 'draft', label: 'Taslak' },
+  { value: 'approved', label: 'Onaylandı, kuyrukta' },
+  { value: 'sending', label: 'Gönderiliyor' },
+  { value: 'completed', label: 'Tamamlandı' },
+]
 const state = ref(
   typeof route.query.status === 'string' && statuses.includes(route.query.status)
     ? route.query.status
@@ -38,23 +47,29 @@ watch(
 const formatDate = (iso: string) => new Date(iso).toLocaleString('tr-TR')
 </script>
 <template>
-  <main class="grid gap-6">
+  <main class="grid gap-8">
     <PageHeader
+      :icon="MegaphoneIcon"
       title="Kampanyalar"
       description="Tüm kampanyalarınızı inceleyin; taslağa veya gönderim takibine devam edin."
     />
     <div class="flex flex-wrap items-end justify-between gap-4">
-      <div class="grid gap-2">
-        <Label for="campaign-filter">Durum</Label
-        ><NativeSelect id="campaign-filter" v-model="state"
-          ><NativeSelectOption value="">Tüm durumlar</NativeSelectOption
-          ><NativeSelectOption value="draft">Taslak</NativeSelectOption
-          ><NativeSelectOption value="approved">Onaylandı, kuyrukta</NativeSelectOption
-          ><NativeSelectOption value="sending">Gönderiliyor</NativeSelectOption
-          ><NativeSelectOption value="completed">Tamamlandı</NativeSelectOption></NativeSelect
-        >
+      <div class="grid w-full gap-1.5 sm:w-64">
+        <Label for="campaign-filter">Durum</Label>
+        <FilterSelect
+          id="campaign-filter"
+          v-model="state"
+          :options="STATUS_OPTIONS"
+          all-label="Tüm durumlar"
+          data-testid="campaign-status-filter"
+        />
       </div>
-      <Button as-child><RouterLink to="/">Yeni kampanya</RouterLink></Button>
+      <Button as-child>
+        <RouterLink to="/">
+          <CirclePlusIcon aria-hidden="true" />
+          Yeni kampanya
+        </RouterLink>
+      </Button>
     </div>
     <Card
       ><CardContent class="grid gap-4">
@@ -81,9 +96,12 @@ const formatDate = (iso: string) => new Date(iso).toLocaleString('tr-TR')
               data-testid="campaign-page-row"
               ><p class="line-clamp-2 font-medium wrap-anywhere">{{ item.brief }}</p>
               <div class="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
-                <StatusBadge :status="item.status" /><time :datetime="item.created_at">{{
-                  formatDate(item.created_at)
-                }}</time
+                <StatusBadge :status="item.status" :scheduled="Boolean(item.scheduled_at)" /><time
+                  :datetime="item.created_at"
+                  >{{ formatDate(item.created_at) }}</time
+                ><span v-if="item.scheduled_at"
+                  >Planlanan başlangıç: {{ formatScheduledTime(item.scheduled_at) }} ·
+                  {{ deviceTimeZone() }}</span
                 ><span class="text-primary">{{ campaignTargetLabel(item.status) }} →</span>
               </div></RouterLink
             >

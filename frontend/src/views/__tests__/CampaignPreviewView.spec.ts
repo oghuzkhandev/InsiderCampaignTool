@@ -10,6 +10,7 @@ import {
   memberBody,
 } from '@/__tests__/helpers'
 import { campaignListVersion } from '@/campaign/recent'
+import { notify } from '@/notify/notify'
 
 const fetchMock = vi.fn<typeof fetch>()
 
@@ -369,6 +370,79 @@ describe('CampaignPreviewView', () => {
     w.unmount()
 
     expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true)
+  })
+})
+
+// Kitle hesabının sonucu bir bildirimdir: kaydedilince başarı, brief düzeltilebilirse uyarı, aksi hata.
+describe('eylem bildirimleri', () => {
+  const spies = () => ({
+    success: vi.spyOn(notify, 'success').mockReturnValue('s'),
+    warning: vi.spyOn(notify, 'warning').mockReturnValue('w'),
+    error: vi.spyOn(notify, 'error').mockReturnValue('e'),
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('kampanya kaydedilince başarı bildirimi verir ve eşleşen kişi sayısını söyler', async () => {
+    const n = spies()
+    fetchMock.mockResolvedValue(jsonResponse(201, campaignBody()))
+    const w = mountView()
+
+    await submit(w, 'İstanbul sepet')
+
+    expect(n.success).toHaveBeenCalledWith(
+      'Taslak kampanya kaydedildi',
+      'Kitle hesaplandı: 190 kişi eşleşti.',
+    )
+    expect(n.error).not.toHaveBeenCalled()
+    expect(n.warning).not.toHaveBeenCalled()
+  })
+
+  it('brief desteklenmiyorsa (düzeltilebilir) uyarı verir, hata değil', async () => {
+    const n = spies()
+    fetchMock.mockResolvedValue(
+      errorResponse(422, 'SEGMENT_INVALID', [{ code: 'UNSUPPORTED_FIELD', field: 'x' }]),
+    )
+    const w = mountView()
+
+    await submit(w, 'garip brief')
+
+    expect(n.warning).toHaveBeenCalledTimes(1)
+    expect(n.warning.mock.calls[0]![0]).toBe('Kitle hesaplanamadı')
+    expect(n.error).not.toHaveBeenCalled()
+    expect(n.success).not.toHaveBeenCalled()
+  })
+
+  it('boş brief de uyarıdır', async () => {
+    const n = spies()
+    fetchMock.mockResolvedValue(errorResponse(422, 'BRIEF_EMPTY'))
+    const w = mountView()
+
+    await submit(w, 'x')
+
+    expect(n.warning).toHaveBeenCalledTimes(1)
+    expect(n.error).not.toHaveBeenCalled()
+  })
+
+  it('sunucu hatasında hata bildirimi verir', async () => {
+    const n = spies()
+    fetchMock.mockResolvedValue(errorResponse(500, 'INTERNAL'))
+    const w = mountView()
+
+    await submit(w, 'İstanbul sepet')
+
+    expect(n.error).toHaveBeenCalledWith('Kitle hesaplanamadı', 'Beklenmeyen bir hata oluştu.')
+    expect(n.success).not.toHaveBeenCalled()
+  })
+
+  it('iptal edilen istek bildirim üretmez', async () => {
+    const n = spies()
+    fetchMock.mockRejectedValue(new DOMException('iptal', 'AbortError'))
+    const w = mountView()
+
+    await submit(w, 'İstanbul sepet')
+
+    expect(n.error).not.toHaveBeenCalled()
+    expect(n.warning).not.toHaveBeenCalled()
   })
 })
 
