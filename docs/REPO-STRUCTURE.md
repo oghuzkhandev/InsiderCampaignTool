@@ -5,6 +5,13 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
 
 ## Uygulama klasörleri
 
+Çalışma alanı ekleri (ADR-032): `campaign/pages.go` sayfalı liste ve genel bakış sorguları,
+`httpapi/workspace.go` çalışma alanı uçları, `templates/store.go` kalıcı şablon CRUD işlemleri.
+`frontend/src/views/{OverviewView,CampaignListView,AudiencesView,TemplatesView}.vue` yeni sayfalar;
+`api/workspace.ts` doğrulanan API sınırı, `composables/useResource.ts` iptal ve geç yanıt koruması,
+`MemberBrowser`, `TemplatePicker`, `ListPagination` ortak bileşenler. Kampanya kişileri için mevcut
+`AudienceMemberList` kullanılır. `00006_content_templates.sql` onaylı şablon migration'ıdır.
+
 - backend/ — Go API, Claude ve MockLLM entegrasyonu, segment doğrulama,
   PostgreSQL erişimi, kuyruk worker'ı ve mock SMS/e-posta sağlayıcısı.
   Migration,
@@ -186,4 +193,3 @@ gerçek anahtarlar ve kişisel bilgiler temizlenir.
 
 - [ai-sessions/README.md](../ai-sessions/README.md) — Oturumların tarihi,
   aracı, konusu ve ilgili export dosyası veya paylaşım bağlantısı.
-  

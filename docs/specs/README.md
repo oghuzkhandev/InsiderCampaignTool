@@ -12,6 +12,8 @@ açıklar. Gereksinimlerin kaynağı [Insider One brief'i](../CASE.md).
 | `SND-001` | [Mesaj gönderimi](SND-001-message-delivery.md) | Taslak |
 | `TRK-001` | [Canlı gönderim takibi](TRK-001-live-delivery-tracking.md) | Taslak |
 | `CMP-001` | [Son kampanyalar listesi](CMP-001-campaign-list.md) | Taslak |
+| `AUD-001` | [Segmente uyan kişiler](AUD-001-audience-member-list.md) | Uygulandı; CI bekliyor |
+| `WRK-001` | [Çalışma alanı ve şablonlar](WRK-001-workspace-pages.md) | Yerelde doğrulandı; CI bekliyor |
 
 ## Yeni spec ekleme
 

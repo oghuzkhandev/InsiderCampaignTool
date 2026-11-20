@@ -853,3 +853,78 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   satıra gruplanır (kanal başına) ve Go'da toplanır (üç satırlık işlem); snapshot gövdesi büyür
   (saniyede bir, birkaç yüz bayt). Spec: [TRK-001](docs/specs/TRK-001-live-delivery-tracking.md);
   sözleşme: [ARCHITECTURE §5](docs/ARCHITECTURE.md).
+
+## ADR-031 — Segmente uyan kişiler listesi: `GET /api/campaigns/{id}/audience`
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-20; üç seçenek de önerilen yönde seçildi).
+- **Bağlam:** Kitle önizlemesi yalnızca üç sayı gösteriyordu (toplam, SMS'e uygun, e-postaya uygun).
+  Pazarlamacı hangi kişilerin eşleştiğini, kimin neden bir kanala uygun olmadığını göremiyordu.
+  Onayın alıcı sorgusu (`segment.BuildRecipients`) bu iş için kullanılamaz: yalnızca en az bir
+  kanala uygun kişileri döndürür, yani izinsiz eşleşenleri eler.
+- **Karar:**
+  - **Endpoint:** `GET /api/campaigns/{id}/audience?page=N&limit=M`. Kampanyanın **kayıtlı,
+    doğrulanmış** segmentini kullanır (model çağrılmaz, hiçbir şey yazılmaz). Kampanya yoksa `404
+    CAMPAIGN_NOT_FOUND`. Kampanya durumundan bağımsızdır (salt okunur).
+  - **Sayfalama: offset (`page` + `limit`).** Yanıt `page`, `limit`, `total` ve `items` taşır;
+    arayüz "Sayfa N / M" ve Önceki/Sonraki gösterir. Seçenek olarak keyset (cursor) değerlendirildi
+    ve seçilmedi: seed verisi sabit ve 3 bin kişi civarında olduğu için offset'in iki zayıflığı
+    (çok büyük listede yavaşlama, sayfalar arasında kayıt kayması) bu demoda gerçekleşmez; keyset ise
+    "Önceki" için ters cursor ve "Sayfa N / M" göstermeyi zorlaştırır. Bedel: ölçek büyürse bu karar
+    yeniden ele alınmalıdır.
+  - **Sıralama: `users.id ASC`.** Birincil anahtar ve benzersizdir, bu yüzden sıra her çağrıda
+    aynıdır ve sayfalar çakışmaz. Ada göre sıralama NULL ve eşit adlarda belirsizlik getirirdi.
+  - **Sınırlar:** `page` varsayılan 1, en az 1, en çok 100000 (daha büyüğü `400`; offset taşmasını
+    önler). `limit` varsayılan 10, en çok 50. ADR-029 ile aynı kural: 50'den büyük `limit` 50'ye
+    indirilir, tam sayı olmayan veya 1'den küçük `limit` ve `page` `400 INVALID_REQUEST` olur ve
+    veritabanı okunmaz. Son sayfanın ötesi hata değil, boş `items` ve doğru `total` döner.
+  - **Tek sorgu:** `total` ve sayfa **tek SQL ifadesinde** okunur; ikisi aynı anlık görüntüden
+    gelir, sayfa ile toplam birbirini tutarsız göstermez.
+  - **Referans zaman: istek anı** (`Deps.Now`). Onay da alıcıları onay anında seçtiği için liste,
+    "şimdi onaylansaydı kimler eşleşirdi" sorusunu yanıtlar (ARCHITECTURE §6). Seçenek olarak
+    kampanyanın oluşturulma zamanı değerlendirildi ve seçilmedi: onayda kullanılacak gerçek zamandan
+    sapar ve izin değişikliklerini yine yansıtır, yani tutarlılığı garanti etmez. Bedel: kampanya
+    günler sonra açılırsa listenin `total` değeri kayıtlı kitle sayısından farklı çıkabilir.
+    Arayüz bunu "demo verisi; kesin alıcılar onay sırasında yeniden belirlenir" notuyla söyler.
+  - **Kanal uygunluğu: durum + sebep.** Her kanal için `eligible`, `no_consent` veya `no_address`.
+    Kural ADR-023 ile aynıdır (açık izin **ve** adres) ve kitle sayılarıyla aynı SQL ifadelerinden
+    gelir. İzin yoksa (kayıt yok veya `granted = false`) adresin olup olmadığına bakılmadan
+    `no_consent` döner; adres yalnızca izin varsa ve boşsa `no_address` olur. Böylece "SMS'e uygun"
+    sayısı, listede `sms_status = eligible` olanların sayısıyla birebir eşleşir.
+  - **Eksik bilgi açıkça `null`:** ad (`first_name`), telefon ve e-posta boş, NULL veya yalnızca
+    boşluksa `null` döner; arayüz "Ad yok", "Telefon yok", "E-posta yok" yazar. Boş metin veya
+    sahte değer yollanmaz. Ad için Go `strings.TrimSpace`, adresler için kanal uygunluğuyla aynı
+    ASCII boşluk sınıfı kullanılır.
+  - **Eşleşen ama izinsiz kişiler listelenir** (iki kanal da uygun değilse de). `total`, kitle
+    önizlemesindeki "Toplam eşleşen kişi" ile aynı tanımdır (kanal iznine bakılmaz).
+  - Migration yok, yeni bağımlılık yok; yalnızca mevcut `users` ve `user_consents` okunur.
+  - **Kişisel veri:** liste ad, e-posta ve telefonu tam gösterir. Veriler sahte demo verisidir ve
+    uygulamada kimlik doğrulama yoktur (ADR-029 ile aynı varsayım). Gerçek müşteri verisiyle
+    kullanılacaksa yetkilendirme ve maskeleme gerekir; bu karar onları kapsamaz.
+- **Gerekçe ve sonuç:** Pazarlamacı yalnızca "191 kişi" yerine kimlerin eşleştiğini ve izinsizlerin
+  neden dışarıda kaldığını görür; sayılara güveni artar ve segment yanlış yorumlandıysa onaydan
+  önce fark edilir. Bedel: kitle önizlemesine ikinci bir istek ve her sayfa için bir birleştirme
+  sorgusu eklenir; offset sayfalama büyük ölçekte yeniden değerlendirilmelidir. Spec:
+  [AUD-001](docs/specs/AUD-001-audience-member-list.md); sözleşme:
+  [ARCHITECTURE §5](docs/ARCHITECTURE.md).
+
+## ADR-032 — Çalışma alanı sayfaları ve kalıcı içerik şablonları
+
+- **Durum:** Onaylandı (Oğuzhan, 2026-11-20). Beş sayfa aynı `feat/audience-preview-list`
+  branch'inde uygulanacak; şablon tablosu için migration yazılması açıkça onaylandı.
+- **Karar:** Menü Genel bakış, Yeni kampanya, Kampanyalar, Kitleler ve İçerik şablonları
+  bağlantılarından oluşur. Marka `Insider Campaign Tool`, yanında ikon yoktur.
+- Genel bakış tek sorguyla güncel veritabanı sayılarını okur; tarihsel grafik değildir.
+  Kampanya listesi durum filtresi ve offset sayfalama kullanır. Eski `GET /api/campaigns?limit=N`
+  yanıtı korunur; `page` veya `status` ile istenen yanıta `total`, `page`, `limit` eklenir.
+- Kitleler sayfası tüm sahte demo kullanıcılarını arar; kampanya segmentine uyan kişiler ayrı
+  önizlemede kalır. Arama parametreli, literal alt metindir; kanal uygunluğu ADR-023 ile aynıdır.
+- `00006` migration'ı `content_templates` tablosunu ekler: UUID, 1–100 karakter ad, SMS,
+  e-posta konusu/gövdesi, oluşturulma ve güncelleme zamanı. Liste en son güncellenene göre sıralıdır.
+  Şablonlar mevcut içerik doğrulayıcısını kullanır; kampanyaya kaydetmede gerçek ad uzunluklarıyla
+  yeniden doğrulanır. Uygulamak kaydetmez/onaylamaz; yalnızca düzenleyiciyi doldurur.
+- Şablon düzenlemek veya silmek kaydedilmiş kampanya sürümlerini etkilemez. Şablonlar sürümlenmez;
+  eşzamanlı düzenlemelerde son yazan kazanır. Down yalnızca şablon tablosunu ve içindeki verileri
+  siler; kampanya/mesaj verisini değiştirmez. Yeni bağımlılık yoktur.
+- Sınırlar: uygulamada oturum/yetki modeli yoktur; şablonlar ve demo kullanıcıları ortaktır.
+  Listeler varsayılan 10, en fazla 20 kayıt; sayfa en fazla 100000. Offset sayfaları ayrı
+  isteklerde okunur, eşzamanlı veri değişimlerinde sayfalar arasında kayma olabilir.

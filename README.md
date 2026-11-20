@@ -42,9 +42,17 @@ hepsi hazır olunca döner. Hazır olunca:
    görebilirsiniz. Servis sağlığı ve metrikler için aşağıdaki
    [Gözlemlenebilirlik](#gözlemlenebilirlik) bölümüne bakın.
 
-Her ekranda solda bir kenar çubuğu bulunur: **"Yeni kampanya"** ve **"Son kampanyalar"**
-(en yeni 10; taslak kampanya içeriğe, onaylı kampanya gönderim takibine açılır). Üstteki
-**"Campaign Tool"** başlığı ana sayfaya döner. Telefonda kenar çubuğu bir çekmecedir.
+Menüde **Genel bakış**, **Yeni kampanya**, **Kampanyalar**, **Kitleler** ve
+**İçerik şablonları** sayfaları vardır. Kampanyalar listesi durum filtresi ve sayfalama
+sunar; Kitleler sahte demo kullanıcılarını arar. İçerik şablonları sayfasında kaydedilen
+SMS/e-posta metinleri kampanya düzenleyicisindeki **Şablondan doldur** ile kullanılabilir.
+Şablon seçtikten sonra ayrıca yeni sürüm kaydedilir ve onaylanır. Şablonu silmek daha önce
+kaydedilmiş kampanyaları değiştirmez. Üstteki **Insider Campaign Tool** başlığı genel
+bakışı açar. Telefonda menü çekmece olarak açılır.
+
+Mevcut kurulumu bu sürüme yükseltirken `docker compose up migrate` ile `00006` şablon
+migration'ını uygulayın, ardından `docker compose up -d --build api web` çalıştırın.
+Temiz kurulumda migration otomatik uygulanır. `00006` Down şablonları siler.
 
 Mock provider'ın davranışı ortam değişkenleriyle değişir
 ([`.env.example`](.env.example)): gecikme, 429/500 oranı ve yanıt kaybı modları

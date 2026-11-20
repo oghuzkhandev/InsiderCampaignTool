@@ -2,6 +2,35 @@
 
 ## 1. Genel bakış
 
+### Çalışma alanı sayfaları (ADR-032)
+
+Menü `/overview`, `/`, `/campaigns`, `/audiences`, `/templates` sayfalarına gider.
+`GET /api/overview` tek SQL anlık görüntüsünden `campaigns`, `draft`, `approved`, `sending`,
+`completed`, `users`, `sent`, `failed`, `pending`, `recovered`, `templates` sayıları döner.
+`pending`: queued + sending; `recovered`: sent ve attempts > 1. Geçmiş grafik veya okunma bilgisi değildir.
+
+`GET /api/campaigns?page=1&limit=10&status=draft` → `{campaigns, total, page, limit}`.
+Durum boşsa tümü; draft/approved/sending/completed kabul edilir. Eski limitsiz-page çağrısı
+yalnızca `{campaigns}` döndürmeye devam eder. Sıra created_at DESC, id DESC.
+
+`GET /api/audience?page=1&limit=10&search=...` → `{items,total,page,limit}`.
+Kampanya filtresi uygulanmadan tüm demo kullanıcılarını listeler; ad/şehir/e-posta/telefonda literal
+alt metin aranır (en fazla 100 karakter). Kişi alanları kampanya audience uç noktasıyla aynıdır.
+
+`GET /api/templates?page=1&limit=10` → `{items,total,page,limit}`.
+`POST /api/templates` ve `PUT /api/templates/{id}` gövdesi `{name,sms_text,email_subject,email_body}`.
+Başarı 201 + Location veya 200; yanıt aynı alanlara id/created_at/updated_at ekler. Boş/uzun ad
+422 INVALID_TEMPLATE_NAME, içerik doğrulaması 422 CONTENT_INVALID, bulunamayan kimlik 404
+TEMPLATE_NOT_FOUND. `DELETE /api/templates/{id}` başarıda 204. Gövde türü/boyut/JSON kontrolleri
+mevcut API ile aynıdır. Şablon silmek kampanyadaki metni değiştirmez.
+
+Yeni sayfalı uçlarda varsayılan sayfa 1, limit 10 (üst sınır 20'ye kırpılır), sayfa üst sınırı
+100000; geçersiz tamsayılar 400. Toplam ve sayfa tek SQL ifadesinde hesaplanır. Şablon tablosu
+migration 00006: UUID/ad/üç içerik metni/iki zaman damgası. Alanlar için temel content_text_valid
+DB koruması; tam içerik doğrulaması Go'da. Şablonlar paylaşımlıdır, geçmiş sürüm saklamaz.
+Şablon kaydındaki uzunluk kontrolü fallback adını kullanır; kampanyaya kaydederken gerçek ad
+uzunluklarına göre doğrulama tekrar yapılır. Seçim kaydetme/onay yerine geçmez.
+
 ```mermaid
 flowchart LR
   Web[Vue 3 web] -- REST / SSE --> API[Go API]

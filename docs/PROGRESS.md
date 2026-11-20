@@ -2,6 +2,38 @@
 
 Son güncelleme: 2026-11-20
 
+## Şu an — Kişi listesi ve çalışma alanı sayfaları
+
+**Branch:** `feat/audience-preview-list`. Oğuzhan beş sayfanın aynı branch'e eklenmesini
+ve kalıcı şablon tablosu için migration yazılmasını açıkça onayladı (ADR-032).
+
+- Menü: Genel bakış, Yeni kampanya, Kampanyalar, Kitleler, İçerik şablonları.
+- Genel bakış gerçek veritabanı özeti; kampanyalar durum filtreli ve sayfalı.
+- Kitleler tüm demo kullanıcılarında arama ve sayfalama yapar; kampanyanın segmentine
+  uyan kişiler önizlemede ayrı listelenir. Kanal uygunluk sebepleri korunur.
+- `00006_content_templates.sql`: kalıcı şablon tablosu. Mevcut doğrulayıcı kullanılır.
+  Şablonu kampanyaya uygulamak düzenleyiciyi doldurur; sürüm kaydetme/onay ayrıca gerekir.
+  Şablonu düzenleme/silme kaydedilmiş kampanya sürümlerini değiştirmez.
+- Yeni API'ler: GET overview, GET audience, GET/POST templates, PUT/DELETE templates/{id};
+  kampanya listesinin sayfalı/filtreli çağrısı. Ayrıntılı sözleşme ARCHITECTURE ve WRK-001'de.
+- Son yerel doğrulama: frontend 638 test (37 dosya), eslint/oxlint, build ve e2e tip kontrolü
+  geçti. `make test`, `go test -count=1 ./...`, go vet, go mod verify/tidy ve gofmt temiz.
+  Workspace ve migration Down/Up testleri `-race` ile de geçti. Standart Playwright 40/40,
+  gerçek worker/provider/SSE döngüsü 1/1; iç metrics erişimi/port yalıtımı kontrolü geçti.
+  Sonuçlar `campaign-workspace-e2e` projesi ve 18084 portunda alındı; test ortamı silindi.
+  İsteğe bağlı observability döngüsü bu değişiklikte yeniden çalıştırılmadı; gerçek CI bekliyor.
+- Doğrulamada görülenler: başka bir agent aynı `campaign-e2e` projesini kullanınca ilk toplu
+  deneme bağlantı hataları aldı; ayrı proje/port ve `E2E_OUTPUT_DIR` ile çakışma giderildi.
+  Eski menü/listenin konumuna bağlı testler yeni sayfalara uyarlandı. Mobil taşma testi,
+  görsel olarak kırpılmış ekran okuyucu başlıklarını görünür sayıyordu; gerçek computed clip
+  kontrolü eklendi. Son tarayıcı koşusu temiz.
+- Mevcut `TestDeliveryCompletesCampaignAndRecordsEveryAcceptanceOnce` bir `make test`
+  koşusunda bir mesaj için fazladan deneme gördü. Nedeni doğrulanmadı; test değiştirilmedi.
+  Aynı test 5 tekrarda ve sonraki tam `make test` koşusunda geçti. CI'da tekrar ederse
+  mesajın `last_error`/attempt verisi korunarak incelenmeli; bu kayıt gizlenmedi.
+- Dev veritabanına migration uygulanmadı. Commit/push yapılmadı; gerçek GitHub Actions
+  sonucu henüz doğrulanmadı. `00006` Down şablon verilerini siler, kampanyaları silmez.
+
 ## Tamamlanan hazırlık
 
 - [x] Repo klonlandı ve başlangıç klasörleri oluşturuldu.
