@@ -42,12 +42,14 @@ type campaignResponse struct {
 	// ApprovedContentVersion ve ApprovedAt, kampanya onaylandıysa bulunur.
 	ApprovedContentVersion *int       `json:"approved_content_version,omitempty"`
 	ApprovedAt             *time.Time `json:"approved_at,omitempty"`
+	ScheduledAt            *time.Time `json:"scheduled_at,omitempty"`
 }
 
 func toResponse(c campaign.Campaign) campaignResponse {
 	return campaignResponse{
 		ApprovedContentVersion: c.ApprovedContentVersion,
 		ApprovedAt:             c.ApprovedAt,
+		ScheduledAt:            c.ScheduledAt,
 		ID:                     c.ID,
 		Brief:                  c.Brief,
 		Status:                 c.Status,

@@ -33,6 +33,7 @@ type Campaign struct {
 	// ApprovedContentVersion ve ApprovedAt, kampanya onaylandıysa dolu olur.
 	ApprovedContentVersion *int
 	ApprovedAt             *time.Time
+	ScheduledAt            *time.Time
 }
 
 // Kampanya listesinin sınırları (CMP-001): varsayılan 10, en fazla 20.
@@ -97,13 +98,14 @@ func (s *Store) Get(ctx context.Context, id string) (Campaign, error) {
 	var (
 		approvedVersion sql.NullInt32
 		approvedAt      sql.NullTime
+		scheduledAt     sql.NullTime
 	)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, brief, segment, status, audience_total, audience_sms, audience_email, created_at,
-		        approved_content_version, approved_at
+		        approved_content_version, approved_at, scheduled_at
 		 FROM campaigns WHERE id = $1`, id,
 	).Scan(&c.ID, &c.Brief, &raw, &c.Status, &c.Audience.Total, &c.Audience.SMS, &c.Audience.Email, &c.CreatedAt,
-		&approvedVersion, &approvedAt)
+		&approvedVersion, &approvedAt, &scheduledAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || isInvalidUUID(err) {
 			return Campaign{}, ErrNotFound
@@ -118,6 +120,10 @@ func (s *Store) Get(ctx context.Context, id string) (Campaign, error) {
 	if approvedAt.Valid {
 		t := approvedAt.Time.UTC()
 		c.ApprovedAt = &t
+	}
+	if scheduledAt.Valid {
+		at := scheduledAt.Time.UTC()
+		c.ScheduledAt = &at
 	}
 
 	c.Segment, err = segment.ParseStored(raw)

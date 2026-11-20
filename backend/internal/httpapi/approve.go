@@ -11,12 +11,13 @@ import (
 
 // CampaignApprover, kampanyayı insan onayıyla onaylar (campaign.Approver).
 type CampaignApprover interface {
-	Approve(ctx context.Context, campaignID string, version int, now time.Time) (campaign.ApprovalResult, error)
+	ApproveScheduled(ctx context.Context, campaignID string, version int, now time.Time, scheduled *time.Time) (campaign.ApprovalResult, error)
 }
 
 type approveRequest struct {
 	// ContentVersion işaretçidir: eksik alan ile 0 ayırt edilir.
-	ContentVersion *int `json:"content_version"`
+	ContentVersion *int       `json:"content_version"`
+	ScheduledAt    *time.Time `json:"scheduled_at"`
 }
 
 type channelCountsResponse struct {
@@ -30,6 +31,7 @@ type approveResponse struct {
 	Status                 string                `json:"status"`
 	ApprovedContentVersion int                   `json:"approved_content_version"`
 	ApprovedAt             time.Time             `json:"approved_at"`
+	ScheduledAt            *time.Time            `json:"scheduled_at,omitempty"`
 	Queued                 channelCountsResponse `json:"queued"`
 }
 
@@ -55,7 +57,7 @@ func (s *server) approveCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.Approver.Approve(r.Context(), r.PathValue("id"), *req.ContentVersion, s.Now())
+	res, err := s.Approver.ApproveScheduled(r.Context(), r.PathValue("id"), *req.ContentVersion, s.Now(), req.ScheduledAt)
 	if err != nil {
 		s.writeApproveError(w, r, err)
 		return
@@ -66,6 +68,7 @@ func (s *server) approveCampaign(w http.ResponseWriter, r *http.Request) {
 		Status:                 res.Status,
 		ApprovedContentVersion: res.ContentVersion,
 		ApprovedAt:             res.ApprovedAt.UTC(),
+		ScheduledAt:            res.ScheduledAt,
 		Queued:                 toChannelCounts(res.Queued),
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -76,6 +79,10 @@ func (s *server) approveCampaign(w http.ResponseWriter, r *http.Request) {
 func (s *server) writeApproveError(w http.ResponseWriter, r *http.Request, err error) {
 	var render *campaign.RenderLimitError
 	switch {
+	case errors.Is(err, campaign.ErrSchedulePast):
+		writeError(w, http.StatusUnprocessableEntity, "SCHEDULE_IN_PAST", "Gönderim zamanı gelecekte olmalı.")
+	case errors.Is(err, campaign.ErrScheduleConflict):
+		writeError(w, http.StatusConflict, "SCHEDULE_CONFLICT", "Kampanya farklı bir gönderim zamanı ile zaten onaylandı.")
 	case errors.Is(err, campaign.ErrNotFound):
 		writeError(w, http.StatusNotFound, "CAMPAIGN_NOT_FOUND", "Kampanya bulunamadı.")
 	case errors.Is(err, campaign.ErrNoContent):

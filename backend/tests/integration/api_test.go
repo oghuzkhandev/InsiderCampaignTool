@@ -32,14 +32,16 @@ func newAPI(db *sql.DB, provider llm.Provider) http.Handler {
 // newAPIWith, segment ve içerik için ayrı istemciler verilebilen sürümdür.
 func newAPIWith(db *sql.DB, segments llm.Client, contents llm.ContentClient) http.Handler {
 	return httpapi.New(httpapi.Deps{
-		Segments:  &segment.Generator{LLM: segments},
-		Audience:  audience.NewCounter(db),
-		Members:   audience.NewLister(db),
-		Campaigns: campaign.NewStore(db),
-		Content:   &content.Generator{LLM: contents},
-		Contents:  campaign.NewContentStore(db),
-		Approver:  campaign.NewApprover(db),
-		Now:       func() time.Time { return now },
+		Segments:   &segment.Generator{LLM: segments},
+		Audience:   audience.NewCounter(db),
+		Members:    audience.NewLister(db),
+		Scheduled:  campaign.NewStore(db),
+		Recipients: campaign.NewStore(db),
+		Campaigns:  campaign.NewStore(db),
+		Content:    &content.Generator{LLM: contents},
+		Contents:   campaign.NewContentStore(db),
+		Approver:   campaign.NewApprover(db),
+		Now:        func() time.Time { return now },
 	})
 }
 

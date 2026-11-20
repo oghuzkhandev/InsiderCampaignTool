@@ -45,6 +45,8 @@ func newHandler(db *sql.DB, client llm.Provider, shutdown <-chan struct{}, llmFa
 		CampaignPages:         campaign.NewStore(db),
 		Overview:              campaign.NewStore(db),
 		Templates:             templates.NewStore(db),
+		Scheduled:             campaign.NewStore(db),
+		Recipients:            campaign.NewStore(db),
 		Campaigns:             campaign.NewStore(db),
 		Content:               &content.Generator{LLM: client},
 		Contents:              campaign.NewContentStore(db),

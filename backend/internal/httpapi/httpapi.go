@@ -57,6 +57,10 @@ type Deps struct {
 	Overview      OverviewReader
 	Directory     DirectoryReader
 	Templates     TemplateStore
+	// Scheduled, gönderimi ileri bir zamana planlanmış kampanyaları okur (Zamanlanmış sayfası).
+	Scheduled ScheduledReader
+	// Recipients, kampanyanın mesaj alıcılarını okur (gönderim takibindeki "Alıcılar" çekmecesi).
+	Recipients RecipientReader
 	// DeliveryInterval, dashboard akışında iki durum görüntüsü arasındaki süredir.
 	// Değişiklik olmasa da her aralıkta görüntü yollanır. Sıfırsa 1 saniye.
 	DeliveryInterval time.Duration
@@ -102,6 +106,8 @@ func (d Deps) Validate() error {
 		{"Overview", d.Overview == nil},
 		{"Directory", d.Directory == nil},
 		{"Templates", d.Templates == nil},
+		{"Scheduled", d.Scheduled == nil},
+		{"Recipients", d.Recipients == nil},
 	} {
 		if dep.unbound {
 			missing = append(missing, dep.name)
@@ -133,6 +139,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/campaigns", s.listCampaigns)
 	mux.HandleFunc("GET /api/overview", s.getOverview)
 	mux.HandleFunc("/api/overview", methodNotAllowed(http.MethodGet))
+	mux.HandleFunc("GET /api/scheduled", s.listScheduled)
+	mux.HandleFunc("/api/scheduled", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("GET /api/audience", s.listDirectory)
 	mux.HandleFunc("/api/audience", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("GET /api/audience/cities", s.listDirectoryCities)
@@ -153,6 +161,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/campaigns/{id}/content", methodNotAllowed(http.MethodPost+", "+http.MethodPut))
 	mux.HandleFunc("POST /api/campaigns/{id}/approve", s.approveCampaign)
 	mux.HandleFunc("/api/campaigns/{id}/approve", methodNotAllowed(http.MethodPost))
+	mux.HandleFunc("GET /api/campaigns/{id}/recipients", s.listRecipients)
+	mux.HandleFunc("/api/campaigns/{id}/recipients", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("GET /api/campaigns/{id}/events", s.deliveryEvents)
 	mux.HandleFunc("/api/campaigns/{id}/events", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {

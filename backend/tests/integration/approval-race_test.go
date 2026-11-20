@@ -123,7 +123,7 @@ func TestConcurrentApprovalsOfDifferentVersionsOnlyLatestWins(t *testing.T) {
 }
 
 // approveLockQuery, onayın kampanya satırını kilitlerken kullandığı sorgunun başıdır.
-const approveLockQuery = `SELECT status, approved_content_version, approved_at, segment FROM campaigns WHERE id = $1 FOR UPDATE`
+const approveLockQuery = `SELECT status, approved_content_version, approved_at, segment, scheduled_at FROM campaigns WHERE id = $1 FOR UPDATE`
 
 const slowTriggerSQL = `CREATE FUNCTION zz_slow_messages() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.4); RETURN NULL; END $$`
 

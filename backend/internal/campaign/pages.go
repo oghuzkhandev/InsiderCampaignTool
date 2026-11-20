@@ -14,18 +14,19 @@ type Page struct {
 }
 
 type PageItem struct {
-	ID        string    `json:"id"`
-	Brief     string    `json:"brief"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string     `json:"id"`
+	Brief       string     `json:"brief"`
+	Status      string     `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 }
 
 // ListPage reads the count and page from the same statement snapshot, including empty pages.
 func (s *Store) ListPage(ctx context.Context, page, limit int, status string) (Page, error) {
 	rows, err := s.db.QueryContext(ctx, `WITH total AS (SELECT count(*) AS n FROM campaigns WHERE ($1='' OR status=$1)),
-	page AS (SELECT id,brief,status,created_at FROM campaigns WHERE ($1='' OR status=$1)
+	page AS (SELECT id,brief,status,created_at,scheduled_at FROM campaigns WHERE ($1='' OR status=$1)
 	ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3)
-	SELECT total.n,page.id::text,page.brief,page.status,page.created_at FROM total LEFT JOIN page ON true
+	SELECT total.n,page.id::text,page.brief,page.status,page.created_at,page.scheduled_at FROM total LEFT JOIN page ON true
 	ORDER BY page.created_at DESC,page.id DESC`, status, limit, (page-1)*limit)
 	if err != nil {
 		return Page{}, err
@@ -35,11 +36,17 @@ func (s *Store) ListPage(ctx context.Context, page, limit int, status string) (P
 	for rows.Next() {
 		var id, brief, state sql.NullString
 		var created sql.NullTime
-		if err := rows.Scan(&out.Total, &id, &brief, &state, &created); err != nil {
+		var scheduled sql.NullTime
+		if err := rows.Scan(&out.Total, &id, &brief, &state, &created, &scheduled); err != nil {
 			return Page{}, err
 		}
 		if id.Valid {
-			out.Campaigns = append(out.Campaigns, PageItem{ID: id.String, Brief: brief.String, Status: state.String, CreatedAt: created.Time})
+			item := PageItem{ID: id.String, Brief: brief.String, Status: state.String, CreatedAt: created.Time}
+			if scheduled.Valid {
+				at := scheduled.Time.UTC()
+				item.ScheduledAt = &at
+			}
+			out.Campaigns = append(out.Campaigns, item)
 		}
 	}
 	return out, rows.Err()

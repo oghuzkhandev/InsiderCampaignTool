@@ -109,7 +109,8 @@ func TestDepsValidateNamesEveryMissingRequiredDependency(t *testing.T) {
 		Segments: h.gen, Audience: h.counter, Members: h.members, Campaigns: h.store, Content: h.cgen,
 		Contents: h.content, Approver: h.approve, Deliveries: &fakeDeliveries{},
 		CampaignPages: campaign.NewStore(nil), Overview: campaign.NewStore(nil),
-		Directory: audience.NewLister(nil), Templates: templates.NewStore(nil),
+		Directory: audience.NewLister(nil), Templates: templates.NewStore(nil), Scheduled: campaign.NewStore(nil),
+		Recipients: campaign.NewStore(nil),
 	}
 	if err := full.Validate(); err != nil {
 		t.Fatalf("hepsi bağlıyken hata olmamalı: %v", err)
@@ -119,7 +120,7 @@ func TestDepsValidateNamesEveryMissingRequiredDependency(t *testing.T) {
 	if err == nil {
 		t.Fatal("boş Deps hata vermeli")
 	}
-	for _, name := range []string{"Segments", "Audience", "Members", "Campaigns", "Content", "Contents", "Approver", "Deliveries", "CampaignPages", "Overview", "Directory", "Templates"} {
+	for _, name := range []string{"Segments", "Audience", "Members", "Campaigns", "Content", "Contents", "Approver", "Deliveries", "CampaignPages", "Overview", "Directory", "Templates", "Scheduled"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("hata %q adını içermeli: %v", name, err)
 		}
