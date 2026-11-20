@@ -34,6 +34,7 @@ func newAPIWith(db *sql.DB, segments llm.Client, contents llm.ContentClient) htt
 	return httpapi.New(httpapi.Deps{
 		Segments:  &segment.Generator{LLM: segments},
 		Audience:  audience.NewCounter(db),
+		Members:   audience.NewLister(db),
 		Campaigns: campaign.NewStore(db),
 		Content:   &content.Generator{LLM: contents},
 		Contents:  campaign.NewContentStore(db),

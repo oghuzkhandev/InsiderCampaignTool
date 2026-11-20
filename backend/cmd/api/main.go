@@ -22,6 +22,7 @@ import (
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/llm"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/metrics"
 	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/segment"
+	"github.com/oghuzkhandev/InsiderCampaignTool/backend/internal/templates"
 )
 
 // newMux, API'nin sağlık uçlarını kurar: `/healthz` (liveness, veritabanına
@@ -39,6 +40,11 @@ func newHandler(db *sql.DB, client llm.Provider, shutdown <-chan struct{}, llmFa
 	deps := httpapi.Deps{
 		Segments:              &segment.Generator{LLM: client},
 		Audience:              audience.NewCounter(db),
+		Members:               audience.NewLister(db),
+		Directory:             audience.NewLister(db),
+		CampaignPages:         campaign.NewStore(db),
+		Overview:              campaign.NewStore(db),
+		Templates:             templates.NewStore(db),
 		Campaigns:             campaign.NewStore(db),
 		Content:               &content.Generator{LLM: client},
 		Contents:              campaign.NewContentStore(db),

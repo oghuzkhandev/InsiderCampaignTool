@@ -125,6 +125,11 @@ func parseListLimit(r *http.Request) (limit int, ok bool) {
 // listCampaigns, en yeni kampanyaları döndürür (CMP-001). Yalnızca satırı tanıtmaya yetecek
 // alanlar vardır; kampanyanın ayrıntısı `GET /api/campaigns/{id}`'dedir.
 func (s *server) listCampaigns(w http.ResponseWriter, r *http.Request) {
+	// Requests without page retain the existing recent-campaign response contract.
+	if r.URL.Query().Has("page") || r.URL.Query().Has("status") {
+		s.listCampaignPage(w, r)
+		return
+	}
 	limit, ok := parseListLimit(r)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "INVALID_REQUEST",
