@@ -5,6 +5,11 @@ konuları [ilerleme notunda](PROGRESS.md) bulabilirsin.
 
 ## Uygulama klasörleri
 
+Zamanlayıcı (ADR-033): `campaign/approve.go` zamanla birlikte atomik onay, migration `00007`
+scheduled_at ve DB korumaları, `scheduled-delivery_test.go` gerçek PostgreSQL/worker testleri.
+Frontend `campaign/schedule.ts` yerel saat/UTC yardımcıları, `ScheduleNotice.vue` kaydedilmiş
+planı gösterir. Seçim mevcut `ApprovePanel` içindedir; ayrı scheduler servisi yoktur.
+
 Çalışma alanı ekleri (ADR-032): `campaign/pages.go` sayfalı liste ve genel bakış sorguları,
 `httpapi/workspace.go` çalışma alanı uçları, `templates/store.go` kalıcı şablon CRUD işlemleri.
 `frontend/src/views/{OverviewView,CampaignListView,AudiencesView,TemplatesView}.vue` yeni sayfalar;

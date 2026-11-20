@@ -2,6 +2,41 @@
 
 Son güncelleme: 2026-11-20
 
+## Şu an — Zamanlanmış gönderim
+
+**Branch:** `feat/audience-preview-list`; Oğuzhan aynı branch'te devam edilmesini onayladı.
+Kapsam ADR-033 ve SCH-001; Oğuzhan'ın son isteğiyle zamanlayıcı için gerçek yığın e2e de eklendi.
+
+- Onay kartında hemen gönderim veya cihazın yerel saatine göre tarih/saat seçimi var.
+  Son onayda saat dilimi/ofset görünür; geçersiz/geçmiş zaman seçimi reddedilir.
+- `00007_scheduled_delivery.sql`, campaigns.scheduled_at ve onay sonrası değişmezlik
+  korumasını ekler. Dev veritabanına uygulanmadı. Dev'e migration önce, API/web build sonra.
+- Onay, zaman ve mesajların next_attempt_at değerleri tek transaction'da yazılır. Alıcılar
+  onay anında sabitlenir. Mevcut worker sorgusu zamanı gelmemiş işleri almaz; yeni servis yok.
+- Aynı sürüm ve aynı anla tekrar 200; zaman geçmiş olsa da replay yeni iş oluşturmaz.
+  Farklı zaman 409; yeni onayda geçmiş zaman 422. PostgreSQL saati ve UTC/mikro-saniye
+  normalizasyonu kullanılır. İçerik sürümüne bağlı onay ve gönderimde izin kontrolü korunur.
+- GET, sayfalı kampanya listesi ve SSE scheduled_at taşır. Kampanya, liste ve dashboard'da
+  plan görünür; durum sözlüğüne yeni değer eklenmedi. Worker kapalıysa işler geç başlayabilir.
+- Yerel doğrulama: zamanlayıcının handler/gerçek PostgreSQL testleri geçti. Erken claim yok,
+  zamanı gelince gerçek worker/provider gönderiyor; gecikmiş replay ve ofset eşdeğerliği,
+  paralel onay, rollback ve migration Down koruması sınandı. Frontend 726 test geçti;
+  lint/oxlint, build ve e2e tip kontrolü geçti. Son `make test`, Go vet/tidy/gofmt,
+  Prettier ve `git diff --check` temiz. İstanbul saat dilimiyle zaman/form testleri de 17/17 geçti.
+  Eski onay kilit testi SELECT metnini birebir arıyordu; scheduled_at alanı eklenince
+  sabiti güncellendi. Önceki başarısız koşudan sonra ilgili test ve tam make test geçti.
+- `scheduled-delivery-real.spec.ts`: iki `@real` Playwright testi eklendi. Gerçek API/DB/worker/
+  provider/SSE, İstanbul saat dilimi; yenilemede planın korunması, erken gönderilmeme ve vadesinde
+  7 mesajın tamamlanması, aynı/farklı saatle tekrar onay ve boş/geçmiş saat reddi sınanıyor.
+  Yerel `e2e-delivery` koşusu 3/3 geçti (mevcut anlık gönderim + iki yeni zamanlayıcı testi).
+  Planlı gerçek gönderim 1,1 dakikada, hata senaryosu yaklaşık 1 saniyede geçti; 7/7 sent,
+  sıfır failed ve aynı planla replay doğrulandı. Test saati/fetch/SSE taklit edilmedi.
+  `campaign-schedule-e2e` projesi, 18086 portu ve ayrı artifact klasörü kullanıldı; ortam silindi.
+  Type-check:e2e, eslint, oxlint, Prettier ve git diff kontrolü temiz. Mevcut CI E2E işinin
+  `--grep @real` adımı yeni dosyayı otomatik keşfeder; adım adı zamanlanmış gönderimi de
+  belirtiyor. Yeni araç, servis veya job gerekmedi. Gerçek GitHub Actions doğrulanmadı.
+  Commit/push yok. Normal `make test` mevcut backend süreç e2e testlerini de içerir.
+
 ## Şu an — Kişi listesi ve çalışma alanı sayfaları
 
 **Branch:** `feat/audience-preview-list`. Oğuzhan beş sayfanın aynı branch'e eklenmesini

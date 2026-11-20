@@ -14,6 +14,7 @@ açıklar. Gereksinimlerin kaynağı [Insider One brief'i](../CASE.md).
 | `CMP-001` | [Son kampanyalar listesi](CMP-001-campaign-list.md) | Taslak |
 | `AUD-001` | [Segmente uyan kişiler](AUD-001-audience-member-list.md) | Uygulandı; CI bekliyor |
 | `WRK-001` | [Çalışma alanı ve şablonlar](WRK-001-workspace-pages.md) | Yerelde doğrulandı; CI bekliyor |
+| `SCH-001` | [Zamanlanmış gönderim](SCH-001-scheduled-delivery.md) | Yerelde doğrulandı; CI bekliyor |
 
 ## Yeni spec ekleme
 

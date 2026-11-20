@@ -909,6 +909,8 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 
 ## ADR-032 — Çalışma alanı sayfaları ve kalıcı içerik şablonları
 
+Zamanlanmış gönderim kararı ayrıca ADR-033'te kayıtlıdır.
+
 - **Durum:** Onaylandı (Oğuzhan, 2026-11-20). Beş sayfa aynı `feat/audience-preview-list`
   branch'inde uygulanacak; şablon tablosu için migration yazılması açıkça onaylandı.
 - **Karar:** Menü Genel bakış, Yeni kampanya, Kampanyalar, Kitleler ve İçerik şablonları
@@ -928,3 +930,29 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
 - Sınırlar: uygulamada oturum/yetki modeli yoktur; şablonlar ve demo kullanıcıları ortaktır.
   Listeler varsayılan 10, en fazla 20 kayıt; sayfa en fazla 100000. Offset sayfaları ayrı
   isteklerde okunur, eşzamanlı veri değişimlerinde sayfalar arasında kayma olabilir.
+
+## ADR-033 — PostgreSQL kuyruğuyla zamanlanmış gönderim
+
+- **Durum:** Onaylandı (Oğuzhan, 2026-11-20): sunulan plan uygulanacak, mevcut
+  `feat/audience-preview-list` branch'inde devam edilecek; odak zamanlanmış gönderimdir.
+- Kampanyaya nullable `scheduled_at timestamptz` eklenir (00007). Yeni durum yerine mevcut
+  approved/sending/completed kullanılır; onaylı planlı kampanya arayüzde Planlandı görünür.
+- Yeni servis/cron yerine mesajların mevcut `next_attempt_at` alanı kullanılır. Onay ve
+  mesajların zamanları aynı transaction'da yazılır. Alıcı seçimi onay anında sabitlenir;
+  worker'ın güncel izin kontrolü, hız sınırı, retry/backoff ve idempotency davranışı korunur.
+- API zamanı açık ofsetli RFC3339 olarak alır, UTC/mikro-saniye hassasiyetinde saklar. Geçmişlik
+  PostgreSQL `clock_timestamp()` ile doğrulanır; worker da DB saatini kullanır. Yerel seçim
+  frontend'de UTC'ye çevrilir; kullanıcıya saat dilimi/ofset onaydan önce gösterilir.
+- Aynı sürüm + aynı zaman tekrarında önce mevcut onay bulunur, sonra yeni onay için gelecek
+  zaman kontrolü yapılır. Böylece yanıt kaybından sonraki geç replay güvenlidir. Saat değiştirme
+  409; mevcut planı sonradan değiştiren DB güncellemesi de trigger ile reddedilir.
+- Bedel: iş, seçilen zamandan önce başlayamaz; worker kapalıysa veya kapasite doluysa geç başlar.
+  Tamamlanma süresi hız sınırlarına bağlıdır. Onay ile gönderim arasında segmente yeni giren
+  kişiler otomatik eklenmez. İptal/yeniden planlama ve tekrar eden görevler ayrı özelliklerdir.
+- `queue_depth` planlı gelecekteki queued mesajları da kapsar. Dashboard saniyelik heartbeat
+  göndermeye devam eder; beklemek bağlantı hatası sayılmaz.
+- Migration Down, devam eden planlı kampanya varsa kilit altında reddedilir; terminal
+  kampanyaların zaman geçmişi Down ile silinir. Dev DB'ye uygulama proje sahibindedir.
+- Yeni bağımlılık yok. SCH-001 unit, PostgreSQL entegrasyon ve proje sahibinin son isteğiyle
+  gerçek yığın Playwright testleriyle doğrulanır. `@real` testleri mevcut delivery/CI döngüsünde
+  çalışır; tarayıcı saatini değiştirmek yerine gerçek dakika sınırı beklenir.
