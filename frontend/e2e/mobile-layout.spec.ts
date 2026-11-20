@@ -16,9 +16,25 @@ test.use({ viewport: { width: 360, height: 740 } })
 /** Dokunma hedefi için alt sınır (px): shadcn `lg` düğme 40 px'tir. */
 const MIN_TARGET = 40
 
-/** Telefonda kenar çubuğu bir çekmecedir: üst başlıktaki düğmeyle açılır. */
-const openSidebar = (page: Page) =>
-  page.getByRole('button', { name: 'Kenar çubuğunu aç veya kapat' }).click()
+/**
+ * Telefonda kenar çubuğu bir çekmecedir: üst başlıktaki düğmeyle açılır ve soldan kayarak gelir
+ * (200 ms). Animasyon sürerken içindeki her öğe viewport'un solunda ölçülür; bu yüzden açıldıktan
+ * sonra animasyonun bitmesi beklenir. Yerelde hızlı geçtiği için gizli kalan, yavaş CI'da
+ * "viewport dışına taşan öğeler" diye kırılan bir zamanlama hatasıydı. Sonsuz animasyonlar
+ * (iskelet nabzı gibi) hariçtir; onların `finished` sözü hiç çözülmez.
+ */
+async function openSidebar(page: Page) {
+  await page.getByRole('button', { name: 'Kenar çubuğunu aç veya kapat' }).click()
+  await expect(page.locator('[data-slot="sidebar"][data-mobile="true"]')).toBeVisible()
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    ),
+  )
+}
 
 async function expectNoHorizontalOverflow(page: Page, screen: string, scope = 'main') {
   const overflow = await page
