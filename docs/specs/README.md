@@ -11,6 +11,7 @@ açıklar. Gereksinimlerin kaynağı [Insider One brief'i](../CASE.md).
 | `CNT-001` | [İçerik üretimi, düzenleme ve onay](CNT-001-content-generation-and-approval.md) | Taslak |
 | `SND-001` | [Mesaj gönderimi](SND-001-message-delivery.md) | Taslak |
 | `TRK-001` | [Canlı gönderim takibi](TRK-001-live-delivery-tracking.md) | Taslak |
+| `CMP-001` | [Son kampanyalar listesi](CMP-001-campaign-list.md) | Taslak |
 
 ## Yeni spec ekleme
 

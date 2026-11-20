@@ -28,6 +28,8 @@ type AudienceCounter interface {
 type CampaignStore interface {
 	Create(ctx context.Context, brief string, seg segment.Segment, counts audience.Counts) (campaign.Campaign, error)
 	Get(ctx context.Context, id string) (campaign.Campaign, error)
+	// List, en yeni kampanyayı başa alarak en çok limit kampanya döndürür.
+	List(ctx context.Context, limit int) ([]campaign.Summary, error)
 }
 
 // Deps, API'nin bağımlılıklarıdır.
@@ -110,7 +112,8 @@ func New(d Deps) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/campaigns", s.createCampaign)
-	mux.HandleFunc("/api/campaigns", methodNotAllowed(http.MethodPost))
+	mux.HandleFunc("GET /api/campaigns", s.listCampaigns)
+	mux.HandleFunc("/api/campaigns", methodNotAllowed(http.MethodGet+", "+http.MethodPost))
 	mux.HandleFunc("GET /api/campaigns/{id}", s.getCampaign)
 	mux.HandleFunc("/api/campaigns/{id}", methodNotAllowed(http.MethodGet))
 	mux.HandleFunc("POST /api/campaigns/{id}/content", s.generateContent)

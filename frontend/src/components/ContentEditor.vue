@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import type { ContentFields } from '@/api/content'
 import { MAX_SMS_LENGTH, MAX_SUBJECT_LENGTH, NAME_VARIABLE, estimatedLength } from '@/content/draft'
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 const fields = defineModel<ContentFields>({ required: true })
 const props = defineProps<{
@@ -14,139 +17,100 @@ const props = defineProps<{
 const smsLength = computed(() => estimatedLength(fields.value.sms_text))
 const subjectLength = computed(() => estimatedLength(fields.value.email_subject))
 
-function update(key: keyof ContentFields, value: string) {
-  fields.value = { ...fields.value, [key]: value }
+function update(key: keyof ContentFields, value: string | number) {
+  fields.value = { ...fields.value, [key]: String(value) }
 }
 
 const problemsFor = (key: string) => props.problems?.[key] ?? []
 </script>
 
 <template>
-  <div class="editor">
-    <div class="field">
-      <label for="sms_text">SMS metni</label>
-      <textarea
+  <div class="grid gap-6">
+    <Field>
+      <div class="flex items-baseline justify-between gap-2">
+        <FieldLabel for="sms_text">SMS metni</FieldLabel>
+        <span
+          id="sms-count"
+          class="text-muted-foreground text-sm tabular-nums"
+          :class="{ 'text-destructive font-semibold': smsLength > MAX_SMS_LENGTH }"
+        >
+          {{ smsLength }} / {{ MAX_SMS_LENGTH }}
+        </span>
+      </div>
+      <Textarea
         id="sms_text"
-        rows="3"
-        :value="fields.sms_text"
+        class="read-only:bg-muted min-h-20 wrap-anywhere"
+        :model-value="fields.sms_text"
         :readonly="readonly"
         :aria-invalid="problemsFor('sms_text').length > 0 || smsLength > MAX_SMS_LENGTH"
         aria-describedby="sms-count sms-problems"
-        @input="update('sms_text', ($event.target as HTMLTextAreaElement).value)"
+        @update:model-value="update('sms_text', $event)"
       />
-      <span id="sms-count" class="count" :class="{ over: smsLength > MAX_SMS_LENGTH }">
-        {{ smsLength }} / {{ MAX_SMS_LENGTH }}
-      </span>
-      <ul id="sms-problems" class="problems" role="alert">
+      <ul
+        id="sms-problems"
+        class="text-destructive ml-4 list-disc text-sm empty:hidden"
+        role="alert"
+      >
         <li v-for="(p, i) in problemsFor('sms_text')" :key="i">{{ p }}</li>
       </ul>
-    </div>
+    </Field>
 
-    <div class="field">
-      <label for="email_subject">E-posta konusu</label>
-      <input
+    <Field>
+      <div class="flex items-baseline justify-between gap-2">
+        <FieldLabel for="email_subject">E-posta konusu</FieldLabel>
+        <span
+          id="subject-count"
+          class="text-muted-foreground text-sm tabular-nums"
+          :class="{ 'text-destructive font-semibold': subjectLength > MAX_SUBJECT_LENGTH }"
+        >
+          {{ subjectLength }} / {{ MAX_SUBJECT_LENGTH }}
+        </span>
+      </div>
+      <Input
         id="email_subject"
         type="text"
-        :value="fields.email_subject"
+        class="read-only:bg-muted"
+        :model-value="fields.email_subject"
         :readonly="readonly"
         :aria-invalid="
           problemsFor('email_subject').length > 0 || subjectLength > MAX_SUBJECT_LENGTH
         "
         aria-describedby="subject-count subject-problems"
-        @input="update('email_subject', ($event.target as HTMLInputElement).value)"
+        @update:model-value="update('email_subject', $event)"
       />
-      <span id="subject-count" class="count" :class="{ over: subjectLength > MAX_SUBJECT_LENGTH }">
-        {{ subjectLength }} / {{ MAX_SUBJECT_LENGTH }}
-      </span>
-      <ul id="subject-problems" class="problems" role="alert">
+      <ul
+        id="subject-problems"
+        class="text-destructive ml-4 list-disc text-sm empty:hidden"
+        role="alert"
+      >
         <li v-for="(p, i) in problemsFor('email_subject')" :key="i">{{ p }}</li>
       </ul>
-    </div>
+    </Field>
 
-    <div class="field">
-      <label for="email_body">E-posta gövdesi</label>
-      <textarea
+    <Field>
+      <FieldLabel for="email_body">E-posta gövdesi</FieldLabel>
+      <Textarea
         id="email_body"
-        rows="8"
-        :value="fields.email_body"
+        class="read-only:bg-muted min-h-40 wrap-anywhere"
+        :model-value="fields.email_body"
         :readonly="readonly"
         :aria-invalid="problemsFor('email_body').length > 0"
         aria-describedby="body-problems"
-        @input="update('email_body', ($event.target as HTMLTextAreaElement).value)"
+        @update:model-value="update('email_body', $event)"
       />
-      <ul id="body-problems" class="problems" role="alert">
+      <ul
+        id="body-problems"
+        class="text-destructive ml-4 list-disc text-sm empty:hidden"
+        role="alert"
+      >
         <li v-for="(p, i) in problemsFor('email_body')" :key="i">{{ p }}</li>
       </ul>
-    </div>
+    </Field>
 
-    <p class="hint">
-      Alıcının adı için <code>{{ NAME_VARIABLE }}</code> kullanın; adı olmayan alıcıya "Değerli
-      müşterimiz" yazılır. Sayaç bu varsayımla bir tahmindir, kesin uzunluk her alıcı için
-      kaydederken ve onayda sunucuda doğrulanır.
-    </p>
+    <FieldDescription>
+      Alıcının adı için <code class="bg-muted rounded px-1 font-mono">{{ NAME_VARIABLE }}</code>
+      kullanın; adı olmayan alıcıya "Değerli müşterimiz" yazılır. Sayaç bu varsayımla bir tahmindir,
+      kesin uzunluk her alıcı için kaydederken ve onayda sunucuda doğrulanır.
+    </FieldDescription>
   </div>
 </template>
-
-<style scoped>
-.editor {
-  display: grid;
-  gap: 1rem;
-}
-.field {
-  display: grid;
-  gap: 0.3rem;
-}
-label {
-  font-weight: 600;
-}
-textarea,
-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.65rem 0.75rem;
-  font: inherit;
-  color: inherit;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-}
-textarea {
-  resize: vertical;
-}
-textarea:read-only,
-input:read-only {
-  background: var(--app-bg);
-}
-textarea:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--app-accent);
-  outline-offset: 1px;
-}
-[aria-invalid='true'] {
-  border-color: var(--app-danger);
-}
-.count {
-  justify-self: end;
-  font-size: 0.85rem;
-  color: var(--app-muted);
-}
-.count.over {
-  color: var(--app-danger);
-  font-weight: 600;
-}
-.problems {
-  margin: 0;
-  padding-left: 1.25rem;
-  list-style: disc;
-  color: var(--app-danger);
-  font-size: 0.9rem;
-}
-.problems:empty {
-  display: none;
-}
-.hint {
-  margin: 0;
-  color: var(--app-muted);
-  font-size: 0.85rem;
-}
-</style>

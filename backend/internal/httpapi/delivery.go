@@ -51,21 +51,41 @@ type failureCountsResponse struct {
 	Rejected  int `json:"rejected"`
 }
 
-// deliverySnapshotResponse, `snapshot` olayının gövdesidir (ARCHITECTURE §5).
+// channelDeliveryResponse, durum sayılarının kanal kırılımıdır.
+type channelDeliveryResponse struct {
+	SMS   deliveryCountsResponse `json:"sms"`
+	Email deliveryCountsResponse `json:"email"`
+}
+
+// deliverySnapshotResponse, `snapshot` olayının gövdesidir (ARCHITECTURE §5, TRK-001).
 type deliverySnapshotResponse struct {
 	Status   string                 `json:"status"`
 	Messages deliveryCountsResponse `json:"messages"`
 	Failures failureCountsResponse  `json:"failures"`
+	// Channels, Messages'ın SMS ve e-posta kırılımıdır (her durumda iki kanalın toplamı Messages'a eşit).
+	Channels channelDeliveryResponse `json:"channels"`
+	// Recovered, `sent` olan ve `attempts > 1` olan (ilk denemede tamamlanamayıp yeniden denemeyle
+	// gönderilen) mesajlar. Nedeni ayırmaz: geçici hata, kayıp yanıt veya reaper olabilir.
+	Recovered int `json:"recovered"`
+}
+
+func toDeliveryCounts(c campaign.DeliveryCounts) deliveryCountsResponse {
+	return deliveryCountsResponse{
+		Queued: c.Queued, Retrying: c.Retrying, Sending: c.Sending,
+		Sent: c.Sent, Failed: c.Failed, Skipped: c.Skipped,
+	}
 }
 
 func toDeliveryResponse(s campaign.DeliverySnapshot) deliverySnapshotResponse {
 	return deliverySnapshotResponse{
-		Status: s.Status,
-		Messages: deliveryCountsResponse{
-			Queued: s.Messages.Queued, Retrying: s.Messages.Retrying, Sending: s.Messages.Sending,
-			Sent: s.Messages.Sent, Failed: s.Messages.Failed, Skipped: s.Messages.Skipped,
-		},
+		Status:   s.Status,
+		Messages: toDeliveryCounts(s.Messages),
 		Failures: failureCountsResponse{Exhausted: s.Failures.Exhausted, Rejected: s.Failures.Rejected},
+		Channels: channelDeliveryResponse{
+			SMS:   toDeliveryCounts(s.Channels.SMS),
+			Email: toDeliveryCounts(s.Channels.Email),
+		},
+		Recovered: s.Recovered,
 	}
 }
 

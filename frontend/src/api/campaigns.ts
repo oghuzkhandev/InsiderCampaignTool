@@ -107,6 +107,62 @@ export async function createCampaign(brief: string, signal?: AbortSignal): Promi
   return parseCampaign(response.status, body)
 }
 
+/** Listedeki bir kampanya satırı (GET /api/campaigns, CMP-001). Kitle sayısı ve segment yoktur. */
+export interface CampaignSummary {
+  id: string
+  brief: string
+  status: string
+  created_at: string
+}
+
+/** Backend'deki campaign.DefaultListLimit ve MaxListLimit ile aynı (CMP-001). */
+export const DEFAULT_LIST_LIMIT = 10
+export const MAX_LIST_LIMIT = 20
+
+/**
+ * En yeni kampanyaları (en yeni başta) listeler. `limit` verilmezse 10, en fazla 20 olur;
+ * daha büyük değeri sunucu 20'ye indirir. İptal edilirse (AbortSignal) AbortError olduğu gibi
+ * fırlatılır.
+ */
+export async function listCampaigns(
+  limit: number = DEFAULT_LIST_LIMIT,
+  signal?: AbortSignal,
+): Promise<CampaignSummary[]> {
+  let response: Response
+  try {
+    response = await fetch(`${ENDPOINT}?limit=${encodeURIComponent(String(limit))}`, {
+      headers: { Accept: 'application/json' },
+      signal,
+    })
+  } catch (err) {
+    if (isAbortError(err)) throw err
+    throw new ApiError(0, 'NETWORK', 'Sunucuya ulaşılamadı.')
+  }
+
+  const body = await readJson(response)
+  if (!response.ok) throw toApiError(response.status, body)
+  return parseCampaignList(response.status, body)
+}
+
+export function parseCampaignList(status: number, body: unknown): CampaignSummary[] {
+  if (!isRecord(body) || !Array.isArray(body.campaigns)) throw invalidResponse(status)
+  const list: CampaignSummary[] = []
+  for (const row of body.campaigns) {
+    if (
+      !isRecord(row) ||
+      typeof row.id !== 'string' ||
+      typeof row.brief !== 'string' ||
+      typeof row.status !== 'string' ||
+      typeof row.created_at !== 'string' ||
+      Number.isNaN(Date.parse(row.created_at))
+    ) {
+      throw invalidResponse(status)
+    }
+    list.push({ id: row.id, brief: row.brief, status: row.status, created_at: row.created_at })
+  }
+  return list
+}
+
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
 }

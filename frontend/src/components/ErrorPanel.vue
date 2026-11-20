@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { CircleAlertIcon, RefreshCwIcon } from '@lucide/vue'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+
 withDefaults(
   defineProps<{
     title: string
@@ -14,47 +18,28 @@ defineEmits<{ retry: [] }>()
 </script>
 
 <template>
-  <div class="error-panel" role="alert">
-    <p class="title">{{ title }}</p>
-    <ul v-if="reasons.length > 0">
-      <li v-for="(reason, i) in reasons" :key="i">{{ reason }}</li>
-    </ul>
-    <p v-if="reasons.length > 0 && hint" class="hint">{{ hint }}</p>
-    <button v-if="retryable" type="button" class="retry" @click="$emit('retry')">
-      {{ retryLabel }}
-    </button>
-  </div>
+  <!-- Alert kendiliğinden role="alert" taşır: hata ekran okuyucuya hemen bildirilir. -->
+  <!-- `wrap-anywhere`: model veya sunucudan gelen boşluksuz uzun metin kartı taşırmaz. -->
+  <Alert variant="destructive" class="wrap-anywhere" data-testid="error-panel">
+    <CircleAlertIcon aria-hidden="true" />
+    <AlertTitle>{{ title }}</AlertTitle>
+    <AlertDescription>
+      <ul v-if="reasons.length > 0" class="list-disc space-y-1 pl-5">
+        <li v-for="(reason, i) in reasons" :key="i">{{ reason }}</li>
+      </ul>
+      <p v-if="reasons.length > 0 && hint" class="mt-2">{{ hint }}</p>
+      <Button
+        v-if="retryable"
+        type="button"
+        variant="outline"
+        size="sm"
+        class="mt-3"
+        data-testid="error-retry"
+        @click="$emit('retry')"
+      >
+        <RefreshCwIcon aria-hidden="true" />
+        {{ retryLabel }}
+      </Button>
+    </AlertDescription>
+  </Alert>
 </template>
-
-<style scoped>
-.error-panel {
-  padding: 0.9rem 1rem;
-  background: var(--app-danger-bg);
-  border: 1px solid var(--app-danger);
-  border-radius: 8px;
-}
-.title {
-  margin: 0;
-  font-weight: 600;
-}
-ul {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-  list-style: disc;
-}
-.hint {
-  margin: 0.5rem 0 0;
-  color: var(--app-muted);
-  font-size: 0.9rem;
-}
-.retry {
-  margin-top: 0.6rem;
-  padding: 0.4rem 0.9rem;
-  font: inherit;
-  color: inherit;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  cursor: pointer;
-}
-</style>

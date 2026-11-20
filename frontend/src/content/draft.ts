@@ -7,6 +7,17 @@ export const MAX_SUBJECT_LENGTH = 80
 /** Adı olmayan alıcıya yazılan metin (ADR-022). */
 export const FALLBACK_NAME = 'Değerli müşterimiz'
 export const NAME_VARIABLE = '{{first_name}}'
+/** Önizlemede {{first_name}} yerine yazılan örnek ad. Gerçek bir alıcının adı değildir. */
+export const SAMPLE_NAME = 'Ayşe'
+
+/**
+ * Metindeki {{first_name}} yerine örnek ad koyar (önizleme için). Backend `content.Render`
+ * ile aynı biçimde çalışır: yalnızca bu değişken değiştirilir, başka süslü parantez
+ * ifadelerine dokunulmaz.
+ */
+export function renderPreview(text: string, name: string = SAMPLE_NAME): string {
+  return text.split(NAME_VARIABLE).join(name)
+}
 
 export function emptyFields(): ContentFields {
   return { sms_text: '', email_subject: '', email_body: '' }

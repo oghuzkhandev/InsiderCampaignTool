@@ -163,12 +163,19 @@ Testlerin veri oluşturma ve temizleme işlemleri yalnızca `campaigns_test`
 - `messages (channel, next_attempt_at) WHERE status='queued'` (claim)
 - `messages (claimed_at) WHERE status='sending'` (reaper)
 - `messages (campaign_id, status)` (dashboard ve tamamlanma kontrolü)
+- `campaigns (created_at DESC, id DESC)` — `campaigns_recent_idx`, migration `00005`
+  (son kampanyalar listesi, CMP-001, ADR-029). Sıralaması `ORDER BY created_at DESC, id DESC
+  LIMIT n` ile aynıdır: planlayıcı seçerse sorgu indeksi sırayla gezip ilk n kayıtta durur
+  (tam tarama ve `Sort` adımı yok, kabaca O(log N + n)); `brief` ve `status` indekste olmadığı
+  için n satır tablodan okunur. Planlayıcı maliyete göre karar verir: çok küçük tabloda
+  tarama + sıralama seçebilir. Yalnızca hızlandırır, sonucu değiştirmez.
 
 ## 5. API
 
 | Uç nokta | Not |
 | --- | --- |
 | `POST /api/campaigns` | Brief → segment + sayılar. Boş brief reddedilir. Geçersiz segmentte `422` `SEGMENT_INVALID` sebep kodlarıyla döner, kampanya oluşmaz. |
+| `GET /api/campaigns` | Son kampanyalar (CMP-001): en yeni başta, varsayılan 10, en fazla 20; satırda yalnızca `id`, `brief`, `status`, `created_at`. Geçersiz `limit` `400`. |
 | `GET /api/campaigns/{id}` | Brief, segment, kayıtlı kitle sayıları, durum ve varsa son doğrulanmış içerik sürümü (`content` alanı, yoksa alan yok); bulunamazsa `404`. |
 | `POST /api/campaigns/{id}/content` | İçerik üretimi, SSE (`delta`, `validated`, `error`) |
 | `PUT /api/campaigns/{id}/content` | İnsan düzenlemesi doğrulanır ve yeni sürüm oluşturur (`200`). Onaydan sonra `409` döner. |
@@ -197,6 +204,22 @@ Kampanya önizleme (`POST /api/campaigns`, `GET /api/campaigns/{id}`):
   okunurken sınır aşılırsa `413` döner; geçerli JSON'dan sonra gelen
   boşluklar sırasında aşılırsa da.
   İç hata ayrıntısı yalnızca loga yazılır, istemciye sızmaz.
+
+Kampanya listesi (`GET /api/campaigns`, CMP-001, [ADR-029](../DECISIONS.md)):
+
+- Yanıt `{"campaigns": [{"id", "brief", "status", "created_at"}]}`; en yeni başta
+  (`ORDER BY created_at DESC, id DESC`, aynı anda oluşanlar kimliğe göre ayrılır, sıra
+  kararlıdır). Hiç kampanya yoksa `[]`.
+- `limit` verilmezse 10; en fazla 20 (daha büyük değer 20'ye indirilir). Tam sayı olmayan veya
+  1'den küçük değer `400 INVALID_REQUEST` olur ve veritabanı okunmaz. Veritabanı hatası `500
+  INTERNAL` (ayrıntı yalnızca loga). `/api/campaigns` yolunda `GET` ve `POST` dışı yöntem
+  `405` (`Allow: GET, POST`).
+- Satırda kitle sayıları, segment, içerik ve onay bilgisi yoktur; ayrıntı `GET
+  /api/campaigns/{id}`'dedir. Salt okunurdur (LLM yok, kayıt değişmez). Kullanıcı kavramı
+  olmadığından tüm kampanyalar listelenir. Sıralama için `campaigns_recent_idx` indeksi vardır
+  (migration `00005`); veri şeması değişmez.
+- Arayüz taslak kampanyayı `/campaigns/{id}`'ye, `approved`, `sending` ve `completed` olanı
+  `/campaigns/{id}/delivery`'ye açar.
 
 İçerik uç noktaları (`POST` ve `PUT /api/campaigns/{id}/content`):
 
@@ -254,7 +277,12 @@ ve backend uç noktası bu sözleşmeye göre uygulandı ve doğrulandı** (`int
   {
     "status": "sending",
     "messages": { "queued": 3, "retrying": 1, "sending": 1, "sent": 2, "failed": 0, "skipped": 0 },
-    "failures": { "exhausted": 0, "rejected": 0 }
+    "failures": { "exhausted": 0, "rejected": 0 },
+    "channels": {
+      "sms":   { "queued": 1, "retrying": 0, "sending": 0, "sent": 2, "failed": 0, "skipped": 0 },
+      "email": { "queued": 2, "retrying": 1, "sending": 1, "sent": 0, "failed": 0, "skipped": 0 }
+    },
+    "recovered": 1
   }
   ```
 
@@ -263,6 +291,22 @@ ve backend uç noktası bu sözleşmeye göre uygulandı ve doğrulandı** (`int
   `queued` ve `attempts > 0` (birbirine dahil değil); diğerleri mesaj durumudur.
   `failures`, `failed` mesajların nedenidir (`failure_reason`): `exhausted +
   rejected ≤ messages.failed`. Bu kurala uymayan görüntü arayüzce geçersiz sayılır.
+  - **`channels` (kanal dağılımı, ADR-030):** `messages`'ın SMS ve e-posta kırılımı; **her
+    durum için iki kanalın toplamı `messages`'a eşittir** (tek sorgu, tutarlı görüntü). Mesajı
+    olmayan kanal sıfırlarla gelir. Toplamı tutmayan görüntü arayüzce geçersiz sayılır.
+  - **`recovered` (yeniden denemeyle toparlanan):** `sent` olan ve `attempts > 1` olan mesajlar;
+    `messages.sent`'ı aşamaz. `attempts` her claim'de artar (bölüm 3), yani `> 1` mesajın `sent`
+    olmadan önce birden fazla kez işlenmeye alındığı demektir. İkinci claim geçici provider
+    hatası (backoff), kayıp yanıt (provider ilk isteği kabul etmiş olabilir; worker aynı
+    `Idempotency-Key` ile yeniden deneyip kayıtlı sonucu alır) veya lease dolması / worker
+    çökmesi (reaper; önceki deneme provider'a hiç ulaşmamış olabilir) sonrası olur. Anlamı
+    "ilk denemede tamamlanamadı, sonraki denemede `sent` olarak kaydedildi"dir; "ilk istek
+    başarısız oldu" demek değildir. Nedeni ayırmaz ve provider çağrı sayısı değildir. Idempotency
+    nedeniyle toparlanan mesaj da en çok bir kez teslim edilmiştir. Sıfır geçerlidir ve
+    "alan yok"tan farklıdır.
+  - Sunucu `channels` ve `recovered`'ı her görüntüde yollar (sıfır olsalar da). Arayüz alanlar
+    yoksa (eski bir sunucu) kanal bölümünü ve toparlanan notunu göstermeden çalışır; varsa
+    doğrular.
 - **`error` olayı:** `{"code","message"}`, ardından akış kapanır.
 - **Sunucu davranışı:**
   - **Heartbeat:** kuyrukta hiçbir şey değişmese de her aralıkta (varsayılan 1 sn,

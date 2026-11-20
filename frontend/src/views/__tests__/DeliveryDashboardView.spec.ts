@@ -99,6 +99,171 @@ async function push(index: number, text: string) {
 
 const count = (w: VueWrapper, key: string) => w.get(`[data-testid="count-${key}"]`).text()
 
+const stepStates = (w: VueWrapper) =>
+  w.findAll('[data-testid="campaign-steps"] li').map((li) => li.attributes('data-status'))
+
+describe('üst bölüm, adım göstergesi ve özet sayılar', () => {
+  it('başlık, kısa açıklama ve durum rozeti üsttedir; gönderim adımı sürer', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    expect(w.get('h1').text()).toBe('Gönderim takibi')
+    expect(w.get('[data-testid="page-description"]').text()).toContain('canlı')
+    expect(w.get('[data-testid="campaign-status"]').text()).toBe('Onaylandı, kuyrukta')
+    expect(stepStates(w)).toEqual(['done', 'done', 'done', 'current'])
+  })
+
+  it('canlı görüntü tamamlandı bildirince dört adım da biter', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    await push(0, snap({ sent: 3 }, { status: 'completed' }))
+
+    expect(w.get('[data-testid="campaign-status"]').text()).toBe('Tamamlandı')
+    expect(stepStates(w)).toEqual(['done', 'done', 'done', 'done'])
+  })
+
+  it('onaylanmamış kampanyada adım göstergesi çıkmaz, rozet Taslak der', async () => {
+    handlers[detailPath(ID)] = () => jsonResponse(200, campaignBody())
+    const w = await mountView()
+
+    expect(w.find('[data-testid="campaign-steps"]').exists()).toBe(false)
+    expect(w.get('[data-testid="campaign-status"]').text()).toBe('Taslak')
+  })
+
+  it('canlı görüntüdeki sayılar üstte gönderildi, başarısız ve tamamlanmamış olarak görünür', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    await push(0, snap({ queued: 2, retrying: 1, sending: 1, sent: 10, failed: 3, skipped: 1 }))
+
+    const summary = (key: string) => w.get(`[data-testid="summary-${key}"]`).text()
+    expect(summary('sent')).toBe('10')
+    expect(summary('failed')).toBe('3')
+    expect(summary('unfinished')).toBe('4')
+    expect(count(w, 'sent')).toBe('10') // ayrıntı aynı görüntüden gelir
+  })
+})
+
+describe('kanal dağılımı ve toparlananlar (ekran)', () => {
+  const zero = { queued: 0, retrying: 0, sending: 0, sent: 0, failed: 0, skipped: 0 }
+  const live = {
+    channels: {
+      sms: { ...zero, sent: 4, failed: 1 },
+      email: { ...zero, sent: 2 },
+    },
+    recovered: 3,
+  }
+
+  it('canlı görüntüde kanal kırılımını ve toparlanan sayısını gösterir', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    await push(
+      0,
+      snap({ sent: 6, failed: 1 }, { failures: { exhausted: 1, rejected: 0 }, ...live }),
+    )
+
+    expect(w.get('[data-testid="channel-sms-sent"]').text()).toBe('4')
+    expect(w.get('[data-testid="channel-sms-failed"]').text()).toBe('1')
+    expect(w.get('[data-testid="channel-email-sent"]').text()).toBe('2')
+    expect(w.get('[data-testid="recovered-count"]').text()).toBe('3')
+  })
+
+  it('tamamlanınca özet, toparlananları gönderilen satırında söyler', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    await push(
+      0,
+      snap(
+        { sent: 6, failed: 1 },
+        { status: 'completed', failures: { exhausted: 1, rejected: 0 }, ...live },
+      ),
+    )
+
+    expect(w.get('[data-testid="completion-lines"]').text()).toContain(
+      '3 mesaj ilk denemede tamamlanamadı, yeniden denemeyle gönderildi',
+    )
+  })
+
+  it('kanallar toplama eşit değilse görüntü geçersiz sayılır ve sayılar değişmez', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+    await push(0, snap({ sent: 6, failed: 1 }, live))
+    expect(w.get('[data-testid="summary-sent"]').text()).toBe('6')
+
+    // SMS gönderilen 1 fazla: kanalların toplamı 7 ≠ 6.
+    await push(
+      0,
+      snap(
+        { sent: 6, failed: 1 },
+        { channels: { sms: { ...zero, sent: 5, failed: 1 }, email: { ...zero, sent: 2 } } },
+      ),
+    )
+
+    expect(w.get('[data-testid="channel-sms-sent"]').text()).toBe('4') // eski geçerli değer
+  })
+})
+
+describe('Geri ve İleri', () => {
+  const navLink = (w: VueWrapper, id: string) =>
+    w.findAllComponents(RouterLinkStub).find((l) => l.attributes('data-testid') === id)
+
+  it('"Geri" kampanyaya döner; "İleri" yeni kampanyaya gider ve gönderimin bitmesini beklemez', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    expect(navLink(w, 'nav-back')?.props('to')).toBe(`/campaigns/${ID}`)
+    expect(navLink(w, 'nav-back')?.text()).toBe('Geri: Kampanyaya dön')
+    expect(navLink(w, 'nav-next')?.props('to')).toBe('/')
+    expect(navLink(w, 'nav-next')?.text()).toBe('İleri: Yeni kampanya')
+    expect(w.find('[data-testid="nav-next-disabled"]').exists()).toBe(false)
+  })
+
+  it('gönderim sürerken kullanıcıya gönderimin arka planda devam ettiğini söyler', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    await push(0, snap({ sent: 1, queued: 2 }))
+
+    expect(navLink(w, 'nav-next')?.props('to')).toBe('/') // gönderim sürerken de açık
+    expect(w.get('#step-nav-next-hint').text()).toBe('Gönderim arka planda devam eder.')
+    expect(navLink(w, 'nav-next')?.attributes('aria-describedby')).toBe('step-nav-next-hint')
+  })
+
+  it('gönderim tamamlanınca not kalkar, "İleri" yine açıktır', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    const w = await mountView()
+
+    await push(0, snap({ sent: 3 }, { status: 'completed' }))
+
+    expect(navLink(w, 'nav-next')?.props('to')).toBe('/')
+    expect(w.find('#step-nav-next-hint').exists()).toBe(false)
+  })
+
+  it('kampanya henüz onaylanmamışken de yeni kampanya açılabilir', async () => {
+    handlers[detailPath(ID)] = () => jsonResponse(200, campaignBody())
+    const w = await mountView()
+    expect(navLink(w, 'nav-next')?.props('to')).toBe('/')
+  })
+
+  it('kampanya yüklenemese de "Geri" kullanılabilir', async () => {
+    handlers[detailPath(ID)] = () => errorResponse(404, 'CAMPAIGN_NOT_FOUND')
+    const w = await mountView()
+    expect(navLink(w, 'nav-back')?.props('to')).toBe(`/campaigns/${ID}`)
+  })
+
+  it('başka kampanyaya geçilince "Geri" yeni kampanyaya işaret eder', async () => {
+    handlers[detailPath(ID)] = () => approved()
+    handlers[detailPath(OTHER)] = () => approved(OTHER)
+    const w = await mountView()
+    await w.setProps({ id: OTHER })
+    await flushPromises()
+    expect(navLink(w, 'nav-back')?.props('to')).toBe(`/campaigns/${OTHER}`)
+  })
+})
+
 describe('yükleme', () => {
   it('kampanya yüklenirken iskelet gösterir; yüklenince brief, durum ve onay zamanını gösterir', async () => {
     const detail = deferred<Response>()
@@ -244,6 +409,17 @@ describe('canlı durum', () => {
     expect(w.get('[data-testid="campaign-status"]').text()).toBe('Tamamlandı')
     expect(w.get('[data-testid="completed-note"]').text()).toContain('Gönderim tamamlandı')
     expect(w.get('[data-testid="completed-note"]').text()).toContain('engellemez')
+    // Sonuç özeti: gönderilen ve başarısız sayıları kısa açıklamayla.
+    const lines = w.get('[data-testid="completion-lines"]').text()
+    expect(lines).toContain('Gönderildi: 6')
+    expect(lines).toContain('Başarısız: 1')
+    expect(w.get('[data-testid="completion-headline"]').text()).toBe(
+      "7 mesajın 6'sı gönderildi, 1'i başarısız.",
+    )
+    // Başarısız için ne yapılabileceği yazılı.
+    const advice = w.get('[data-testid="completion-advice"]').text()
+    expect(advice).toContain('Ne yapabilirsiniz?')
+    expect(advice).toContain('teslim edilmiş olabilir')
     expect(count(w, 'sent')).toBe('6')
     expect(count(w, 'failed')).toBe('1')
     expect(w.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('100')

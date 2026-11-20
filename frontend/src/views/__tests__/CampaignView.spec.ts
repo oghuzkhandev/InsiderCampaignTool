@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { RouterLinkStub, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import CampaignView from '../CampaignView.vue'
 import {
@@ -38,7 +40,14 @@ beforeEach(() => {
   })
   vi.stubGlobal('fetch', fetchMock)
 })
-afterEach(() => vi.unstubAllGlobals())
+// Kaydedilmemiş değişiklik uyarısı `beforeunload` dinleyicisini pencereye kurar: bileşenler
+// kapatılmazsa bir testin kirli taslağı sonraki testlere sızar.
+let mounted: VueWrapper[] = []
+afterEach(() => {
+  mounted.forEach((w) => w.unmount())
+  mounted = []
+  vi.unstubAllGlobals()
+})
 
 const GET = `GET /api/campaigns/${ID}`
 const GENERATE = `POST /api/campaigns/${ID}/content`
@@ -53,6 +62,7 @@ async function mountView(): Promise<VueWrapper> {
     props: { id: ID },
     global: { stubs: { RouterLink: RouterLinkStub } },
   })
+  mounted.push(w)
   await flushPromises()
   return w
 }
@@ -80,6 +90,373 @@ const approvedBody = {
   approved_at: '2026-11-18T11:00:00Z',
   queued: { sms: 133, email: 150, total: 283 },
 }
+
+const feedbackText = (w: VueWrapper) => w.get('[data-testid="action-feedback"]').text()
+
+describe('işlem geri bildirimi', () => {
+  it('üretim bitince "Üretildi · sürüm 1" der', async () => {
+    routes({
+      [GET]: () => detail(),
+      [GENERATE]: () =>
+        sseResponse([
+          sseEvent('delta', { field: 'sms_text', text: 'Merhaba', replace: true }),
+          sseEvent('validated', contentBody({ content_version: 1 })),
+        ]),
+    })
+    const w = await mountView()
+    expect(w.find('[data-testid="action-feedback"]').exists()).toBe(false) // henüz editör yok
+
+    await click(w, 'İçerik üret')
+
+    expect(feedbackText(w)).toBe('Üretildi · sürüm 1')
+  })
+
+  it('kaydedince "Kaydedildi · sürüm 2" der; metin değiştirilince geri bildirim kaybolur', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [SAVE]: () => jsonResponse(200, contentBody({ content_version: 2, source: 'human' })),
+    })
+    const w = await mountView()
+    expect(feedbackText(w)).toBe('') // açılışta geri bildirim yok
+
+    await w.get('#sms_text').setValue('Elle düzenlenmiş metin')
+    await click(w, 'Yeni sürüm olarak kaydet')
+    expect(feedbackText(w)).toBe('Kaydedildi · sürüm 2')
+
+    await w.get('#sms_text').setValue('Yine değişti')
+    expect(feedbackText(w)).toBe('')
+    expect(w.text()).toContain('Kaydedilmemiş değişiklik var.')
+  })
+
+  it('geri bildirim ekran okuyucuya bildirilen bir durum bölgesindedir', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    expect(w.get('[data-testid="action-feedback"]').attributes('role')).toBe('status')
+  })
+
+  it('kayıt başarısız olursa başarı mesajı çıkmaz', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody() }),
+      [SAVE]: () => errorResponse(422, 'CONTENT_INVALID'),
+    })
+    const w = await mountView()
+    await w.get('#sms_text').setValue('Geçersiz olabilir')
+    await click(w, 'Yeni sürüm olarak kaydet')
+
+    expect(feedbackText(w)).toBe('')
+  })
+
+  it('kaydetme sürerken düğme kapalıdır ve çift tıklama tek istek yapar', async () => {
+    let finish: (r: Response) => void = () => {}
+    routes({
+      [GET]: () => detail({ content: contentBody() }),
+      [SAVE]: () => new Promise<Response>((resolve) => (finish = resolve)),
+    })
+    const w = await mountView()
+    await w.get('#sms_text').setValue('Yeni metin')
+
+    await click(w, 'Yeni sürüm olarak kaydet')
+    expect(button(w, 'Kaydediliyor…')?.attributes('disabled')).toBeDefined()
+    await button(w, 'Kaydediliyor…')?.trigger('click')
+    await flushPromises()
+    expect(callsTo(SAVE)).toHaveLength(1)
+    expect(feedbackText(w)).toBe('') // işlem sürerken başarı mesajı yok
+
+    finish(jsonResponse(200, contentBody({ content_version: 2, source: 'human' })))
+    await flushPromises()
+    expect(feedbackText(w)).toBe('Kaydedildi · sürüm 2')
+  })
+
+  it('onay sürerken düğme "Onaylanıyor…" der ve kapalıdır', async () => {
+    let finish: (r: Response) => void = () => {}
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [APPROVE]: () => new Promise<Response>((resolve) => (finish = resolve)),
+    })
+    const w = await mountView()
+    await confirmApproval(w, 1)
+
+    expect(button(w, 'Onaylanıyor…')?.attributes('disabled')).toBeDefined()
+    finish(jsonResponse(200, approvedBody))
+    await flushPromises()
+    expect(w.find('[data-testid="approved"]').exists()).toBe(true)
+  })
+})
+
+describe('mesaj önizlemesi', () => {
+  it('düzenleyicinin altında örnek adla canlı önizleme gösterir ve örnek olduğunu belirtir', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    const preview = w.get('[data-testid="editor-preview"]')
+
+    expect(preview.get('[data-testid="preview-sms"]').text()).toBe(
+      'Merhaba Ayşe, %30 indirim seni bekliyor!',
+    )
+    expect(preview.get('[data-testid="preview-note"]').text()).toContain('Örnek önizleme')
+
+    await w.get('#sms_text').setValue('Selam {{first_name}}, yeni metin')
+    expect(preview.get('[data-testid="preview-sms"]').text()).toBe('Selam Ayşe, yeni metin')
+  })
+
+  it('içerik yokken önizleme çıkmaz', async () => {
+    routes({ [GET]: () => detail() })
+    const w = await mountView()
+    expect(w.find('[data-testid="editor-preview"]').exists()).toBe(false)
+  })
+
+  it('onay özeti kaydedilmiş sürümü gösterir (kaydedilmemiş taslağı değil)', async () => {
+    routes({ [GET]: () => detail({ content: contentBody({ content_version: 4 }) }) })
+    const w = await mountView()
+    await w.get('#sms_text').setValue('Taslak, henüz kaydedilmedi')
+
+    const aside = w.get('aside')
+    expect(aside.get('[data-testid="approve-version"]').text()).toBe('Sürüm 4 onaylanacak.')
+    expect(aside.get('[data-testid="preview-sms"]').text()).toBe(
+      'Merhaba Ayşe, %30 indirim seni bekliyor!',
+    )
+  })
+})
+
+describe('kaydedilmemiş değişiklik uyarısı', () => {
+  // Gerçek yönlendirici: gezinme korumaları ancak RouterView içinde çalışır.
+  async function mountRouted() {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: defineComponent({ render: () => h('div', 'ana sayfa') }) },
+        { path: '/campaigns/:id', component: CampaignView, props: true },
+      ],
+    })
+    await router.push(`/campaigns/${ID}`)
+    const w = mount(defineComponent({ render: () => h(RouterView) }), {
+      global: { plugins: [router] },
+    })
+    mounted.push(w)
+    await flushPromises()
+    return { w, router }
+  }
+
+  it('metni değiştirdikten sonra başka sayfaya gidilirken uyarır; vazgeçilirse metin korunur', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { w, router } = await mountRouted()
+
+    await w.get('#sms_text').setValue('Yeni metin')
+    await router.push('/')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).toBe(`/campaigns/${ID}`)
+    expect((w.get('#sms_text').element as HTMLTextAreaElement).value).toBe('Yeni metin')
+    confirm.mockRestore()
+  })
+
+  it('"Yeni kampanya" bağlantısı da kaydedilmemiş değişiklikte uyarır', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { w, router } = await mountRouted()
+
+    await w.get('#sms_text').setValue('Yeni metin')
+    await w.get('[data-testid="nav-back"]').trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.path).toBe(`/campaigns/${ID}`)
+    confirm.mockRestore()
+  })
+
+  it('kullanıcı onaylarsa sayfadan ayrılır', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { w, router } = await mountRouted()
+
+    await w.get('#sms_text').setValue('Yeni metin')
+    await router.push('/')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/')
+    confirm.mockRestore()
+  })
+
+  it('değişiklik yoksa veya kaydedildiyse hiçbir şey sormaz', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody() }),
+      [SAVE]: () => jsonResponse(200, contentBody({ content_version: 2, source: 'human' })),
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { w, router } = await mountRouted()
+
+    await w.get('#sms_text').setValue('Kaydedilecek metin')
+    await w
+      .findAll('button')
+      .find((b) => b.text().includes('Yeni sürüm olarak kaydet'))
+      ?.trigger('click')
+    await flushPromises()
+    await router.push('/')
+    await flushPromises()
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.path).toBe('/')
+    confirm.mockRestore()
+  })
+
+  it('metin değiştirilmişken sekme kapatılırsa tarayıcı uyarısı istenir', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const { w } = await mountRouted()
+    const clean = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(clean)
+    expect(clean.defaultPrevented).toBe(false)
+
+    await w.get('#sms_text').setValue('Yeni metin')
+    const dirty = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirty)
+    expect(dirty.defaultPrevented).toBe(true)
+  })
+})
+
+const stepStates = (w: VueWrapper) =>
+  w.findAll('[data-testid="campaign-steps"] li').map((li) => li.attributes('data-status'))
+
+describe('üst bölüm ve adım göstergesi', () => {
+  it('başlık, kısa açıklama ve durum rozetini gösterir', async () => {
+    routes({ [GET]: () => detail() })
+    const w = await mountView()
+
+    expect(w.get('h1').text()).toBe('Kampanya')
+    expect(w.get('[data-testid="page-description"]').text()).toContain('onaylayın')
+    expect(w.get('[data-testid="campaign-state"]').text()).toBe('Taslak')
+  })
+
+  it('yüklenirken ve hata durumunda adım göstergesi ve rozet yoktur', async () => {
+    routes({ [GET]: () => errorResponse(404, 'CAMPAIGN_NOT_FOUND') })
+    const w = await mountView()
+
+    expect(w.find('[data-testid="campaign-steps"]').exists()).toBe(false)
+    expect(w.find('[data-testid="campaign-state"]').exists()).toBe(false)
+  })
+
+  it('içeriksiz taslakta içerik adımı sürer', async () => {
+    routes({ [GET]: () => detail() })
+    const w = await mountView()
+    expect(stepStates(w)).toEqual(['done', 'current', 'upcoming', 'upcoming'])
+  })
+
+  it('kaydedilmiş içerik varken onay adımı sürer; kaydedilmemiş değişiklik içeriğe geri döner', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    expect(stepStates(w)).toEqual(['done', 'done', 'current', 'upcoming'])
+
+    await w.get('#sms_text').setValue('Değiştirilmiş metin')
+    expect(stepStates(w)).toEqual(['done', 'current', 'upcoming', 'upcoming'])
+  })
+
+  it('onaylanınca gönderim adımı sürer ve rozet güncellenir', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [APPROVE]: () => jsonResponse(200, approvedBody),
+    })
+    const w = await mountView()
+    await confirmApproval(w, 1)
+
+    expect(stepStates(w)).toEqual(['done', 'done', 'done', 'current'])
+    expect(w.get('[data-testid="campaign-state"]').text()).toBe('Onaylandı, kuyrukta')
+  })
+})
+
+describe('iki sütunlu düzen', () => {
+  it('düzenleyici ana sütunda, kitle ve onay özeti yan sütundadır', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    const aside = w.get('aside')
+
+    expect(aside.attributes('aria-label')).toBe('Kitle ve onay özeti')
+    expect(aside.find('[data-testid="total"]').exists()).toBe(true)
+    expect(aside.find('#segment-title').exists()).toBe(true)
+    expect(aside.find('#approve-title').exists()).toBe(true)
+    expect(aside.find('#sms_text').exists()).toBe(false)
+    expect(w.find('main #sms_text').exists()).toBe(true)
+  })
+
+  it('yan sütundaki kitle sayıları kompakt görünümdedir', async () => {
+    routes({ [GET]: () => detail() })
+    const w = await mountView()
+    expect(w.get('aside').find('[data-testid="audience-compact"]').exists()).toBe(true)
+  })
+
+  it('dar ekranda (tek sütun) düzenleyici yan sütundan önce gelir', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    const editor = w.get('#sms_text').element
+    const aside = w.get('aside').element
+    // Belge sırasında düzenleyici önce: telefonda içerik, sonra kitle ve onay.
+    expect(editor.compareDocumentPosition(aside) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('onaylı kampanyada onay bilgisi yan sütundadır; gönderim bağlantısı "İleri"dir', async () => {
+    routes({ [GET]: () => detail({ status: 'approved', content: contentBody() }) })
+    const w = await mountView()
+    const aside = w.get('aside')
+
+    expect(aside.find('[data-testid="approved"]').exists()).toBe(true)
+    expect(aside.find('#approve-title').exists()).toBe(false)
+    expect(aside.find('a, button').exists()).toBe(false) // yan sütunda yinelenen bağlantı yok
+    expect(w.find('[data-testid="step-nav"] [data-testid="delivery-link"]').exists()).toBe(true)
+  })
+})
+
+describe('Geri ve İleri', () => {
+  const navLink = (w: VueWrapper, id: string) =>
+    w.findAllComponents(RouterLinkStub).find((l) => l.attributes('data-testid') === id)
+
+  it('sol düğme "Geri" değil "Yeni kampanya" der (önceki aşamaya dönmez); "İleri" onaya kadar kapalıdır', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+
+    const back = navLink(w, 'nav-back')
+    expect(back?.props('to')).toBe('/')
+    expect(back?.text()).toBe('+ Yeni kampanya')
+    expect(back?.text()).not.toContain('Geri') // kullanıcı mevcut kampanyaya döndüğünü sanmasın
+    expect(back?.attributes('title')).toContain('Bu kampanya olduğu gibi kayıtlı kalır')
+    const next = w.get('[data-testid="nav-next-disabled"]')
+    expect(next.attributes('disabled')).toBeDefined()
+    expect(next.text()).toBe('İleri: Gönderimi izle')
+    expect(w.get('#step-nav-next-hint').text()).toBe('Önce içeriği onaylayın.')
+    expect(navLink(w, 'delivery-link')).toBeUndefined()
+  })
+
+  it('onaylanınca "İleri" gönderim takibine açılır', async () => {
+    routes({
+      [GET]: () => detail({ content: contentBody({ content_version: 1 }) }),
+      [APPROVE]: () => jsonResponse(200, approvedBody),
+    })
+    const w = await mountView()
+    await confirmApproval(w, 1)
+
+    const next = navLink(w, 'delivery-link')
+    expect(next?.props('to')).toBe(`/campaigns/${ID}/delivery`)
+    expect(next?.text()).toBe('İleri: Gönderimi izle')
+    expect(w.find('[data-testid="nav-next-disabled"]').exists()).toBe(false)
+  })
+
+  it('onaylı kampanya yüklenince "İleri" baştan açıktır', async () => {
+    routes({ [GET]: () => detail({ status: 'sending', content: contentBody() }) })
+    const w = await mountView()
+    expect(navLink(w, 'delivery-link')?.props('to')).toBe(`/campaigns/${ID}/delivery`)
+  })
+
+  it('kampanya yüklenemezse "Geri" yine kullanılabilir', async () => {
+    routes({ [GET]: () => errorResponse(404, 'CAMPAIGN_NOT_FOUND') })
+    const w = await mountView()
+    expect(navLink(w, 'nav-back')?.props('to')).toBe('/')
+    expect(w.find('[data-testid="nav-next"]').exists()).toBe(false)
+  })
+
+  it('dar ekranda alta yapışır (ana eylemlere her zaman ulaşılır)', async () => {
+    routes({ [GET]: () => detail({ content: contentBody() }) })
+    const w = await mountView()
+    expect(w.get('[data-testid="step-nav"]').classes()).toContain('sticky')
+  })
+})
 
 describe('yükleme', () => {
   it('içeriği olmayan taslağı gösterir: kitle, koşullar ve üretim/elle yazma seçenekleri', async () => {
@@ -113,17 +490,17 @@ describe('yükleme', () => {
     routes({ [GET]: () => errorResponse(404, 'CAMPAIGN_NOT_FOUND') })
     const w = await mountView()
 
-    expect(w.get('.error-panel').text()).toContain('Kampanya bulunamadı.')
-    expect(w.find('.retry').exists()).toBe(false)
+    expect(w.get('[data-testid="error-panel"]').text()).toContain('Kampanya bulunamadı.')
+    expect(w.find('[data-testid="error-retry"]').exists()).toBe(false)
   })
 
   it('ağ hatasında yeniden deneyince yükler', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('failed'))
     routes({ [GET]: () => detail() })
     const w = await mountView()
-    expect(w.get('.error-panel').text()).toContain('Sunucuya ulaşılamadı')
+    expect(w.get('[data-testid="error-panel"]').text()).toContain('Sunucuya ulaşılamadı')
 
-    await w.get('.retry').trigger('click')
+    await w.get('[data-testid="error-retry"]').trigger('click')
     await flushPromises()
     expect(w.text()).toContain('Şehir: İstanbul')
   })
@@ -221,7 +598,7 @@ describe('içerik üretimi (SSE)', () => {
     const w = await mountView()
     await click(w, 'İçerik üret')
 
-    expect(w.get('.error-panel').text()).toContain('İçerik doğrulanamadı.')
+    expect(w.get('[data-testid="error-panel"]').text()).toContain('İçerik doğrulanamadı.')
     expect(w.get('#sms-problems').text()).toContain('160')
     expect(w.get('#body-problems').text()).toContain('{{city}}')
     expect(w.text()).toContain('Üretilen içerik beklenen biçimde değil.') // alansız sebep
@@ -263,7 +640,7 @@ describe('içerik üretimi (SSE)', () => {
     })
     expect(w.get('[data-testid="version"]').text()).toBe('Sürüm 1 · Elle düzenlendi')
     expect(w.text()).not.toContain('henüz kaydedilmedi')
-    expect(w.find('.error-panel').exists()).toBe(false)
+    expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
     expect(button(w, 'Onayla (sürüm 1)')).toBeDefined()
   })
 
@@ -287,16 +664,16 @@ describe('içerik üretimi (SSE)', () => {
     const w = await mountView()
     await click(w, 'Yeniden üret')
 
-    expect(w.get('.error-panel').text()).toContain(text)
+    expect(w.get('[data-testid="error-panel"]').text()).toContain(text)
     expect(sms(w).value).toBe(contentBody().sms_text) // geçici metin silindi, kayıtlı sürüm geri geldi
     expect(w.get('[data-testid="version"]').text()).toContain('Sürüm 1')
     expect(button(w, 'Onayla (sürüm 1)')?.attributes('disabled')).toBeUndefined()
 
-    await w.get('.retry').trigger('click')
+    await w.get('[data-testid="error-retry"]').trigger('click')
     await flushPromises()
     expect(w.get('[data-testid="version"]').text()).toContain('Sürüm 2')
     expect(sms(w).value).toBe('Yeni')
-    expect(w.find('.retry').exists()).toBe(false)
+    expect(w.find('[data-testid="error-retry"]').exists()).toBe(false)
   })
 
   it('yarıda kesilen akışta sürüm oluşmaz, düzenleyici açılmaz ve yeniden üretilebilir', async () => {
@@ -308,11 +685,11 @@ describe('içerik üretimi (SSE)', () => {
     const w = await mountView()
     await click(w, 'İçerik üret')
 
-    expect(w.get('.error-panel').text()).toContain('yarıda kesildi')
+    expect(w.get('[data-testid="error-panel"]').text()).toContain('yarıda kesildi')
     expect(w.find('#sms_text').exists()).toBe(false)
     expect(w.find('[data-testid="version"]').exists()).toBe(false)
     expect(w.find('#approve-title').exists()).toBe(false)
-    expect(w.find('.retry').exists()).toBe(true)
+    expect(w.find('[data-testid="error-retry"]').exists()).toBe(true)
   })
 
   it('onaylanmış kampanyada üretim 409 alırsa güncel (onaylı) durumu yükler', async () => {
@@ -487,7 +864,7 @@ describe('onay', () => {
     const w = await mountView()
     await confirmApproval(w, 1)
 
-    expect(w.get('.error-panel').text()).toContain('güncel değil')
+    expect(w.get('[data-testid="error-panel"]').text()).toContain('güncel değil')
     expect(w.get('[data-testid="version"]').text()).toContain('Sürüm 2')
     expect(sms(w).value).toBe('Başkasının düzenlediği')
     expect(callsTo(APPROVE)).toHaveLength(1)
@@ -513,7 +890,7 @@ describe('onay', () => {
     const w = await mountView()
     await confirmApproval(w, 1)
 
-    const text = w.get('.error-panel').text()
+    const text = w.get('[data-testid="error-panel"]').text()
     expect(text).toContain('Metni kısaltın')
     expect(text).toContain('12 alıcı')
     expect(text).toContain('"Zeynep"')
@@ -531,7 +908,7 @@ describe('onay', () => {
     const w = await mountView()
     await confirmApproval(w, 1)
 
-    expect(w.get('.error-panel').text()).toContain(text)
+    expect(w.get('[data-testid="error-panel"]').text()).toContain(text)
     expect(w.find('[data-testid="approved"]').exists()).toBe(false)
   })
 
@@ -593,7 +970,7 @@ describe('onay', () => {
       await confirmApproval(w, 1)
 
       const link = deliveryLink(w)
-      expect(link?.text()).toBe('Gönderimi izle →')
+      expect(link?.text()).toBe('İleri: Gönderimi izle')
       expect(w.findAll('button')).toHaveLength(0) // bağlantı, işlem düğmesi değil
     })
 
@@ -660,7 +1037,7 @@ describe('başka kampanyaya geçiş (süren işlemler)', () => {
 
     expect(signalA?.aborted).toBe(true)
     expect(w.text()).toContain('B kampanyası')
-    expect(w.find('.error-panel').exists()).toBe(false) // iptal hata olarak gösterilmez
+    expect(w.find('[data-testid="error-panel"]').exists()).toBe(false) // iptal hata olarak gösterilmez
     expect(w.find('#sms_text').exists()).toBe(false) // A'nın geçici metni B'de yok
     const generate = button(w, 'İçerik üret')
     expect(button(w, 'Üretiliyor…')).toBeUndefined()
@@ -753,12 +1130,12 @@ describe('başka kampanyaya geçiş (süren işlemler)', () => {
     })
     const w = await mountView()
     await click(w, 'İçerik üret')
-    expect(w.find('.error-panel').exists()).toBe(true)
+    expect(w.find('[data-testid="error-panel"]').exists()).toBe(true)
     expect(w.text()).toContain('henüz kaydedilmedi')
 
     await switchToB(w)
 
-    expect(w.find('.error-panel').exists()).toBe(false)
+    expect(w.find('[data-testid="error-panel"]').exists()).toBe(false)
     expect(w.find('#sms_text').exists()).toBe(false)
     expect(w.text()).not.toContain('henüz kaydedilmedi')
     expect(w.text()).not.toContain('Kaydedilmemiş değişiklik')
@@ -774,8 +1151,12 @@ describe('başka kampanyaya geçiş (süren işlemler)', () => {
 
     await switchToB(w)
 
-    expect(w.get('.error-panel').text()).toContain('Kampanya bulunamadı.')
+    expect(w.get('[data-testid="error-panel"]').text()).toContain('Kampanya bulunamadı.')
     expect(w.find('#sms_text').exists()).toBe(false)
-    expect(w.findAll('button')).toHaveLength(0)
+    // Eski içeriğin işlem düğmeleri kalmaz; yalnızca (kapalı) gezinti düğmesi olabilir.
+    const actions = w
+      .findAll('button')
+      .filter((b) => !b.attributes('data-testid')?.startsWith('nav-'))
+    expect(actions).toHaveLength(0)
   })
 })

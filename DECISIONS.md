@@ -438,6 +438,77 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
     sınıfı JS ile ekleyip kullanıcıya tema anahtarı sunmak (kullanıcı tercihi
     saklanır); daha fazla kod ve bir ürün davranışıdır, bu yüzden yapılmadı. Bedel:
     kullanıcı işletim sistemi temasından bağımsız tema seçemez.
+  - **Tek bileşen sistemi ve ortak düzen (2026-11-20, onaylandı: proje sahibi):** eski
+    ekranlardaki elle yazılmış düğme, form alanı, kutu ve hata paneli (bileşen kapsamlı
+    CSS) shadcn bileşenlerine taşındı (`Button`, `Card`, `Field`/`Label`, `Input`,
+    `Textarea`, `Alert`, `Badge`, `Spinner`, `Skeleton`); uygulamada scoped CSS kalmadı ve
+    kullanılmayan `--app-accent`, `--app-on-accent`, `--app-danger-bg`, `--app-warning-bg`
+    token'ları silindi. **Birincil düğme nötr shadcn `default` varyantıdır** (mavi
+    `--app-accent` yerine): dashboard zaten böyle ve token değişikliği gerekmedi; bedel,
+    önceki mavi vurgunun gitmesi (**güncelleme:** aynı gün proje sahibi yumuşak renkler
+    istedi; birincil renk pastel indigo oldu, aşağıdaki "Uygulama kabuğu" notuna bakın).
+    Ortak kurallar: her ekranda tek `h1` (`PageHeader`: geri
+    bağlantısı, başlık, durum rozeti, bir satır açıklama), her bölüm bir `Card` ve `h2`
+    başlığı, kartta tek birincil eylem (`default`), ikincil eylem `outline`, ana eylemler
+    `size="lg"` (40 px; telefonda tam genişlik). Kampanya ekranı geniş ekranda iki sütundur
+    (düzenleyici solda, kompakt kitle ve onay özeti sağda), telefonda alt alta. Adım
+    göstergesi (Kitle → İçerik → Onay → Gönderim) tıklanamaz bilgi gösterir; Reka `Stepper`
+    etkileşimli bir sihirbaz için olduğundan (tetikleyici düğmeler, `h4` başlık) yerine
+    `aria-current="step"` taşıyan düz bir `<ol>` kullanıldı. Yeni bağımlılık eklenmedi.
+    Dashboard'da üstte gönderildi, başarısız ve tamamlanmamış (bekleyen + yeniden
+    denenecek + gönderiliyor) özet sayıları, altında ilerleme ve ayrıntı vardır.
+    **Kanal dağılımı** ilk sürümde eklenmemişti (snapshot kanal bazında sayı taşımıyordu,
+    eklemek bir sözleşme değişikliğiydi); proje sahibi sonradan istedi ve eklendi: dashboard'da
+    SMS ve e-posta ayrı gösterilir ([ADR-030](#adr-030--dashboard-snapshotı-kanal-dağılımı-ve-yeniden-denemeyle-toparlanan-sayısı)).
+  - **Akışı kolaylaştıran eklemeler (2026-11-20, istek: proje sahibi):** yeni ekran, endpoint
+    veya bağımlılık yok. (1) Boş ekranda 2-3 örnek brief (`exampleBriefs.json`, tek kaynak;
+    backend testi her örneğin desteklendiğini doğrular). (2) Kaydedilmemiş metin varken
+    sekme kapatma/yenileme tarayıcı uyarısı, uygulama içi gezinmede onay penceresi.
+    (3) İşlem sonrası kısa geri bildirim ("Kaydedildi · sürüm 2"), işlem sürerken düğmeler
+    kapalı ve "Kaydediliyor…"/"Onaylanıyor…". (4) Onay özetinde sürüm, tahmini alıcılar ve
+    önizleme aynı kartta. (5) Kişiselleştirme önizlemesi örnek adla ("Ayşe") ve bunun
+    örnek olduğu yazılı; gerçek mesaj onayda alıcının kendi adıyla üretilir (ADR-026).
+    (6) Gönderim sonu özeti: tek cümlelik sonuç ("7 mesajın 5'i gönderildi, 1'i başarısız,
+    1'i atlandı"; sayının okunuşuna göre doğru ek) ve gönderilen / başarısız / atlanan
+    satırları kısa açıklama ve "Ne yapabilirsiniz?" önerileriyle. Öneriler uygulamanın gerçek
+    davranışına dayanır: sonucu doğrulanamayan mesaj teslim edilmiş olabilir (sağlayıcıdan
+    kontrol), reddedilenlerde adresler kontrol edilir, atlananlarda (izin yok) yapılacak bir
+    şey yoktur, kampanya yeniden gönderilemez ve yeni bir kampanya brief'e uyan herkese
+    (gönderilenler dahil) gider (kampanyalar arası tekilleştirme kapsam dışıdır, ADR-006).
+    **Yeniden denemeyle toparlanan mesaj sayısı** ilk sürümde gösterilmemişti (snapshot'ta yoktu);
+    sonradan backend verisi eklendi ve gösterilir (ADR-030). (7) Her aşamada Türkçe "Geri" / "İleri" (`StepNav`): "İleri" hedef
+    açılana kadar kapalı ve nedeni yazılı (kitle hesaplanana, içerik onaylanana kadar);
+    kampanya ekranındaki sol düğme yeni kampanya başlatır, çünkü önizleme ekranı var olan bir
+    kampanyayı yüklemez ve brief güncelleme uç noktası kapsam dışıdır (**güncelleme:** bu
+    düğme "Geri" değil kendi adıyla, "+ Yeni kampanya" diye anılır; kullanıcı mevcut
+    kampanyaya döndüğünü sanmasın. Dashboard'da "İleri: Yeni kampanya" gönderimin
+    tamamlanmasına bağlı değildir ve gönderim sürerken "Gönderim arka planda devam eder."
+    notu görünür; kaydedilmemiş değişiklik uyarısı iki durumda da korunur). Kampanya ekranında
+    "Geri/İleri" çubuğu dar ekranda alta yapışır ve onay kartı dar ekranda içerikten hemen
+    sonra gelir.
+  - **Uygulama kabuğu, simgeler ve pastel palet (2026-11-20, istek: proje sahibi):** yeni
+    ekran, endpoint veya bağımlılık yok (mevcut shadcn `Sidebar` ve `@lucide/vue`).
+    (1) **Kenar çubuğu:** "Yeni kampanya" düğmesi ve "Son kampanyalar" listesi (CMP-001) ana
+    sayfadaki karttan her ekranda görünen kenar çubuğuna taşındı; böylece liste ve gezinti
+    dağınık durmaz. Masaüstünde açıktır ve düğmeyle kapanır; telefonda çekmecedir ve bir
+    bağlantıya gidilince kapanır. Liste, sayfa değişince ve bir ekran kampanyayı değiştirince
+    (oluşturma, onay, dashboard'da durum değişimi) yeniden okunur (`campaign/recent.ts`; ekranlar
+    listeyi tanımaz, yalnızca haber verir). Satırda brief, durum rozeti ve tarih vardır; satırın
+    nereye açıldığı ("Kampanyayı aç" / "Gönderimi izle") görselde durum rozetinden anlaşılır,
+    ekran okuyucuya ve ipucuna metin olarak verilir. Açık kampanyanın satırı `aria-current`
+    ile işaretlidir. (2) **Üst başlık:** kenar çubuğu düğmesi ve ana sayfaya dönen "Campaign
+    Tool" başlığı. **Sapma:** başlık `h1` değil bağlantıdır; her sayfada tek `h1` (sayfa başlığı)
+    kalır, çünkü ekran okuyucu gezintisi, mevcut testler ve `PageHeader` buna dayanır; iki `h1`
+    bu kuralı bozardı. Ekranların kendi `<main>` öğesi olduğundan `SidebarInset` (main)
+    kullanılmadı. (3) **Simgeler:** kart başlıklarında, düğmelerde (`StepNav` okları metindeki
+    "←/→" yerine simge), kitle/kanal satırlarında ve durum rozetlerinde `lucide`; hepsi
+    `aria-hidden`, anlam metindedir. Durum rozeti ayrı bir bileşendir (`StatusBadge`: simge +
+    metin + ton; durum yalnızca renkle anlatılmaz). (4) **Pastel palet:** önceki "nötr birincil"
+    kararının yerine yumuşak mavi-gri zemin, beyaz kartlar ve pastel indigo vurgu
+    (`styles.css` token'ları, açık ve koyu tema); durum tonları (taslak gri, onaylı amber,
+    gönderiliyor mavi, tamamlandı yeşil). Metin kontrastı iki temada WCAG AA (4,5) üzerinde
+    tutulur ve `visual-themes.spec.ts` ile ölçülür. Bedel: ana sayfadaki liste artık sayfa
+    içeriğinin altında değil yanındadır; telefonda bir dokunuş uzaktadır.
 
 ## ADR-022 — İçerik doğrulama: fallback metni ve içerik için ayrı LLM arayüzü
 
@@ -703,3 +774,82 @@ akışları [mimari belgede](docs/ARCHITECTURE.md) açıklanır.
   Sonra karar verilecekler: Grafana, `client_golang`, uyarı kuralları. **Loki**
   (log toplama) bu projede gerekli görülmedi: loglar yapılandırılmış `slog` çıktısıyla
   `docker compose logs` üzerinden okunur.
+
+## ADR-029 — Son kampanyalar listesi: `GET /api/campaigns`
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-20).
+- **Bağlam:** Ana sayfadan daha önce oluşturulan kampanyalara dönmenin yolu yoktu; kampanya
+  kimliği yalnızca adres çubuğundaydı. Kampanya listesi yeni bir endpoint gerektirir.
+- **Karar:**
+  - `GET /api/campaigns`: en yeni başta, **varsayılan 10, en fazla 20**. Satırda yalnızca `id`,
+    `brief`, `status`, `created_at` (kitle sayısı bilerek yok). Sayfalama, arama ve süzme yok.
+  - Sıralama `created_at DESC, id DESC`: aynı anda oluşanlar kimliğe göre ayrılır, sıra kararlıdır.
+  - `limit` 20'den büyükse **20'ye indirilir** (hata değil); tam sayı olmayan veya 1'den küçükse
+    `400`. Sessizce düzeltmek yerine reddetmek, istemci hatasını görünür kılar; üst sınırı
+    aşmak ise zararsız olduğu için indirilir.
+  - Kullanıcı kavramı olmadığından tüm kampanyalar listelenir (`GET /api/campaigns/{id}` ile aynı).
+  - **İndeks (güncelleme, proje sahibinin isteğiyle, 2026-11-20):** migration `00005`
+    `campaigns_recent_idx (created_at DESC, id DESC)`. İlk uygulamada indeks yoktu (demo
+    ölçeğinde sıralı tarama yeterli sayılmıştı); proje sahibi liste için iyi olacağından istedi.
+    İndeks sorgunun sıralamasıyla birebir aynıdır. **Ne sağlar:** planlayıcı onu seçerse sorgu
+    indeksi sırayla gezip ilk n kaydında durur; tam tablo taraması ve ayrı bir `Sort` adımı olmaz,
+    maliyet tablo büyüklüğüyle değil kabaca O(log N + n) artar. **Ne sağlamaz:** seçilen
+    sütunlar (`brief`, `status`) indekste olmadığı için n satır tablodan okunur (index-only
+    değildir); planlayıcı maliyete göre karar verir, çok küçük tabloda tarama + sıralama daha
+    ucuz görünüp indeksi seçmeyebilir (demo ölçeğinde bu olağandır). Test (`EXPLAIN`, sıralı
+    tarama kapatılarak) indeksin bu sorgu için kullanılabilir ve sırasının doğru olduğunu gösterir,
+    planlayıcının her zaman seçtiğini değil. İndeks yalnızca hızlandırır; sorgunun sonucunu
+    değiştirmez (testle doğrulandı). **Maliyet:** her kampanya eklemesinde bir indeks girişi.
+    Veri ve mevcut sütunlar değişmez; Down yalnızca indeksi kaldırır. **Kilit:** düz `CREATE
+    INDEX` tabloda `SHARE` kilidi alır, oluşturma sürerken okumalar devam eder, kampanya
+    yazmaları bitmesini bekler; `CONCURRENTLY` kullanılamaz (goose her migration'ı bir
+    transaction'da çalıştırır) ve tablo küçük olduğundan bekleme kısadır. Dev veritabanına
+    uygulamayı proje sahibi yapar.
+  - Arayüz: taslak kampanya kampanya ekranına, `approved`, `sending` ve `completed` olan
+    gönderim takibine açılır. Bu aşamaya (`feat/frontend-modernization`) proje sahibinin kararıyla
+    dahil edildi.
+- **Gerekçe ve sonuç:** Kullanıcı yarım bıraktığı işe dönebilir. Satırı hafif tutmak (kitle
+  sayısı yok) sorguyu tek tabloda, birleştirmesiz ve ucuz bırakır; ayrıntı zaten kampanya ekranında.
+  Bedel: listede kitle büyüklüğü görünmez, çok sayıda kampanyada eskilere ulaşılamaz (sayfalama
+  yok). Spec: [CMP-001](docs/specs/CMP-001-campaign-list.md).
+
+## ADR-030 — Dashboard snapshot'ı: kanal dağılımı ve yeniden denemeyle toparlanan sayısı
+
+- **Durum:** Onaylandı (proje sahibi, 2026-11-20).
+- **Bağlam:** Dashboard yalnızca toplam mesaj sayılarını gösteriyordu. İki şey eksikti: hangi
+  kanalda (SMS, e-posta) ne olduğu ve yeniden denemenin (ADR-006, yanıt kaybı dahil) kaç mesajı
+  kurtardığı. İkisi de SSE `snapshot` sözleşmesinde yoktu (ADR-021'de bu aşamaya alınmamıştı;
+  proje sahibi sonradan istedi).
+- **Karar:**
+  - `snapshot`'a iki alan eklendi: **`channels`** (`sms` ve `email`, her biri `messages` ile aynı
+    altı durum sayısı) ve **`recovered`** (`status = sent` ve `attempts > 1` mesajlar).
+  - **Değişmez kural:** her durum için `channels.sms + channels.email = messages`; `recovered ≤
+    messages.sent`. Sayımlar tek sorguda, `GROUP BY channel` ile yapılır ve `messages` kanal
+    satırlarının toplamıdır; bu yüzden tutarsızlık oluşmaz. (Bu, `messages.channel` sütunundaki
+    `CHECK (channel IN ('sms', 'email'))` kısıtına dayanır: üçüncü bir kanal eklenirse kırılım ve
+    bu kural birlikte güncellenmelidir.) Arayüz kuralı bozan görüntüyü geçersiz sayar.
+  - Sunucu alanları **her görüntüde** yollar (sıfır olsalar da): arayüz "alan yok" ile "sıfır"
+    arasında ayrım yapmak zorunda kalmaz. Arayüz alanlar yoksa (eski sunucu) bu bölümleri
+    göstermeden çalışır; yani değişiklik geriye dönük uyumludur.
+  - **`recovered` tanımı:** `status = 'sent'` ve `attempts > 1` olan mesajlar. `attempts` her
+    claim'de (işleme alınışta) artar (ARCHITECTURE §3); yani `> 1`, mesajın `sent` olmadan önce
+    **birden fazla kez işlenmeye alındığı** demektir. İkinci claim üç durumda olur: (1) geçici
+    provider hatası sonrası backoff (429, 5xx, zaman aşımı, bağlantı hatası, geçersiz 2xx);
+    (2) kayıp yanıt: provider ilk isteği kabul etmiş olabilir, worker aynı `Idempotency-Key` ile
+    yeniden deneyip kayıtlı sonucu alır (`accept_then_drop`); (3) lease'in dolması veya worker
+    çökmesi sonrası reaper (önceki deneme provider'a hiç ulaşmamış olabilir).
+  - **Ne anlama gelir, ne gelmez:** anlamı "ilk denemede tamamlanamadı, sonraki denemede `sent`
+    olarak kaydedildi"dir. **"İlk istek başarısız oldu" demek değildir** (kayıp yanıtta provider
+    ilk isteği kabul etmişti) ve arayüz bunu söylemez. Nedeni ayırmaz, provider çağrı sayısı da
+    değildir. Provider tarafındaki idempotency (ADR-006) yüzünden toparlanan bir mesaj da en çok
+    bir kez teslim edilmiştir; yani bu sayı mükerrer gönderim değil, yeniden denemenin işe
+    yaradığı mesajlardır. Nedenleri ayırmak için mesaj başına provider çağrı sayısının veya son
+    deneme nedeninin saklanması gerekirdi (bugün yalnızca süreç belleğindeki `send_attempts_total`
+    sayacı var); bu yeni sütun ve worker değişikliği olurdu, bu karar onu istemez.
+  - Migration yok: iki alan mevcut `messages` sütunlarından (`channel`, `status`, `attempts`)
+    hesaplanır.
+- **Gerekçe ve sonuç:** Pazarlamacı hangi kanalın sorunlu olduğunu ve yeniden denemenin ne kadar işe
+  yaradığını görür; "kısmen başarısız" bir kampanyayı yorumlamak kolaylaşır. Bedel: sorgu iki
+  satıra gruplanır (kanal başına) ve Go'da toplanır (üç satırlık işlem); snapshot gövdesi büyür
+  (saniyede bir, birkaç yüz bayt). Spec: [TRK-001](docs/specs/TRK-001-live-delivery-tracking.md);
+  sözleşme: [ARCHITECTURE §5](docs/ARCHITECTURE.md).

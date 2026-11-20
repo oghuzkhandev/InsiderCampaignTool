@@ -24,6 +24,12 @@ type deliverySnapshotBody struct {
 		Queued, Retrying, Sending, Sent, Failed, Skipped int
 	} `json:"messages"`
 	Failures struct{ Exhausted, Rejected int } `json:"failures"`
+	Channels struct {
+		SMS, Email struct {
+			Queued, Retrying, Sending, Sent, Failed, Skipped int
+		}
+	} `json:"channels"`
+	Recovered int `json:"recovered"`
 }
 
 type streamedEvent struct {
@@ -208,5 +214,37 @@ func TestDeliveryStreamOfDraftCampaignReportsZeros(t *testing.T) {
 	got := awaitSnapshot(t, events, "ilk görüntü", func(deliverySnapshotBody) bool { return true })
 	if got.Status != "draft" || got.Messages != (deliverySnapshotBody{}).Messages {
 		t.Fatalf("draft kampanya sıfır sayıyla dönmeli: %+v", got)
+	}
+	if got.Channels != (deliverySnapshotBody{}).Channels || got.Recovered != 0 {
+		t.Fatalf("kanal kırılımı ve toparlanan da sıfır olmalı: %+v", got)
+	}
+}
+
+// Akışın gerçek görüntüsünde kanal kırılımı ve toparlanan sayısı veritabanındaki gerçek
+// değerlerdir; değişiklik sonraki görüntüye yansır.
+func TestDeliveryStreamCarriesChannelSplitAndRecoveredFromTheDatabase(t *testing.T) {
+	db := testdb.Open(t)
+	id := approvedCampaignWithStatus(t, db, "sending")
+	addMessageOn(t, db, id, "sms", "sent", 2, "") // toparlanan
+	addMessageOn(t, db, id, "sms", "queued", 0, "")
+	addMessageOn(t, db, id, "email", "sent", 1, "")
+	events, _ := openDeliveryStream(t, db, id, 20*time.Millisecond)
+
+	first := awaitSnapshot(t, events, "ilk görüntü", func(deliverySnapshotBody) bool { return true })
+	if first.Channels.SMS.Sent != 1 || first.Channels.SMS.Queued != 1 || first.Channels.Email.Sent != 1 || first.Recovered != 1 {
+		t.Fatalf("ilk görüntü: %+v", first)
+	}
+	if first.Messages.Sent != first.Channels.SMS.Sent+first.Channels.Email.Sent {
+		t.Fatalf("toplam kanalların toplamı olmalı: %+v", first)
+	}
+
+	// Bekleyen SMS 2. denemede gönderilir: SMS gönderilen ve toparlanan artar.
+	if _, err := db.Exec(`UPDATE messages SET status = 'sent', attempts = 2, sent_at = now()
+	                      WHERE campaign_id = $1 AND channel = 'sms' AND status = 'queued'`, id); err != nil {
+		t.Fatal(err)
+	}
+	next := awaitSnapshot(t, events, "güncel görüntü", func(b deliverySnapshotBody) bool { return b.Channels.SMS.Sent == 2 })
+	if next.Recovered != 2 || next.Channels.SMS.Queued != 0 {
+		t.Fatalf("güncel görüntü: %+v", next)
 	}
 }

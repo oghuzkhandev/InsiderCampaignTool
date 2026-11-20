@@ -35,9 +35,28 @@ type Campaign struct {
 	ApprovedAt             *time.Time
 }
 
+// Kampanya listesinin sınırları (CMP-001): varsayılan 10, en fazla 20.
+const (
+	DefaultListLimit = 10
+	MaxListLimit     = 20
+)
+
+// ErrInvalidLimit, liste sınırı 1 ile MaxListLimit arasında olmadığında döner.
+var ErrInvalidLimit = errors.New("campaign: liste sınırı geçersiz")
+
+// Summary, kampanya listesindeki bir satırdır: kampanyayı tanıtmaya ve doğru ekrana
+// götürmeye yetecek kadar bilgi. Segment, içerik ve kitle sayıları bilerek yoktur.
+type Summary struct {
+	ID        string
+	Brief     string
+	Status    string
+	CreatedAt time.Time
+}
+
 // DB, Store'un ihtiyaç duyduğu veritabanı işlemleridir.
 type DB interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // Store, kampanyaları PostgreSQL'de saklar.
@@ -106,6 +125,39 @@ func (s *Store) Get(ctx context.Context, id string) (Campaign, error) {
 		return Campaign{}, fmt.Errorf("campaign: saklanan segment geçersiz: %w", err)
 	}
 	return c, nil
+}
+
+// List, en yeni kampanyayı başa alarak en çok limit kampanya döndürür. Sıralama
+// oluşturulma zamanına göredir; aynı anda oluşanlar kimliğe göre ayrılır, böylece sıra
+// her çağrıda aynıdır. Hiç kampanya yoksa boş (nil olmayan) liste döner. Limit 1 ile
+// MaxListLimit arasında olmalıdır, aksi halde ErrInvalidLimit döner.
+func (s *Store) List(ctx context.Context, limit int) ([]Summary, error) {
+	if limit < 1 || limit > MaxListLimit {
+		return nil, ErrInvalidLimit
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, brief, status, created_at
+		 FROM campaigns
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("campaign: liste okunamadı: %w", err)
+	}
+	defer rows.Close()
+
+	list := make([]Summary, 0, limit)
+	for rows.Next() {
+		var c Summary
+		if err := rows.Scan(&c.ID, &c.Brief, &c.Status, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("campaign: liste satırı okunamadı: %w", err)
+		}
+		c.CreatedAt = c.CreatedAt.UTC()
+		list = append(list, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("campaign: liste okunamadı: %w", err)
+	}
+	return list, nil
 }
 
 // isInvalidUUID, "uuid biçimi geçersiz" (22P02) hatasını tanır.

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "sepet-istanbul",
+    "title": "Sepeti terk edenler, İstanbul",
+    "brief": "Son 30 günde sepetine ürün ekleyip alışveriş yapmayan İstanbul'daki kullanıcılara %30 indirim hatırlatması gönder. Samimi ama kısa olsun."
+  },
+  {
+    "id": "sepet-ankara-izmir",
+    "title": "Sepeti terk edenler, Ankara ve İzmir",
+    "brief": "Son 14 günde sepetine ürün ekleyip satın alma yapmayan Ankara ve İzmir'deki kullanıcılara ücretsiz kargo hatırlatması gönder. Kısa ve net olsun."
+  },
+  {
+    "id": "sepet-bursa",
+    "title": "Yeni sepet ekleyenler, Bursa",
+    "brief": "Son 7 günde sepete ürün ekleyen Bursa'daki kullanıcılara kısa bir hatırlatma gönder. Samimi olsun."
+  }
+]

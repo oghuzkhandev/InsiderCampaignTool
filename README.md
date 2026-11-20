@@ -120,7 +120,11 @@ ve bilinçli sınırlar:
 
 - **Gerçek Claude adaptörü yok.** LLM arayüzü hazır (`llm.Provider`) ve tüm akış
   MockLLM ile çalışır ve test edilir; `LLM_PROVIDER` şimdilik yalnızca `mock` kabul
-  eder. Anthropic API'ye bağlanan adaptör yazılmadı.
+  eder. Anthropic API'ye bağlanan adaptör yazılmadı (API anahtarı yok; case gerçek
+  modeli zorunlu tutmaz, mock ile geliştirmeye ve anahtarsız testlere izin verir).
+  `ANTHROPIC_API_KEY` `.env.example` ve `compose.yaml` içinde tanımlıdır ama henüz
+  hiçbir kod tarafından okunmaz. Model çıktısının doğrulanması, tek düzeltme denemesi
+  ve akış yönetimi MockLLM'e karşı tamdır ve testlidir.
 - **Tek worker süreci** (ADR-005). Eşzamanlı claim (`SKIP LOCKED`, sahiplik jetonu,
   lease) entegrasyon testlidir, ama birden çok worker *süreci* birlikte çalıştırılıp
   denenmedi; kanal başına hız sınırı da süreç başınadır.

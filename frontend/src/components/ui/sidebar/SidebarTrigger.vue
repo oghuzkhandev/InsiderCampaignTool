@@ -23,6 +23,6 @@ const { toggleSidebar } = useSidebar()
     @click="toggleSidebar"
   >
     <PanelLeftIcon class="cn-rtl-flip" />
-    <span class="sr-only">Toggle Sidebar</span>
+    <span class="sr-only">Kenar çubuğunu aç veya kapat</span>
   </Button>
 </template>

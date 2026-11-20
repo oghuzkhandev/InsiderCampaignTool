@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createCampaign } from '../campaigns'
+import { ApiError, createCampaign, listCampaigns, parseCampaignList } from '../campaigns'
 import { campaignBody, errorResponse, jsonResponse } from '@/__tests__/helpers'
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -154,5 +154,100 @@ describe('createCampaign', () => {
     fetchMock.mockResolvedValue(jsonResponse(201, body))
     const err = await rejection(createCampaign('x'))
     expect(err.code).toBe('UNEXPECTED_RESPONSE')
+  })
+})
+
+describe('listCampaigns', () => {
+  const sample = {
+    id: '498882b6-2221-4589-a99f-67ceb68c59c2',
+    brief: 'Örnek brief',
+    status: 'draft',
+    created_at: '2026-11-19T21:00:00Z',
+  }
+
+  it('GET /api/campaigns?limit=… adresini ister; varsayılan 10', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(200, { campaigns: [] })) // her çağrıya yeni yanıt
+    const controller = new AbortController()
+
+    await listCampaigns(undefined, controller.signal)
+    await listCampaigns(20)
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/campaigns?limit=10')
+    expect(fetchMock.mock.calls[0]![1]?.method).toBeUndefined() // GET
+    expect(fetchMock.mock.calls[0]![1]?.signal).toBe(controller.signal)
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/campaigns?limit=20')
+  })
+
+  it('satırları sırasıyla ve yalnızca belgelenen alanlarla döndürür', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        campaigns: [sample, { ...sample, id: 'b', brief: 'İkinci', status: 'completed' }],
+      }),
+    )
+
+    const rows = await listCampaigns()
+
+    expect(rows).toEqual([sample, { ...sample, id: 'b', brief: 'İkinci', status: 'completed' }])
+  })
+
+  it('boş listeyi boş dizi olarak döndürür', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { campaigns: [] }))
+    expect(await listCampaigns()).toEqual([])
+  })
+
+  it('sunucunun gövdesindeki fazladan alanları (kitle sayısı gibi) atar', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { campaigns: [{ ...sample, audience: { total: 1, sms: 1, email: 1 } }] }),
+    )
+    const [row] = await listCampaigns()
+    expect(row).toEqual(sample)
+    expect(row).not.toHaveProperty('audience')
+  })
+
+  it('ağ hatasını NETWORK olarak bildirir', async () => {
+    fetchMock.mockRejectedValue(new TypeError('failed'))
+    const err = await rejection(listCampaigns())
+    expect(err.code).toBe('NETWORK')
+    expect(err.retryable).toBe(true)
+  })
+
+  it('iptali olduğu gibi fırlatır', async () => {
+    fetchMock.mockRejectedValue(new DOMException('abort', 'AbortError'))
+    await expect(listCampaigns()).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('sunucu hatasını (geçersiz limit gibi) ApiError olarak verir', async () => {
+    fetchMock.mockResolvedValue(errorResponse(400, 'INVALID_REQUEST'))
+    const err = await rejection(listCampaigns(0))
+    expect(err.status).toBe(400)
+    expect(err.code).toBe('INVALID_REQUEST')
+  })
+
+  it('JSON olmayan 502 yanıtını beklenmeyen yanıt sayar', async () => {
+    fetchMock.mockResolvedValue(new Response('<html>Bad gateway</html>', { status: 502 }))
+    const err = await rejection(listCampaigns())
+    expect(err.code).toBe('UNEXPECTED_RESPONSE')
+  })
+
+  it.each([
+    ['gövde dizi', []],
+    ['campaigns dizi değil', { campaigns: {} }],
+    ['campaigns yok', {}],
+    ['kimlik sayı', { campaigns: [{ ...sample, id: 1 }] }],
+    ['brief yok', { campaigns: [{ ...sample, brief: undefined }] }],
+    ['durum yok', { campaigns: [{ ...sample, status: null }] }],
+    ['tarih yok', { campaigns: [{ ...sample, created_at: undefined }] }],
+    ['tarih geçersiz', { campaigns: [{ ...sample, created_at: 'yarın' }] }],
+    ['satır nesne değil', { campaigns: ['x'] }],
+  ])('başarılı ama bozuk yanıtı reddeder: %s', async (_name, body) => {
+    fetchMock.mockResolvedValue(jsonResponse(200, body))
+    const err = await rejection(listCampaigns())
+    expect(err.code).toBe('UNEXPECTED_RESPONSE')
+  })
+
+  it('parseCampaignList tek bozuk satırda tüm listeyi reddeder (kısmi liste göstermez)', () => {
+    expect(() => parseCampaignList(200, { campaigns: [sample, { ...sample, id: 5 }] })).toThrow(
+      ApiError,
+    )
   })
 })

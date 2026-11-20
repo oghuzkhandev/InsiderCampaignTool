@@ -1,3 +1,14 @@
-/** Case brief'indeki örnek brief; demo için tek tıkla doldurulur. */
-export const EXAMPLE_BRIEF =
-  "Son 30 günde sepetine ürün ekleyip alışveriş yapmayan İstanbul'daki kullanıcılara %30 indirim hatırlatması gönder. Samimi ama kısa olsun."
+// Boş ekranda önerilen örnek brief'ler. Liste `exampleBriefs.json` dosyasındadır; backend
+// entegrasyon testi (tests/integration/example-briefs_test.go) aynı dosyayı okuyup her
+// örneğin desteklendiğini ve demo verisinde alıcı bulduğunu doğrular. Bu yüzden yeni
+// örnek eklerken yalnızca JSON dosyası değiştirilir.
+import examples from './exampleBriefs.json'
+
+export interface ExampleBrief {
+  id: string
+  /** Düğmede görünen kısa ad. */
+  title: string
+  brief: string
+}
+
+export const EXAMPLE_BRIEFS: readonly ExampleBrief[] = examples

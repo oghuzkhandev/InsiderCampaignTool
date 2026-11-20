@@ -140,6 +140,10 @@ describe('erişilebilirlik', () => {
 
   it('hata durumunda gizlenen bir şey yoktur (uyarı ve düğme erişilebilir)', () => {
     const w = mountStatus({ connection: 'failed', errorTitle: 'x' })
-    expect(w.find('[aria-hidden="true"]').exists()).toBe(false)
+    // Yalnızca süs simgeleri gizlidir (aria-hidden svg); metin ve düğme gizli bir kapta değildir.
+    const hidden = w.findAll('[aria-hidden="true"]')
+    expect(hidden.every((el) => el.element.tagName.toLowerCase() === 'svg')).toBe(true)
+    expect(w.find('[aria-hidden="true"] button').exists()).toBe(false)
+    expect(w.get('[role="alert"]').text()).toContain('x')
   })
 })

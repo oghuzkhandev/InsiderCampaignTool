@@ -140,7 +140,8 @@ func TestMigration00004BackfillsFromCurrentUserNamesAndKeepsOtherData(t *testing
 		t.Fatal("hazırlık: sürüm 3'te first_name sütunu olmamalı")
 	}
 
-	if _, err := p.Up(context.Background()); err != nil {
+	// Yalnızca 00004 uygulanır: sonraki migration'lar (00005 indeksi) bu testin konusu değildir.
+	if _, err := p.UpTo(context.Background(), 4); err != nil {
 		t.Fatalf("00004 uygulanmalı: %v", err)
 	}
 	if v, err := p.GetDBVersion(context.Background()); err != nil || v != 4 {
@@ -358,9 +359,14 @@ func TestMigration00004DownAndUpAgain(t *testing.T) {
 	                      VALUES ($1, $2, 'email', 'gidis@example.test', 'Ada', $3)`, id, uid, idemKey(id, uid, "email")); err != nil {
 		t.Fatal(err)
 	}
+	// Bu test yalnızca 00004'ü sınar: başlangıç noktası sürüm 4'tür (00005'in indeksi önce
+	// kaldırılır; ayrıca migration-index_test.go'da sınanır).
+	p := newGooseProvider(t, db)
+	if _, err := p.DownTo(ctx, 4); err != nil {
+		t.Fatalf("00005 geri alınamadı: %v", err)
+	}
 	before := schemaFingerprint(t, db)
 
-	p := newGooseProvider(t, db)
 	if _, err := p.DownTo(ctx, 3); err != nil {
 		t.Fatalf("Down başarısız: %v", err)
 	}
@@ -386,7 +392,7 @@ func TestMigration00004DownAndUpAgain(t *testing.T) {
 		t.Fatalf("Down mesajları silmemeli: %d", n)
 	}
 
-	if _, err := p.Up(ctx); err != nil {
+	if _, err := p.UpTo(ctx, 4); err != nil {
 		t.Fatalf("Up (tekrar) başarısız: %v", err)
 	}
 	if got := schemaFingerprint(t, db); !slices.Equal(got, before) {

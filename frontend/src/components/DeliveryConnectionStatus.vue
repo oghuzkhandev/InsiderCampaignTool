@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { RadioIcon, RefreshCwIcon, WifiOffIcon } from '@lucide/vue'
 import type { DeliveryConnection } from '@/delivery/useDeliveryStream'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -46,10 +47,12 @@ const announcement = computed(() => {
 
 <template>
   <Alert v-if="connection === 'failed'" variant="destructive" data-testid="connection-failed">
+    <WifiOffIcon aria-hidden="true" />
     <AlertTitle>{{ errorTitle ?? 'Canlı takip başlatılamadı.' }}</AlertTitle>
     <AlertDescription>
       <p v-if="updatedAt">Gördüğünüz sayılar en son alınan durumdur ({{ updatedText }}).</p>
       <Button type="button" variant="outline" size="sm" @click="$emit('retry')">
+        <RefreshCwIcon aria-hidden="true" />
         Yeniden bağlan
       </Button>
     </AlertDescription>
@@ -68,7 +71,13 @@ const announcement = computed(() => {
       </template>
 
       <template v-else-if="connection === 'live'">
-        <Badge variant="outline">Canlı</Badge>
+        <Badge
+          variant="outline"
+          class="border-transparent bg-emerald-100 text-emerald-900 dark:bg-emerald-400/15 dark:text-emerald-300"
+        >
+          <RadioIcon aria-hidden="true" />
+          Canlı
+        </Badge>
         <span>Son güncelleme: {{ updatedText }}</span>
       </template>
 

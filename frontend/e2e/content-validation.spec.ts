@@ -49,7 +49,14 @@ test('kaydedilmemiş düzenleme: kaydetmeden onaylanamaz', async ({ page }) => {
   const state = await serverState(page, id)
   expect(state.status).toBe('draft')
   expect(state.approved_content_version).toBeUndefined()
+  // Kaydedilmemiş metin varken yenilemek tarayıcının çıkış uyarısını çıkarır (içerik kaybolmasın).
+  let dialogType = ''
+  page.once('dialog', (dialog) => {
+    dialogType = dialog.type()
+    void dialog.accept() // kullanıcı "yine de yenile" der
+  })
   await page.reload()
+  expect(dialogType).toBe('beforeunload')
   await expect(page.getByTestId('version')).toHaveText('Sürüm 1 · Yapay zekâ ile üretildi')
   await expect(smsField(page)).not.toHaveValue(/henüz kaydedilmedi/)
   await expect(approveButton(page, 1)).toBeEnabled()

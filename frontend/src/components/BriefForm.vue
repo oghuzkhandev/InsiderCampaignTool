@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { LightbulbIcon, UsersIcon } from '@lucide/vue'
 import { MAX_BRIEF_LENGTH } from '@/api/campaigns'
-import { EXAMPLE_BRIEF } from '@/exampleBrief'
+import { EXAMPLE_BRIEFS } from '@/exampleBrief'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
 
 const brief = defineModel<string>({ required: true })
 defineProps<{ loading: boolean }>()
@@ -26,112 +30,83 @@ function onSubmit() {
   emit('submit', trimmed)
 }
 
-function useExample() {
-  brief.value = EXAMPLE_BRIEF
+// Örnekler yalnızca alan boşken önerilir: kullanıcı yazmaya başlayınca yol göstermeye gerek
+// kalmaz ve yazdığı metnin üzerine yazılmaz.
+const showExamples = computed(() => brief.value.trim() === '')
+
+function useExample(text: string) {
+  brief.value = text
+  // Seçilen örnek hemen düzenlenebilsin diye odak alana verilir.
+  document.getElementById('brief')?.focus()
 }
 </script>
 
 <template>
-  <form class="brief-form" novalidate @submit.prevent="onSubmit">
-    <label for="brief">Brief</label>
-    <p id="brief-hint" class="hint">
-      Kampanyanın kime gideceğini doğal dilde yazın. Örnek: şehir, son sepet ve satın alma
-      tarihleri, sipariş sayısı.
-    </p>
-    <textarea
-      id="brief"
-      v-model="brief"
-      rows="5"
-      aria-describedby="brief-hint brief-count"
-      :aria-invalid="showEmptyError || tooLong"
-      @keydown.ctrl.enter.prevent="onSubmit"
-      @keydown.meta.enter.prevent="onSubmit"
-    />
-    <div class="meta">
-      <span id="brief-count" :class="{ over: tooLong }">
-        {{ length }} / {{ MAX_BRIEF_LENGTH }}
-      </span>
-      <button type="button" class="link" @click="useExample">Örnek brief'i kullan</button>
+  <form class="grid gap-4" novalidate @submit.prevent="onSubmit">
+    <Field>
+      <FieldLabel for="brief">Brief</FieldLabel>
+      <FieldDescription id="brief-hint">
+        Kampanyanın kime gideceğini doğal dilde yazın. Örnek: şehir, son sepet ve satın alma
+        tarihleri, sipariş sayısı.
+      </FieldDescription>
+      <Textarea
+        id="brief"
+        v-model="brief"
+        class="min-h-32 wrap-anywhere"
+        aria-describedby="brief-hint brief-count"
+        :aria-invalid="showEmptyError || tooLong"
+        @keydown.ctrl.enter.prevent="onSubmit"
+        @keydown.meta.enter.prevent="onSubmit"
+      />
+      <div class="flex items-center justify-between gap-2 text-sm">
+        <span
+          id="brief-count"
+          class="text-muted-foreground tabular-nums"
+          :class="{ 'text-destructive font-semibold': tooLong }"
+        >
+          {{ length }} / {{ MAX_BRIEF_LENGTH }}
+        </span>
+      </div>
+      <FieldError v-if="showEmptyError">Brief boş olamaz.</FieldError>
+      <FieldError v-else-if="tooLong">
+        Brief en fazla {{ MAX_BRIEF_LENGTH }} karakter olabilir.
+      </FieldError>
+    </Field>
+
+    <div v-if="showExamples" class="grid gap-2" data-testid="examples">
+      <p id="examples-label" class="text-muted-foreground flex items-start gap-2 text-sm">
+        <LightbulbIcon
+          class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-300"
+          aria-hidden="true"
+        />
+        Nereden başlayacağınızı bilmiyorsanız bir örnek seçin, sonra istediğiniz gibi düzenleyin:
+      </p>
+      <ul class="grid gap-2" aria-labelledby="examples-label">
+        <li v-for="example in EXAMPLE_BRIEFS" :key="example.id">
+          <Button
+            type="button"
+            variant="outline"
+            class="h-auto w-full flex-col items-start gap-0.5 py-2 text-left whitespace-normal"
+            data-testid="example-brief"
+            @click="useExample(example.brief)"
+          >
+            <span class="font-medium">{{ example.title }}</span>
+            <span class="text-muted-foreground line-clamp-2 text-xs font-normal wrap-anywhere">
+              {{ example.brief }}
+            </span>
+          </Button>
+        </li>
+      </ul>
     </div>
-    <p v-if="showEmptyError" class="field-error" role="alert">Brief boş olamaz.</p>
-    <p v-else-if="tooLong" class="field-error" role="alert">
-      Brief en fazla {{ MAX_BRIEF_LENGTH }} karakter olabilir.
-    </p>
-    <button type="submit" class="primary" :disabled="loading || tooLong">
+
+    <Button
+      type="submit"
+      size="lg"
+      class="w-full sm:w-auto sm:justify-self-start"
+      :disabled="loading || tooLong"
+    >
+      <UsersIcon aria-hidden="true" />
       {{ loading ? 'Hesaplanıyor…' : 'Kitleyi hesapla' }}
-    </button>
+    </Button>
   </form>
 </template>
-
-<style scoped>
-.brief-form {
-  display: grid;
-  gap: 0.5rem;
-}
-label {
-  font-weight: 600;
-}
-.hint {
-  margin: 0;
-  color: var(--app-muted);
-  font-size: 0.9rem;
-}
-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.75rem;
-  font: inherit;
-  color: inherit;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  resize: vertical;
-}
-textarea:focus-visible {
-  outline: 2px solid var(--app-accent);
-  outline-offset: 1px;
-}
-textarea[aria-invalid='true'] {
-  border-color: var(--app-danger);
-}
-.meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.85rem;
-  color: var(--app-muted);
-}
-.over {
-  color: var(--app-danger);
-  font-weight: 600;
-}
-.field-error {
-  margin: 0;
-  color: var(--app-danger);
-  font-size: 0.9rem;
-}
-.link {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--app-accent);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-}
-.primary {
-  justify-self: start;
-  padding: 0.6rem 1.2rem;
-  font: inherit;
-  font-weight: 600;
-  color: var(--app-on-accent);
-  background: var(--app-accent);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>
