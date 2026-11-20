@@ -164,28 +164,3 @@ anahtarla yeniden denenir.
 Çekirdek akış (brief → doğrulanmış segment ve kitle → içerik → insan onayı →
 güvenilir gönderim → canlı izleme) uçtan uca çalışır ve testlidir. Yetiştirilemeyenler
 ve bilinçli sınırlar:
-
-- **Gerçek Claude adaptörü yok.** LLM arayüzü hazır (`llm.Provider`) ve tüm akış
-  MockLLM ile çalışır ve test edilir; `LLM_PROVIDER` şimdilik yalnızca `mock` kabul
-  eder. Anthropic API'ye bağlanan adaptör yazılmadı (API anahtarı yok; case gerçek
-  modeli zorunlu tutmaz, mock ile geliştirmeye ve anahtarsız testlere izin verir).
-  `ANTHROPIC_API_KEY` `.env.example` ve `compose.yaml` içinde tanımlıdır ama henüz
-  hiçbir kod tarafından okunmaz. Model çıktısının doğrulanması, tek düzeltme denemesi
-  ve akış yönetimi MockLLM'e karşı tamdır ve testlidir.
-- **Tek worker süreci** (ADR-005). Eşzamanlı claim (`SKIP LOCKED`, sahiplik jetonu,
-  lease) entegrasyon testlidir, ama birden çok worker *süreci* birlikte çalıştırılıp
-  denenmedi; kanal başına hız sınırı da süreç başınadır.
-- **Kimlik doğrulama ve yetkilendirme yok.** Herkes her kampanyayı görür; içerik
-  üretimi (LLM maliyeti) için hız veya maliyet sınırı yok.
-- **Bonus özellikler yok:** zamanlanmış gönderim, A/B varyantları, çok dilli içerik.
-- **Mock provider istatistikleri bellektedir** (yeniden başlayınca sıfırlanır); kabul
-  kayıtları PostgreSQL'dedir. Worker sayaçları da süreç belleğindedir.
-- **Prometheus yalnızca isteğe bağlı bir demo/izleme aracıdır;** Grafana yok, uyarı
-  kuralı yok. Metrik istemci kütüphanesi (`client_golang`) yerine küçük bir yazıcı
-  kullanılır.
-- **Veritabanı migration'ı** `00004`, riskli (daha önce denenmiş) mesaj varsa
-  veriye dokunmadan durur; uygulama sırası [ADR-026](DECISIONS.md)'dadır.
-- Arayüz koyu temada işletim sistemi ayarını izler; elle tema anahtarı yoktur.
-- Arayüzde yalnızca MockLLM çıktısına göre ayarlanmış ekranlar test edildi;
-  gerçek bir modelin üreteceği uzun veya bozuk çıktılar için doğrulama ve onarım
-  mantığı birim testlidir, canlı model ile denenmemiştir.
