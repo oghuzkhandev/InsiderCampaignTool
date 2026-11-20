@@ -4,9 +4,13 @@ import {
   ActivityIcon,
   CircleCheckBigIcon,
   CircleXIcon,
+  Clock3Icon,
   HourglassIcon,
   MailIcon,
   MessageSquareIcon,
+  RotateCwIcon,
+  SendIcon,
+  SkipForwardIcon,
 } from '@lucide/vue'
 import { CHANNEL_KEYS, type ChannelKey, type DeliverySnapshot } from '@/api/delivery'
 import { COUNT_ITEMS, exhaustedNote, rejectedNote } from '@/delivery/messages'
@@ -19,6 +23,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
 
 const props = defineProps<{ snapshot: DeliverySnapshot }>()
 
@@ -32,6 +37,14 @@ const recovered = computed(() => props.snapshot.recovered ?? 0)
 
 const CHANNEL_LABELS: Record<ChannelKey, string> = { sms: 'SMS', email: 'E-posta' }
 const CHANNEL_ICONS = { sms: MessageSquareIcon, email: MailIcon } as const
+const DETAIL_ICONS = {
+  queued: Clock3Icon,
+  retrying: RotateCwIcon,
+  sending: SendIcon,
+  sent: CircleCheckBigIcon,
+  failed: CircleXIcon,
+  skipped: SkipForwardIcon,
+}
 
 /** Kanal başına: toplam, işi biten oranı ve üç ana sayı (gönderildi, başarısız, tamamlanmamış). */
 const channelRows = computed(() => {
@@ -49,7 +62,7 @@ const channelRows = computed(() => {
       metrics: [
         { key: 'sent', label: 'Gönderildi', value: counts.sent },
         { key: 'failed', label: 'Başarısız', value: counts.failed },
-        { key: 'unfinished', label: 'Tamamlanmamış', value: unfinishedMessages(counts) },
+        { key: 'unfinished', label: 'Kalan', value: unfinishedMessages(counts) },
       ],
     }
   })
@@ -152,25 +165,44 @@ const summary = computed(() => [
 
       <!-- Kanal dağılımı: SMS ve e-posta ayrı ayrı. Sunucu her görüntüde yollar; eski bir sunucu
            yollamazsa bölüm hiç görünmez. -->
-      <div v-if="channelRows.length > 0" class="grid gap-3" data-testid="channel-split">
-        <h3 class="text-sm font-medium">Kanal dağılımı</h3>
-        <div class="grid gap-3 sm:grid-cols-2">
+      <div v-if="channelRows.length > 0" class="@container grid gap-4" data-testid="channel-split">
+        <Separator />
+        <div class="grid gap-1.5">
+          <h3 class="text-sm font-semibold">Kanal dağılımı</h3>
+          <p class="text-muted-foreground text-xs leading-relaxed">
+            SMS ve e-posta gönderimlerinin ilerlemesini ayrı ayrı inceleyin. Kalan, sırada bekleyen
+            ve gönderimi süren mesajları kapsar.
+          </p>
+        </div>
+        <div class="grid gap-4 @min-[36rem]:grid-cols-2">
           <section
             v-for="row in channelRows"
             :key="row.key"
-            class="card-3d grid content-start gap-2 rounded-lg border p-3"
+            class="bg-background/30 grid min-w-0 content-start gap-4 rounded-xl border p-4 shadow-xs sm:p-5"
             :aria-label="`${row.label} gönderim durumu`"
             :data-testid="`channel-${row.key}`"
           >
-            <div class="flex items-baseline justify-between gap-2">
-              <p class="flex items-center gap-1.5 text-sm font-medium">
-                <component :is="row.icon" class="text-primary size-4" aria-hidden="true" />
-                {{ row.label }}
-              </p>
-              <p class="text-muted-foreground text-xs" :data-testid="`channel-${row.key}-total`">
-                {{ nf.format(row.total) }} mesaj
-              </p>
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <span
+                  class="bg-primary/5 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg border"
+                >
+                  <component :is="row.icon" class="size-4" aria-hidden="true" />
+                </span>
+                <p class="text-sm font-semibold">{{ row.label }}</p>
+              </div>
+              <div class="text-right">
+                <p class="text-muted-foreground text-xs">Toplam</p>
+                <p
+                  class="text-sm font-semibold tabular-nums"
+                  :data-testid="`channel-${row.key}-total`"
+                >
+                  {{ nf.format(row.total) }} mesaj
+                </p>
+              </div>
             </div>
+
+            <Separator />
 
             <p
               v-if="row.total === 0"
@@ -180,15 +212,29 @@ const summary = computed(() => [
               Bu kanalda mesaj yok.
             </p>
             <template v-else>
-              <Progress
-                :model-value="row.percent"
-                :aria-label="`${row.label}: işi biten mesajların oranı`"
-              />
-              <dl class="grid grid-cols-3 gap-2">
-                <div v-for="metric in row.metrics" :key="metric.key">
-                  <dt class="text-muted-foreground text-xs">{{ metric.label }}</dt>
+              <div class="grid gap-2">
+                <div class="text-muted-foreground flex items-center justify-between gap-2 text-xs">
+                  <span>İşlemi tamamlanan</span>
+                  <span class="text-foreground font-medium tabular-nums">%{{ row.percent }}</span>
+                </div>
+                <Progress
+                  :model-value="row.percent"
+                  class="h-1.5"
+                  :aria-label="`${row.label}: işi biten mesajların oranı`"
+                />
+              </div>
+              <Separator />
+              <dl class="grid grid-cols-3 divide-x">
+                <div
+                  v-for="metric in row.metrics"
+                  :key="metric.key"
+                  class="grid min-w-0 content-start gap-2 px-3 first:pl-0 last:pr-0"
+                >
+                  <dt class="text-muted-foreground min-h-4 text-xs leading-4 whitespace-nowrap">
+                    {{ metric.label }}
+                  </dt>
                   <dd
-                    class="text-lg font-bold tabular-nums"
+                    class="text-xl font-semibold tracking-tight tabular-nums"
                     :class="{ 'text-destructive': metric.key === 'failed' && metric.value > 0 }"
                     :data-testid="`channel-${row.key}-${metric.key}`"
                   >
@@ -208,19 +254,37 @@ const summary = computed(() => [
         </div>
       </div>
 
-      <div class="grid gap-3">
-        <h3 class="text-sm font-medium">Ayrıntı</h3>
+      <div class="grid gap-4">
+        <Separator />
+        <div class="grid gap-1.5">
+          <h3 class="text-sm font-semibold">Ayrıntı</h3>
+          <p class="text-muted-foreground text-xs leading-relaxed">
+            Mesajların şu an hangi aşamada olduğunu ve her durumun anlamını görün.
+          </p>
+        </div>
         <dl class="grid grid-cols-2 gap-3 sm:grid-cols-3" data-testid="count-details">
-          <div v-for="item in COUNT_ITEMS" :key="item.key" class="card-3d rounded-lg border p-3">
-            <dt class="text-muted-foreground text-sm">{{ item.label }}</dt>
+          <div
+            v-for="item in COUNT_ITEMS"
+            :key="item.key"
+            class="bg-background/30 grid min-w-0 content-start gap-3 rounded-xl border p-4 shadow-xs"
+          >
+            <dt class="flex min-w-0 items-start justify-between gap-2 text-sm font-medium">
+              <span class="wrap-anywhere">{{ item.label }}</span>
+              <component
+                :is="DETAIL_ICONS[item.key]"
+                class="text-muted-foreground mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+            </dt>
+            <dd aria-hidden="true"><Separator /></dd>
             <dd
-              class="text-xl font-bold tabular-nums"
+              class="text-2xl font-semibold tracking-tight tabular-nums"
               :class="{ 'text-destructive': item.key === 'failed' && snapshot.messages.failed > 0 }"
               :data-testid="`count-${item.key}`"
             >
               {{ nf.format(snapshot.messages[item.key]) }}
             </dd>
-            <dd class="text-muted-foreground mt-1 text-xs">{{ item.hint }}</dd>
+            <dd class="text-muted-foreground text-xs leading-relaxed">{{ item.hint }}</dd>
           </div>
         </dl>
       </div>

@@ -96,8 +96,8 @@ test('onaylanan kampanyanın gönderimi canlı izlenir; bağlantı koparsa yenid
     )
   })
 
-  // Onay ekranından gönderim takibine geç.
-  await page.getByRole('link', { name: 'İleri: Gönderimi izle' }).click()
+  // Otomatik açılan takip ekranında kontrollü akışı yeniden başlat.
+  await page.reload()
   await page.waitForURL(new RegExp(`/campaigns/${id}/delivery$`))
   await expect(page.getByRole('heading', { level: 1, name: 'Gönderim takibi' })).toBeVisible()
 
