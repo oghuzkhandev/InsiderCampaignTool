@@ -92,7 +92,7 @@ describe('App', () => {
 })
 
 describe('uygulama kabuğu (üst başlık ve menü)', () => {
-  it('marka adı ve beş sayfa bağlantısı görünür; marka ikonu yoktur', async () => {
+  it('marka adı ve altı sayfa bağlantısı görünür; marka ikonu yoktur', async () => {
     const api = stubApi()
     const wrapper = await mountAt('/')
     const brand = wrapper.get('[data-testid="brand-link"]')
@@ -104,6 +104,7 @@ describe('uygulama kabuğu (üst başlık ve menü)', () => {
       ['Genel bakış', '/overview'],
       ['Yeni kampanya', '/'],
       ['Kampanyalar', '/campaigns'],
+      ['Zamanlanmış', '/scheduled'],
       ['Kitleler', '/audiences'],
       ['İçerik şablonları', '/templates'],
     ])

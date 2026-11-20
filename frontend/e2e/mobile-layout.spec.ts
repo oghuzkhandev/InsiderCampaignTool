@@ -51,12 +51,19 @@ async function expectNoHorizontalOverflow(page: Page, screen: string, scope = 'm
       Array.from(document.querySelectorAll(selector))
         .filter((el) => el.getClientRects().length > 0 && !el.closest('.sr-only'))
         .filter((el) => {
+          const bounds = el.getBoundingClientRect()
           // Duyarlı sr-only sınıfı etkin olduğunda alt öğeler de görsel olarak kırpılır.
           // Sınıf adına değil, tarayıcının uyguladığı gerçek kırpmaya bak.
           for (let parent: Element | null = el; parent; parent = parent.parentElement) {
             const style = getComputedStyle(parent)
             if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)')
               return false
+            // %0 ilerleme göstergesi kendi taşması gizli kabının tamamen dışındadır.
+            // Görünmeyen bu katman belgeyi taşırmaz; kısmen görünen içerik yine denetlenir.
+            if (style.overflowX === 'hidden' || style.overflowX === 'clip') {
+              const clip = parent.getBoundingClientRect()
+              if (bounds.right <= clip.left || bounds.left >= clip.right) return false
+            }
           }
           return true
         })
@@ -160,8 +167,11 @@ test('telefonda önizleme ve kampanya ekranları taşmaz, ana eylemler büyükt�
   await page.getByRole('button', { name: 'Vazgeç' }).click()
 
   await approve(page, 1)
-  await expect(page.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 1')
-  await expectNoHorizontalOverflow(page, 'kampanya (onaylı)')
-  await expectTouchTarget(page.getByTestId('delivery-link'), 'Gönderimi izle')
-  await page.screenshot({ path: info.outputPath('mobile-approved.png'), fullPage: true })
+  await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}\/delivery$/)
+  await expectNoHorizontalOverflow(page, 'otomatik açılan gönderim takibi')
+  await expectTouchTarget(
+    page.getByRole('link', { name: 'Geri: Kampanyaya dön' }),
+    'Kampanyaya dön',
+  )
+  await page.screenshot({ path: info.outputPath('mobile-delivery.png'), fullPage: true })
 })

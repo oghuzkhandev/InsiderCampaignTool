@@ -58,11 +58,9 @@ test('Geri ve İleri: önizleme → içerik → onay → gönderim takibi → ye
   await expect(page.getByRole('link', { name: '+ Yeni kampanya' })).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: /Geri/ })).toHaveCount(0)
 
-  // 3. Onay: "İleri" gönderim takibine açılır.
+  // 3. Son onay başarılı olunca gönderim takibi kendiliğinden açılır.
   await generateContent(page)
   await approve(page, 1)
-  await expect(page.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 1')
-  await page.getByRole('link', { name: 'İleri: Gönderimi izle' }).click()
   await page.waitForURL(new RegExp(`/campaigns/${id}/delivery$`))
 
   // 4. Gönderim takibi: "Geri" kampanyaya döner. Worker bu ortamda kapalı, gönderim bitmedi;

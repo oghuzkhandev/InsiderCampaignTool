@@ -41,14 +41,14 @@ withDefaults(
   <nav
     aria-label="Adım gezintisi"
     data-testid="step-nav"
-    class="grid gap-1"
+    class="grid gap-3"
     :class="
       sticky
-        ? 'bg-background/95 sticky bottom-0 z-10 -mx-4 border-t px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none'
+        ? 'bg-background/95 sticky bottom-0 z-10 -mx-3 border-t px-3 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none'
         : ''
     "
   >
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center justify-between gap-4">
       <template v-if="back">
         <Button
           v-if="back.to"

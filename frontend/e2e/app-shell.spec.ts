@@ -44,7 +44,7 @@ test('kenar çubuğu masaüstünde açıktır; düğmeyle kapanıp açılır, "Y
   await expect(sidebar(page)).toHaveAttribute('data-state', 'expanded')
   await expect(
     sidebar(page).getByRole('navigation', { name: 'Sayfalar' }).getByRole('link'),
-  ).toHaveCount(5)
+  ).toHaveCount(6)
   await expect(
     sidebar(page).getByRole('link', { name: 'Kampanyalar', exact: true }),
   ).toHaveAttribute('aria-current', 'page')
@@ -64,7 +64,7 @@ test('kampanya onaylanınca genel bakış listesi gönderim takibine yönlendiri
   await createCampaign(page)
   await generateContent(page)
   await approve(page, 1)
-  await expect(page.getByTestId('approved')).toBeVisible()
+  await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}\/delivery$/)
   await page.goto('/overview')
   const row = page.getByTestId('recent-row').first()
   await expect(row.getByTestId('recent-status')).toHaveText('Onaylandı, kuyrukta')

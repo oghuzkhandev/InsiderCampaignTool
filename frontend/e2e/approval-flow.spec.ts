@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   approve,
+  approveButton,
   BRIEF,
   EXPECTED,
   expectAudience,
@@ -40,25 +41,26 @@ test('brief → kitle → içerik → düzenle → kaydet → onayla → yeniley
   await expect(page.getByText('Kaydedilmemiş değişiklik var.')).toBeHidden()
   await expect(page.getByTestId('action-feedback')).toHaveText('Kaydedildi · sürüm 2')
 
-  // 3b) Onay özeti: hangi sürüm, tahmini alıcılar ve örnek adla önizleme aynı kartta.
+  // 3b) Onay özeti ve içerik altındaki ayrı önizleme.
   const summary = page.getByRole('region', { name: 'Onay' })
   await expect(summary.getByTestId('approve-version')).toHaveText('Sürüm 2 onaylanacak.')
   await expect(summary.getByTestId('approve-sms')).toHaveText(`≈ ${EXPECTED.sms}`)
   await expect(summary.getByTestId('approve-email')).toHaveText(`≈ ${EXPECTED.email}`)
-  await expect(summary.getByTestId('preview-sms')).toHaveText(
+  const preview = page.getByRole('region', { name: 'Mesaj önizlemesi' })
+  await expect(preview.getByTestId('preview-sms')).toHaveText(
     'Merhaba Ayşe, sepetindeki ürünlerde %30 indirim seni bekliyor!',
   )
-  await expect(summary.getByTestId('preview-note')).toContainText('Örnek önizleme')
+  await expect(preview.getByTestId('preview-note')).toContainText('Örnek önizleme')
 
   // 4) Onayla: kuyruğa alınan sayılar önizlemedeki kitleyle aynıdır (kontrollü veri).
   await approve(page, 2)
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${id}/delivery$`))
+  await expect(page.getByTestId('count-queued')).toHaveText(String(EXPECTED.sms + EXPECTED.email))
+  await page.getByRole('link', { name: 'Geri: Kampanyaya dön' }).click()
   await expect(page.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 2')
-  await expect(page.getByTestId('queued')).toContainText(
-    `${EXPECTED.sms} SMS ve ${EXPECTED.email} e-posta mesajı`,
-  )
   await expect(smsField(page)).toHaveAttribute('readonly', '')
   // İşlem düğmesi kalmadı (kenar çubuğu düğmesi `main` dışındadır).
-  await expect(page.getByRole('main').getByRole('button')).toHaveCount(0)
+  await expect(approveButton(page, 2)).toHaveCount(0)
 
   // 5) Sayfayı yenile: onaylı durum ve içerik sunucudan geri yüklenir.
   await page.reload()
@@ -66,7 +68,7 @@ test('brief → kitle → içerik → düzenle → kaydet → onayla → yeniley
   await expect(page.getByTestId('version')).toHaveText('Sürüm 2 · Elle düzenlendi')
   await expect(smsField(page)).toHaveValue(edited)
   await expect(smsField(page)).toHaveAttribute('readonly', '')
-  await expect(page.getByRole('main').getByRole('button')).toHaveCount(0)
+  await expect(approveButton(page, 2)).toHaveCount(0)
 
   // Arayüzden bağımsız doğrulama: sunucuda kampanya onaylı ve sürüm 2.
   const state = await serverState(page, id)

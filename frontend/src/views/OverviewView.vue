@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
+import { CirclePlusIcon, LayoutDashboardIcon, MegaphoneIcon, RefreshCwIcon } from '@lucide/vue'
 import { getOverview } from '@/api/workspace'
 import { useResource } from '@/composables/useResource'
 import PageHeader from '@/components/PageHeader.vue'
@@ -44,16 +45,32 @@ const cards = computed(() =>
 )
 </script>
 <template>
-  <main class="grid gap-6">
+  <main class="grid gap-8">
     <PageHeader
+      :icon="LayoutDashboardIcon"
       title="Genel bakış"
       description="Kampanyalarınızın ve gönderimlerinizin güncel özeti."
     />
-    <div class="flex flex-wrap gap-2">
-      <Button as-child><RouterLink to="/">Yeni kampanya</RouterLink></Button
-      ><Button as-child variant="outline"
-        ><RouterLink to="/campaigns">Kampanyalar</RouterLink></Button
-      ><Button variant="outline" :disabled="loading" @click="reload">Yenile</Button>
+    <div class="flex flex-wrap gap-3">
+      <Button as-child>
+        <RouterLink to="/">
+          <CirclePlusIcon aria-hidden="true" />
+          Yeni kampanya
+        </RouterLink>
+      </Button>
+      <Button as-child variant="outline">
+        <RouterLink to="/campaigns">
+          <MegaphoneIcon aria-hidden="true" />
+          Kampanyalar
+        </RouterLink>
+      </Button>
+      <Button variant="outline" :disabled="loading" @click="reload">
+        <RefreshCwIcon
+          aria-hidden="true"
+          :class="{ 'animate-spin motion-reduce:animate-none': loading }"
+        />
+        Yenile
+      </Button>
     </div>
     <Separator />
     <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" role="status">

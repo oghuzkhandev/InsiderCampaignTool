@@ -51,11 +51,18 @@ export async function generateContent(page: Page) {
 export async function approvedCampaign(page: Page, brief: string = BRIEF): Promise<string> {
   const id = await createCampaign(page, brief)
   await generateContent(page)
-  await approve(page, 1)
-  await expect(page.getByTestId('approved')).toContainText('Kampanya onaylandı: sürüm 1')
-  await expect(page.getByTestId('queued')).toContainText(
-    `${EXPECTED.sms} SMS ve ${EXPECTED.email} e-posta mesajı`,
+  const approval = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/campaigns/${id}/approve`) &&
+      response.request().method() === 'POST',
   )
+  await approve(page, 1)
+  expect((await approval).status()).toBe(200)
+  expect(await (await approval).json()).toMatchObject({
+    approved_content_version: 1,
+    queued: { sms: EXPECTED.sms, email: EXPECTED.email },
+  })
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${id}/delivery$`))
   return id
 }
 
